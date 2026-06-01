@@ -702,6 +702,24 @@ async getClamshellMicrophone() : Promise<Result<string, string>> {
 async isRecording() : Promise<boolean> {
     return await TAURI_INVOKE("is_recording");
 },
+/**
+ * Meeting mode (Step 1) test: capture `seconds` of system audio via the
+ * CoreAudio tap and write it to a 32-bit float WAV in the temp dir. Returns the
+ * output path.
+ * 
+ * On macOS this triggers the Audio-Capture permission dialog on first run
+ * (NSAudioCaptureUsageDescription, macOS 14.4+). Must run inside the bundled
+ * app for the permission to be granted. This command is isolated from the
+ * existing dictation flow.
+ */
+async captureSystemAudioTest(seconds: number) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("capture_system_audio_test", { seconds }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async setModelUnloadTimeout(timeout: ModelUnloadTimeout) : Promise<void> {
     await TAURI_INVOKE("set_model_unload_timeout", { timeout });
 },

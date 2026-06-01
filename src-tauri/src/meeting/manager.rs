@@ -67,9 +67,6 @@ pub struct MeetingTranscriptUpdate {
     pub full_transcript: String,
 }
 
-/// Event payload emitted on `"meeting-audio-level"` (~20 fps) for a live UI
-/// visualizer. This is SEPARATE from the dictation `"mic-level"` event so the
-/// two visualizers never interfere.
 /// Event payload emitted on `"meeting-finalizing"` to signal the on-stop
 /// full-audio re-transcription pass. The UI keeps showing the live (rough)
 /// transcript as a preview while `finalizing` is true, then receives the
@@ -81,6 +78,9 @@ pub struct MeetingFinalizing {
     pub finalizing: bool,
 }
 
+/// Event payload emitted on `"meeting-audio-level"` (~20 fps) for a live UI
+/// visualizer. This is SEPARATE from the dictation `"mic-level"` event so the
+/// two visualizers never interfere.
 #[derive(Clone, Debug, Serialize, Type)]
 pub struct MeetingAudioLevel {
     /// ~16 normalized 0..1 frequency-bar levels (same shape as `mic-level`,
@@ -373,6 +373,13 @@ impl MeetingManager {
     /// system audio buffered to temp files during the session, producing a
     /// higher-quality labeled transcript that REPLACES the live rough preview.
     ///
+    /// Rather than one blob per source (which would collapse chronology to a
+    /// single t=0 block), each source is split into TIME-ORDERED ~25-30 s
+    /// windows that close preferentially at VAD silence boundaries (so words
+    /// aren't cut). Each window keeps its real start offset → `timestamp_ms`.
+    /// Mic + system windows are merged and sorted by timestamp, yielding an
+    /// interleaved, speaker-labeled transcript with near-full-context quality.
+    ///
     /// Emits `"meeting-finalizing"` (true) before and (false) after. If no
     /// buffers were captured (e.g. capture failed early), leaves the live
     /// transcript untouched.
@@ -385,6 +392,15 @@ impl MeetingManager {
 
         self.emit_finalizing(true);
 
+        // Resolve the VAD model once for the silence-boundary chunker.
+        let vad_path = {
+            use tauri::Manager;
+            self.app_handle.path().resolve(
+                "resources/models/silero_vad_v4.onnx",
+                tauri::path::BaseDirectory::Resource,
+            )
+        };
+
         let mut final_segments: Vec<TranscriptSegment> = Vec::new();
         for (path, source) in [
             (&buffers.mic, TranscriptSource::Mic),
@@ -392,7 +408,17 @@ impl MeetingManager {
         ] {
             match read_f32_raw(path) {
                 Ok(audio) if !audio.is_empty() => {
-                    self.transcribe_full_source(&audio, source, &mut final_segments);
+                    let windows = match &vad_path {
+                        Ok(p) => chunk_for_finalize(&audio, p),
+                        Err(e) => {
+                            log::warn!(
+                                "meeting finalize: VAD path unresolved ({}); using fixed windows",
+                                e
+                            );
+                            chunk_fixed(&audio)
+                        }
+                    };
+                    self.transcribe_windows(&audio, &windows, source, &mut final_segments);
                 }
                 Ok(_) => {}
                 Err(e) => log::warn!("meeting finalize: failed to read {:?}: {}", path, e),
@@ -414,35 +440,41 @@ impl MeetingManager {
         self.emit_finalizing(false);
     }
 
-    /// Transcribe the full audio of one source. whisper.cpp internally windows
-    /// long audio in 30s chunks with context, so we pass the whole buffer as a
-    /// single segment. For engines that cannot handle arbitrarily long audio,
-    /// `transcribe()` is still the right entry point (it honors the selected
-    /// language); a future chunking refinement can live here without changing
-    /// callers. The whole source becomes one timestamped segment at its start.
+    /// Transcribe each `[start, end)` window of `audio` into one timestamped,
+    /// labeled segment. `transcribe()` honors the selected language; ~25-30 s
+    /// windows give whisper plenty of context per call.
     #[cfg(target_os = "macos")]
-    fn transcribe_full_source(
+    fn transcribe_windows(
         &self,
         audio: &[f32],
+        windows: &[(usize, usize)],
         source: TranscriptSource,
         out: &mut Vec<TranscriptSegment>,
     ) {
-        match self.transcription_manager.transcribe(audio.to_vec()) {
-            Ok(text) => {
-                let text = text.trim().to_string();
-                if !text.is_empty() {
-                    out.push(TranscriptSegment {
-                        text,
-                        timestamp_ms: 0,
-                        source,
-                    });
+        use crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE;
+        for &(start, end) in windows {
+            let slice = &audio[start..end];
+            match self.transcription_manager.transcribe(slice.to_vec()) {
+                Ok(text) => {
+                    let text = text.trim().to_string();
+                    if !text.is_empty() {
+                        let timestamp_ms =
+                            (start as u64).saturating_mul(1000) / WHISPER_SAMPLE_RATE as u64;
+                        out.push(TranscriptSegment {
+                            text,
+                            timestamp_ms,
+                            source,
+                        });
+                    }
                 }
+                Err(e) => log::warn!(
+                    "meeting finalize: transcription failed for {:?} window [{}..{}]: {}",
+                    source,
+                    start,
+                    end,
+                    e
+                ),
             }
-            Err(e) => log::warn!(
-                "meeting finalize: transcription failed for {:?}: {}",
-                source,
-                e
-            ),
         }
     }
 
@@ -1260,6 +1292,106 @@ fn write_f32_wav(path: &std::path::Path, samples: &[f32], sample_rate: u32) -> s
     Ok(())
 }
 
+// ---- Finalize-pass windowing (Feature 2 fix: preserve chronology + labels) --
+//
+// Target window length the chunker aims for before it starts looking for a
+// silence boundary to close on (~25 s).
+#[cfg(target_os = "macos")]
+const FINALIZE_TARGET_SAMPLES: usize =
+    crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE as usize * 25;
+// Hard cap: force-close a window here even mid-speech (~30 s, whisper's native
+// window) so a continuous talker can't produce an unbounded window.
+#[cfg(target_os = "macos")]
+const FINALIZE_MAX_SAMPLES: usize =
+    crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE as usize * 30;
+// 30 ms frame for the VAD silence scan.
+#[cfg(target_os = "macos")]
+const FINALIZE_FRAME_SAMPLES: usize =
+    (crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE as usize * 30) / 1000;
+// Consecutive silent frames that mark a "safe" split point once past target
+// (~150 ms). Long enough to be an inter-word/sentence gap, not a glottal stop.
+#[cfg(target_os = "macos")]
+const FINALIZE_SILENCE_SPLIT_FRAMES: usize = 5;
+
+/// Split `audio` into time-ordered `[start, end)` windows for the finalize
+/// re-transcription. Uses the raw SileroVad to classify 30 ms frames as
+/// voice/silence and closes a window once it is past `FINALIZE_TARGET_SAMPLES`
+/// AND a run of `FINALIZE_SILENCE_SPLIT_FRAMES` silent frames is seen (so we
+/// split at a natural pause), or unconditionally at `FINALIZE_MAX_SAMPLES`.
+/// Windows containing no speech at all are dropped. Falls back to fixed-size
+/// windows if the VAD can't be constructed.
+#[cfg(target_os = "macos")]
+fn chunk_for_finalize(audio: &[f32], vad_path: &std::path::Path) -> Vec<(usize, usize)> {
+    use crate::audio_toolkit::vad::VoiceActivityDetector;
+    use crate::audio_toolkit::SileroVad;
+
+    let mut vad = match SileroVad::new(vad_path, 0.3) {
+        Ok(v) => v,
+        Err(e) => {
+            log::warn!(
+                "meeting finalize: SileroVad init failed ({}); fixed windows",
+                e
+            );
+            return chunk_fixed(audio);
+        }
+    };
+
+    let mut windows: Vec<(usize, usize)> = Vec::new();
+    let n = audio.len();
+    let mut win_start = 0usize; // start of the current window
+    let mut pos = 0usize; // current frame start offset
+    let mut silence_run = 0usize; // consecutive silent frames seen
+    let mut win_has_speech = false; // whether the current window contains speech
+
+    while pos < n {
+        let end = (pos + FINALIZE_FRAME_SAMPLES).min(n);
+        let frame = &audio[pos..end];
+        // is_voice on the raw VAD is a per-frame decision (no hangover).
+        let is_voice = vad.is_voice(frame).unwrap_or(false);
+        if is_voice {
+            win_has_speech = true;
+            silence_run = 0;
+        } else {
+            silence_run += 1;
+        }
+
+        let win_len = end - win_start;
+        let past_target = win_len >= FINALIZE_TARGET_SAMPLES;
+        let safe_split = past_target && silence_run >= FINALIZE_SILENCE_SPLIT_FRAMES;
+        let force_split = win_len >= FINALIZE_MAX_SAMPLES;
+
+        if safe_split || force_split {
+            if win_has_speech {
+                windows.push((win_start, end));
+            }
+            win_start = end;
+            win_has_speech = false;
+            silence_run = 0;
+        }
+        pos = end;
+    }
+
+    // Close the trailing window.
+    if win_start < n && win_has_speech {
+        windows.push((win_start, n));
+    }
+    windows
+}
+
+/// Fallback chunker: fixed `FINALIZE_MAX_SAMPLES`-sized windows, no VAD.
+#[cfg(target_os = "macos")]
+fn chunk_fixed(audio: &[f32]) -> Vec<(usize, usize)> {
+    let n = audio.len();
+    let mut windows = Vec::new();
+    let mut start = 0usize;
+    while start < n {
+        let end = (start + FINALIZE_MAX_SAMPLES).min(n);
+        windows.push((start, end));
+        start = end;
+    }
+    windows
+}
+
 /// Downsample a window of mixed samples into a fixed-length oscilloscope trace
 /// (averaging strided chunks, values in -1..1) and the peak absolute amplitude
 /// (0..1). Returns a flat zero trace when there are no samples.
@@ -1338,6 +1470,26 @@ mod tests {
         assert_eq!(seg.source, TranscriptSource::Mic);
         assert_eq!(seg.text, "hello");
         assert_eq!(seg.timestamp_ms, 1200);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn chunk_fixed_splits_into_max_windows_covering_all_samples() {
+        use super::FINALIZE_MAX_SAMPLES;
+        // 2.5 windows worth of audio.
+        let n = FINALIZE_MAX_SAMPLES * 2 + FINALIZE_MAX_SAMPLES / 2;
+        let audio = vec![0.1f32; n];
+        let windows = super::chunk_fixed(&audio);
+        assert_eq!(windows.len(), 3);
+        // Contiguous, non-overlapping, fully covering.
+        assert_eq!(windows[0].0, 0);
+        assert_eq!(windows[0].1, FINALIZE_MAX_SAMPLES);
+        assert_eq!(windows[1].0, FINALIZE_MAX_SAMPLES);
+        assert_eq!(windows[2].1, n);
+        for w in &windows {
+            assert!(w.1 > w.0);
+            assert!(w.1 - w.0 <= FINALIZE_MAX_SAMPLES);
+        }
     }
 
     #[test]

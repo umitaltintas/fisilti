@@ -2,7 +2,7 @@
 // i18next no-literal-string lint rule doesn't flag the product name.
 const BRAND_NAME = "Fısıltı";
 
-const HandyTextLogo = ({
+const FisiltiWordmark = ({
   width,
   height,
   className,
@@ -55,4 +55,4 @@ const HandyTextLogo = ({
   );
 };
 
-export default HandyTextLogo;
+export default FisiltiWordmark;

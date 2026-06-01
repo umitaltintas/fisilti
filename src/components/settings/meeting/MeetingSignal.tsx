@@ -7,7 +7,7 @@ const BAR_COUNT = 16;
 const WAVE_BUFFER = 480; // rolling oscilloscope sample buffer (~5 ticks of 96)
 
 // Read a CSS custom property off the document root so the canvas follows
-// handy's light/dark theme (canvas can't use Tailwind classes).
+// Fısıltı's light/dark theme (canvas can't use Tailwind classes).
 function cssVar(name: string, fallback: string): string {
   if (typeof window === "undefined") return fallback;
   const v = getComputedStyle(document.documentElement)

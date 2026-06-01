@@ -6,7 +6,7 @@ import remarkGfm from "remark-gfm";
 // structured markdown (headings, bullets, checkboxes, tables); we render it
 // with theme-matched typography instead of plain `whitespace-pre-wrap`.
 //
-// Components are mapped explicitly so the output uses handy's design tokens
+// Components are mapped explicitly so the output uses Fısıltı's design tokens
 // (text/mid-gray/logo-primary) rather than relying on a prose plugin.
 const components: Components = {
   h1: ({ children }) => (
@@ -106,7 +106,7 @@ interface MarkdownProps {
   className?: string;
 }
 
-/** Render a markdown string with handy-themed typography. */
+/** Render a markdown string with Fısıltı-themed typography. */
 export const Markdown: React.FC<MarkdownProps> = ({
   children,
   className = "",

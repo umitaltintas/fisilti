@@ -4,7 +4,7 @@
 // CoreAudio tap stream behind a `SystemAudioStream` that owns a forwarding task
 // and tears it down cleanly on Drop.
 //
-// This is isolated from handy's existing dictation/recording flow and only
+// This is isolated from Fısıltı's existing dictation/recording flow and only
 // compiled on macOS (see the gated `mod` declaration in `audio/mod.rs`).
 
 use std::pin::Pin;

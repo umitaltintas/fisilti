@@ -1,5 +1,5 @@
 {
-  description = "Handy - A free, open source, and extensible speech-to-text application that works completely offline";
+  description = "Fısıltı - private, local-first dictation & AI meeting notes (fork of Handy by cjpais)";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -115,8 +115,8 @@
           lib = pkgs.lib;
         in
         {
-          handy = pkgs.rustPlatform.buildRustPackage {
-            pname = "handy";
+          fisilti = pkgs.rustPlatform.buildRustPackage {
+            pname = "fisilti";
             inherit version;
             src = self;
 
@@ -223,15 +223,16 @@
             '';
 
             meta = {
-              description = "A free, open source, and extensible speech-to-text application that works completely offline";
-              homepage = "https://github.com/cjpais/Handy";
+              description = "Fısıltı - private, local-first dictation & AI meeting notes (fork of Handy by cjpais)";
+              homepage = "https://github.com/umitaltintas/fisilti";
               license = lib.licenses.mit;
+              # mainProgram matches the Cargo binary name (src-tauri/Cargo.toml).
               mainProgram = "handy";
               platforms = supportedSystems;
             };
           };
 
-          default = self.packages.${system}.handy;
+          default = self.packages.${system}.fisilti;
         }
       );
 
@@ -240,7 +241,7 @@
         { lib, pkgs, ... }:
         {
           imports = [ ./nix/module.nix ];
-          programs.handy.package = lib.mkDefault self.packages.${pkgs.stdenv.hostPlatform.system}.handy;
+          programs.fisilti.package = lib.mkDefault self.packages.${pkgs.stdenv.hostPlatform.system}.fisilti;
         };
 
       # Home-manager module for per-user service
@@ -248,7 +249,7 @@
         { lib, pkgs, ... }:
         {
           imports = [ ./nix/hm-module.nix ];
-          services.handy.package = lib.mkDefault self.packages.${pkgs.stdenv.hostPlatform.system}.handy;
+          services.fisilti.package = lib.mkDefault self.packages.${pkgs.stdenv.hostPlatform.system}.fisilti;
         };
 
       # Development shell for building from source
@@ -291,7 +292,7 @@
             XDG_DATA_DIRS = "${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}:${pkgs.gtk3}/share/gsettings-schemas/${pkgs.gtk3.name}:${pkgs.hicolor-icon-theme}/share";
 
             shellHook = ''
-              echo "Handy development environment"
+              echo "Fısıltı development environment"
               bun install
               echo "Run 'bun run tauri dev' to start"
             '';

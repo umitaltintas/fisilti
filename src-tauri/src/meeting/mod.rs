@@ -2,7 +2,7 @@
 //
 // This top-level module owns the `MeetingManager`, which runs a long-lived
 // session capturing mixed mic + system audio, segmenting it with VAD, and
-// transcribing each segment via handy's existing `TranscriptionManager`.
+// transcribing each segment via Fısıltı's existing `TranscriptionManager`.
 //
 // It is ADDITIVE and ISOLATED from the dictation flow.
 

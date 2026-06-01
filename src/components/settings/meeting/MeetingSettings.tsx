@@ -146,6 +146,28 @@ const SpeakerTranscript: React.FC<{
   </div>
 );
 
+// Build a copy-friendly transcript string that keeps the speaker label on each
+// line (e.g. "You: …" / "Others: …"), so a pasted transcript reads like the
+// on-screen chat instead of an unattributed wall of text. Falls back to the
+// plain joined transcript when no labeled segments are available (e.g. an old
+// record saved before per-source segments existed).
+const labeledTranscriptText = (
+  segments: TranscriptSegment[],
+  fallback: string,
+  t: (key: string) => string,
+): string => {
+  if (segments.length === 0) return fallback;
+  return segments
+    .map((seg) => {
+      const label =
+        seg.source === "you"
+          ? t("meeting.speakerYou")
+          : t("meeting.speakerOthers");
+      return `${label}: ${seg.text}`;
+    })
+    .join("\n");
+};
+
 // Persistent "100% on-device transcription" trust badge.
 const OnDeviceBadge: React.FC<{ t: (key: string) => string }> = ({ t }) => (
   <span className="inline-flex items-center gap-1.5 rounded-full bg-logo-primary/10 px-2.5 py-1 text-[11px] font-medium text-logo-primary">
@@ -603,7 +625,8 @@ export const MeetingSettings: React.FC = () => {
     });
   };
 
-  const copyTranscript = () => copyText(transcript);
+  const copyTranscript = () =>
+    copyText(labeledTranscriptText(liveSegments, transcript, t));
   const copyNotes = () => copyText(summary);
   const copyUserNotes = () => copyText(userNotes);
 
@@ -1374,7 +1397,15 @@ const MeetingDetailView: React.FC<MeetingDetailViewProps> = ({
                   {t("meeting.transcript")}
                 </h2>
                 <CopyButton
-                  onCopy={() => onCopy(detail.transcript)}
+                  onCopy={() =>
+                    onCopy(
+                      labeledTranscriptText(
+                        labeledSegments,
+                        detail.transcript,
+                        t,
+                      ),
+                    )
+                  }
                   disabled={!hasTranscript}
                   title={t("meeting.copyTranscript")}
                   copiedTitle={t("meeting.copied")}

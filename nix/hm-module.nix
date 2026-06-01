@@ -1,8 +1,8 @@
-# Home-manager module for Handy speech-to-text
+# Home-manager module for Fısıltı speech-to-text
 #
 # Provides a systemd user service for autostart.
-# Usage: imports = [ handy.homeManagerModules.default ];
-#        services.handy.enable = true;
+# Usage: imports = [ fisilti.homeManagerModules.default ];
+#        services.fisilti.enable = true;
 {
   config,
   lib,
@@ -10,27 +10,28 @@
   ...
 }:
 let
-  cfg = config.services.handy;
+  cfg = config.services.fisilti;
 in
 {
-  options.services.handy = {
-    enable = lib.mkEnableOption "Handy speech-to-text user service";
+  options.services.fisilti = {
+    enable = lib.mkEnableOption "Fısıltı speech-to-text user service";
 
     package = lib.mkOption {
       type = lib.types.package;
-      defaultText = lib.literalExpression "handy.packages.\${system}.handy";
-      description = "The Handy package to use.";
+      defaultText = lib.literalExpression "fisilti.packages.\${system}.fisilti";
+      description = "The Fısıltı package to use.";
     };
   };
 
   config = lib.mkIf cfg.enable {
-    systemd.user.services.handy = {
+    systemd.user.services.fisilti = {
       Unit = {
-        Description = "Handy speech-to-text";
+        Description = "Fısıltı speech-to-text";
         After = [ "graphical-session.target" ];
         PartOf = [ "graphical-session.target" ];
       };
       Service = {
+        # bin/handy matches the Cargo binary name (src-tauri/Cargo.toml).
         ExecStart = "${cfg.package}/bin/handy";
         Restart = "on-failure";
         RestartSec = 5;

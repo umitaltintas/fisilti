@@ -361,7 +361,7 @@ pub async fn capture_system_audio_test(seconds: u32) -> Result<String, String> {
         drop(stream);
 
         let out_path = std::env::temp_dir().join(format!(
-            "handy_system_audio_test_{}.wav",
+            "fisilti_system_audio_test_{}.wav",
             std::process::id()
         ));
         write_f32_wav(&out_path, &samples, sample_rate)
@@ -621,7 +621,7 @@ pub async fn capture_mixed_audio_test(seconds: u32) -> Result<String, String> {
         mixer.flush_into(&mut mixed);
 
         let out_path =
-            std::env::temp_dir().join(format!("handy_mixed_audio_test_{}.wav", std::process::id()));
+            std::env::temp_dir().join(format!("fisilti_mixed_audio_test_{}.wav", std::process::id()));
         write_f32_wav(&out_path, &mixed, WHISPER_SAMPLE_RATE)
             .map_err(|e| format!("Failed to write WAV: {}", e))?;
 

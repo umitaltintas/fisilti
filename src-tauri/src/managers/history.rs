@@ -723,7 +723,7 @@ mod tests {
                 post_process_requested
             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
-                format!("handy-{}.wav", timestamp),
+                format!("fisilti-{}.wav", timestamp),
                 timestamp,
                 false,
                 format!("Recording {}", timestamp),

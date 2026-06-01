@@ -1,4 +1,4 @@
-const HandyHand = ({
+const FisiltiMark = ({
   width,
   height,
   className,
@@ -34,4 +34,4 @@ const HandyHand = ({
   </svg>
 );
 
-export default HandyHand;
+export default FisiltiMark;

@@ -1,7 +1,7 @@
 // Audio mixer for meeting mode (Step 2), macOS-only.
 //
 // Combines a microphone stream and the Step-1 system-audio stream into a single
-// 16 kHz mono f32 stream suitable for handy's transcription seam
+// 16 kHz mono f32 stream suitable for Fısıltı's transcription seam
 // (`TranscriptionManager::transcribe(Vec<f32>)`).
 //
 // Design: resample-then-mix. Both sources are independently resampled to 16 kHz
@@ -14,7 +14,7 @@
 // proportional SOFT-SCALE (`sum / sum.abs()` when `|sum| > 1.0`), NOT a hard
 // clamp, matching meetily.
 //
-// This file is isolated from handy's dictation flow; it never touches the
+// This file is isolated from Fısıltı's dictation flow; it never touches the
 // `AudioRecordingManager` / `RecordingState` / `TranscriptionCoordinator`
 // singletons. The mic is captured via an independent cpal input stream.
 
@@ -178,7 +178,7 @@ pub struct MeetingMixer {
 }
 
 impl MeetingMixer {
-    /// Create a mixer producing output at handy's 16 kHz transcription rate.
+    /// Create a mixer producing output at Fısıltı's 16 kHz transcription rate.
     pub fn new() -> Self {
         Self {
             ring: AudioMixerRingBuffer::new(WHISPER_SAMPLE_RATE),

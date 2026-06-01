@@ -670,10 +670,16 @@ impl MeetingManager {
             }
         }
 
+        // Cross-channel echo removal: drop "you" segments that merely echo a
+        // nearby "others" segment (residual speaker leakage the live duck didn't
+        // fully suppress). Runs before the chronological sort/merge.
+        let final_segments = drop_cross_channel_echo(final_segments);
+
         // Only replace the live transcript if the finalize pass produced
         // something; otherwise keep the live preview as-is.
         let has_text = final_segments.iter().any(|s| !s.text.trim().is_empty());
         if has_text {
+            let mut final_segments = final_segments;
             final_segments.sort_by_key(|s| s.timestamp_ms);
             self.replace_transcript(final_segments);
         } else {
@@ -1106,9 +1112,9 @@ impl MeetingManager {
         let buf_dir = std::env::temp_dir();
         let pid = std::process::id();
         let stamp = now_epoch_ms();
-        let mic_buf_path = buf_dir.join(format!("handy_meeting_{}_{}_mic.f32", pid, stamp));
-        let system_buf_path = buf_dir.join(format!("handy_meeting_{}_{}_sys.f32", pid, stamp));
-        let mixed_buf_path = buf_dir.join(format!("handy_meeting_{}_{}_mix.f32", pid, stamp));
+        let mic_buf_path = buf_dir.join(format!("fisilti_meeting_{}_{}_mic.f32", pid, stamp));
+        let system_buf_path = buf_dir.join(format!("fisilti_meeting_{}_{}_sys.f32", pid, stamp));
+        let mixed_buf_path = buf_dir.join(format!("fisilti_meeting_{}_{}_mix.f32", pid, stamp));
         let mut mic_buf_writer = RawF32Writer::create(&mic_buf_path)
             .map_err(|e| format!("Failed to create mic buffer: {}", e))?;
         let mut system_buf_writer = RawF32Writer::create(&system_buf_path)
@@ -1425,17 +1431,29 @@ impl MeetingManager {
             echo_duck.observe_system(&sys_frames);
             if !mic_frames.is_empty() {
                 let ducked = echo_duck.apply(&mut mic_frames);
-                mic_highpass.process(&mut mic_frames);
-                if let Some(norm) = mic_norm.as_mut() {
-                    norm.process(&mut mic_frames);
-                }
-                let _ = mic_buf_writer.write(&mic_frames);
-                // While the mic is ducked (remote audio loud on speakers), skip
-                // feeding the mic VAD: the attenuated leakage shouldn't open a
-                // mic segment that duplicates what the system tap already has.
-                // Double-talk tradeoff: a quiet local interjection over loud
-                // playback may be missed — accepted to avoid duplicated text.
-                if !ducked {
+                if ducked {
+                    // Remote audio is loud on speakers → the mic frames are
+                    // (attenuated) echo of what the system tap already captured
+                    // cleanly. ZERO them in the buffer rather than writing the
+                    // attenuated leakage: the on-stop finalize pass re-VADs the
+                    // WHOLE mic buffer with no knowledge of live ducking, so any
+                    // residual leakage left here would be transcribed and
+                    // duplicated under the "you" label. Writing silence keeps the
+                    // mic buffer time-aligned (so real-speech timestamps stay
+                    // correct) while guaranteeing finalize can't resurrect the
+                    // echo. Mirrors skipping the live mic VAD below. Double-talk
+                    // tradeoff: a quiet local interjection over loud playback is
+                    // sacrificed — accepted to avoid the (worse) duplicated text.
+                    for s in mic_frames.iter_mut() {
+                        *s = 0.0;
+                    }
+                    let _ = mic_buf_writer.write(&mic_frames);
+                } else {
+                    mic_highpass.process(&mut mic_frames);
+                    if let Some(norm) = mic_norm.as_mut() {
+                        norm.process(&mut mic_frames);
+                    }
+                    let _ = mic_buf_writer.write(&mic_frames);
                     mic_proc.feed(&mic_frames, &seg_cfg, self);
                 }
             }
@@ -2194,6 +2212,107 @@ fn dedup_overlap(prev: &str, curr: &str) -> String {
     curr.to_string()
 }
 
+/// Maximum time gap (ms) between a mic segment and a system segment for the mic
+/// one to be considered a possible acoustic echo of the system one. Finalize
+/// windows are ~25-30 s and the two sources are segmented independently, so the
+/// same spoken passage can land in windows whose start timestamps differ by up
+/// to roughly one window length.
+#[cfg(target_os = "macos")]
+const CROSS_ECHO_MAX_GAP_MS: u64 = 35_000;
+/// Minimum normalized-token count for a mic segment to be eligible for
+/// cross-channel echo removal. Short utterances (e.g. "evet", "tamam") are NOT
+/// dropped even if they appear on both sides — a genuine local agreement with
+/// the remote party shouldn't be erased; only substantial verbatim copies are.
+#[cfg(target_os = "macos")]
+const CROSS_ECHO_MIN_TOKENS: usize = 6;
+/// Fraction of a mic segment's tokens that must also appear (in order, as a
+/// contiguous run) inside a nearby system segment for it to count as echo.
+#[cfg(target_os = "macos")]
+const CROSS_ECHO_CONTAINMENT: f32 = 0.8;
+
+/// CROSS-CHANNEL echo removal (complements the live echo duck + buffer zeroing).
+/// On speaker output the mic re-captures the remote party; the duck attenuates
+/// and the finalize buffer is zeroed while ducking, but residual leakage can
+/// survive around the duck's attack/release edges (and entirely when the output
+/// route is misdetected). This is a TEXT-level safety net: drop any `Mic`
+/// ("you") segment whose normalized tokens are largely contained, as a
+/// contiguous run, in a `System` ("others") segment occurring within
+/// `CROSS_ECHO_MAX_GAP_MS`. The system tap is the clean source, so the mic copy
+/// is the echo and is the one removed. Conservative by design (high containment
+/// threshold + minimum token count + time gate) so genuine local speech that
+/// merely echoes a phrase isn't erased.
+#[cfg(target_os = "macos")]
+fn drop_cross_channel_echo(segments: Vec<TranscriptSegment>) -> Vec<TranscriptSegment> {
+    // Pre-tokenize the system ("others") segments once.
+    let system: Vec<(u64, Vec<String>)> = segments
+        .iter()
+        .filter(|s| s.source == TranscriptSource::System)
+        .map(|s| {
+            (
+                s.timestamp_ms,
+                normalize_for_match(&s.text)
+                    .split_whitespace()
+                    .map(|w| w.to_string())
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .collect();
+
+    segments
+        .into_iter()
+        .filter(|seg| {
+            if seg.source != TranscriptSource::Mic {
+                return true; // never drop system segments
+            }
+            let mic_tokens: Vec<String> = normalize_for_match(&seg.text)
+                .split_whitespace()
+                .map(|w| w.to_string())
+                .collect();
+            if mic_tokens.len() < CROSS_ECHO_MIN_TOKENS {
+                return true; // too short to confidently call echo
+            }
+            // Keep the mic segment unless some nearby system segment contains a
+            // long-enough contiguous run of its tokens.
+            let is_echo = system.iter().any(|(sys_ts, sys_tokens)| {
+                let gap = seg.timestamp_ms.abs_diff(*sys_ts);
+                gap <= CROSS_ECHO_MAX_GAP_MS
+                    && longest_contiguous_run(&mic_tokens, sys_tokens) as f32
+                        >= CROSS_ECHO_CONTAINMENT * mic_tokens.len() as f32
+            });
+            !is_echo
+        })
+        .collect()
+}
+
+/// Longest run of `needle` tokens that appears as a contiguous subsequence of
+/// `haystack`. Used to detect a near-verbatim echo copy regardless of where in
+/// the (longer) system segment it sits.
+#[cfg(target_os = "macos")]
+fn longest_contiguous_run(needle: &[String], haystack: &[String]) -> usize {
+    if needle.is_empty() || haystack.is_empty() {
+        return 0;
+    }
+    let mut best = 0usize;
+    // For each possible alignment of needle's start within haystack, count how
+    // far they match contiguously.
+    for start in 0..haystack.len() {
+        let mut run = 0usize;
+        while run < needle.len()
+            && start + run < haystack.len()
+            && needle[run] == haystack[start + run]
+        {
+            run += 1;
+        }
+        if run > best {
+            best = run;
+            if best == needle.len() {
+                break;
+            }
+        }
+    }
+    best
+}
+
 /// Downsample a window of mixed samples into a fixed-length oscilloscope trace
 /// (averaging strided chunks, values in -1..1) and the peak absolute amplitude
 /// (0..1). Returns a flat zero trace when there are no samples.
@@ -2354,6 +2473,94 @@ mod tests {
         let curr = "epsilon zeta eta theta iota kappa lambda mu";
         let out = dedup_overlap(prev, curr);
         assert!(out.starts_with("iota"), "overlap words trimmed, got: {out}");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn cross_channel_echo_drops_mic_copy_of_nearby_system_segment() {
+        use super::{drop_cross_channel_echo, TranscriptSegment, TranscriptSource};
+        let system_text = "bu çeyrekte gelirimiz beklentilerin üzerinde gerçekleşti ve büyümeye devam ediyoruz";
+        let segs = vec![
+            TranscriptSegment {
+                text: system_text.to_string(),
+                timestamp_ms: 1_000,
+                source: TranscriptSource::System,
+            },
+            // Mic picked up the same remote speech (slight ASR drift) ~2 s later.
+            TranscriptSegment {
+                text: "bu çeyrekte gelirimiz beklentilerin üzerinde gerçekleşti ve büyümeye devam ediyoruz".to_string(),
+                timestamp_ms: 3_000,
+                source: TranscriptSource::Mic,
+            },
+        ];
+        let out = drop_cross_channel_echo(segs);
+        assert_eq!(out.len(), 1, "mic echo should be removed");
+        assert_eq!(out[0].source, TranscriptSource::System);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn cross_channel_echo_keeps_genuine_local_speech() {
+        use super::{drop_cross_channel_echo, TranscriptSegment, TranscriptSource};
+        let segs = vec![
+            TranscriptSegment {
+                text: "satış rakamlarını üçüncü çeyrek için paylaşabilir misin lütfen".to_string(),
+                timestamp_ms: 1_000,
+                source: TranscriptSource::System,
+            },
+            // Distinct local reply — not an echo, must be kept.
+            TranscriptSegment {
+                text: "tabii hemen ekranı paylaşıp grafikleri gösteriyorum".to_string(),
+                timestamp_ms: 4_000,
+                source: TranscriptSource::Mic,
+            },
+        ];
+        let out = drop_cross_channel_echo(segs);
+        assert_eq!(out.len(), 2, "distinct local speech must be preserved");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn cross_channel_echo_keeps_short_shared_phrases() {
+        use super::{drop_cross_channel_echo, TranscriptSegment, TranscriptSource};
+        let segs = vec![
+            TranscriptSegment {
+                text: "evet kesinlikle".to_string(),
+                timestamp_ms: 1_000,
+                source: TranscriptSource::System,
+            },
+            // Short agreement on both sides is below the token floor → kept.
+            TranscriptSegment {
+                text: "evet kesinlikle".to_string(),
+                timestamp_ms: 2_000,
+                source: TranscriptSource::Mic,
+            },
+        ];
+        let out = drop_cross_channel_echo(segs);
+        assert_eq!(out.len(), 2, "short shared phrases must not be dropped");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn cross_channel_echo_keeps_distant_match() {
+        use super::{drop_cross_channel_echo, TranscriptSegment, TranscriptSource};
+        let text = "bu çeyrekte gelirimiz beklentilerin üzerinde gerçekleşti ve büyümeye devam ediyoruz";
+        let segs = vec![
+            TranscriptSegment {
+                text: text.to_string(),
+                timestamp_ms: 1_000,
+                source: TranscriptSource::System,
+            },
+            // Same words but far apart in time (>35 s) → treated as a real repeat,
+            // not acoustic echo, so kept.
+            TranscriptSegment {
+                text: text.to_string(),
+                timestamp_ms: 90_000,
+                source: TranscriptSource::Mic,
+            },
+        ];
+        let out = drop_cross_channel_echo(segs);
+        assert_eq!(out.len(), 2, "matches outside the echo time window are kept");
     }
 
     #[test]

@@ -310,3 +310,122 @@ pub fn is_recording(app: AppHandle) -> bool {
     let audio_manager = app.state::<Arc<AudioRecordingManager>>();
     audio_manager.is_recording()
 }
+
+/// Meeting mode (Step 1) test: capture `seconds` of system audio via the
+/// CoreAudio tap and write it to a 32-bit float WAV in the temp dir. Returns the
+/// output path.
+///
+/// On macOS this triggers the Audio-Capture permission dialog on first run
+/// (NSAudioCaptureUsageDescription, macOS 14.4+). Must run inside the bundled
+/// app for the permission to be granted. This command is isolated from the
+/// existing dictation flow.
+#[tauri::command]
+#[specta::specta]
+pub async fn capture_system_audio_test(seconds: u32) -> Result<String, String> {
+    #[cfg(target_os = "macos")]
+    {
+        use crate::audio_toolkit::audio::SystemAudioCapture;
+        use futures_util::StreamExt;
+        use std::time::{Duration, Instant};
+
+        let seconds = seconds.max(1);
+
+        let mut stream =
+            SystemAudioCapture::start().map_err(|e| format!("Failed to start capture: {}", e))?;
+        let sample_rate = stream.sample_rate();
+        log::info!(
+            "capture_system_audio_test: capturing {}s at {} Hz",
+            seconds,
+            sample_rate
+        );
+
+        let target = (sample_rate as u64).saturating_mul(seconds as u64) as usize;
+        let deadline = Instant::now() + Duration::from_secs(seconds as u64 + 5);
+        let mut samples: Vec<f32> = Vec::with_capacity(target);
+
+        while samples.len() < target {
+            if Instant::now() >= deadline {
+                log::warn!(
+                    "capture_system_audio_test: hit deadline with {} samples",
+                    samples.len()
+                );
+                break;
+            }
+            match stream.next().await {
+                Some(s) => samples.push(s),
+                None => break,
+            }
+        }
+
+        // Drop the stream to tear down the CoreAudio tap before writing.
+        drop(stream);
+
+        let out_path = std::env::temp_dir().join(format!(
+            "handy_system_audio_test_{}.wav",
+            std::process::id()
+        ));
+        write_f32_wav(&out_path, &samples, sample_rate)
+            .map_err(|e| format!("Failed to write WAV: {}", e))?;
+
+        let peak = samples.iter().fold(0.0f32, |m, &s| m.max(s.abs()));
+        log::info!(
+            "capture_system_audio_test: wrote {} samples to {:?} (peak amplitude {:.4})",
+            samples.len(),
+            out_path,
+            peak
+        );
+
+        Ok(out_path.to_string_lossy().to_string())
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = seconds;
+        Err("System audio capture is only supported on macOS".to_string())
+    }
+}
+
+/// Write mono f32 samples as a 32-bit float PCM WAV (format tag 3) with a
+/// manually constructed 44-byte header. Avoids pulling extra crates.
+#[cfg(target_os = "macos")]
+fn write_f32_wav(
+    path: &std::path::Path,
+    samples: &[f32],
+    sample_rate: u32,
+) -> std::io::Result<()> {
+    use std::io::Write;
+
+    let channels: u16 = 1;
+    let bits_per_sample: u16 = 32;
+    let block_align: u16 = channels * (bits_per_sample / 8);
+    let byte_rate: u32 = sample_rate * block_align as u32;
+    let data_bytes: u32 = (samples.len() * std::mem::size_of::<f32>()) as u32;
+    let riff_chunk_size: u32 = 36 + data_bytes;
+
+    let mut f = std::io::BufWriter::new(std::fs::File::create(path)?);
+
+    // RIFF header
+    f.write_all(b"RIFF")?;
+    f.write_all(&riff_chunk_size.to_le_bytes())?;
+    f.write_all(b"WAVE")?;
+
+    // fmt chunk (16 bytes, format tag 3 = IEEE float)
+    f.write_all(b"fmt ")?;
+    f.write_all(&16u32.to_le_bytes())?;
+    f.write_all(&3u16.to_le_bytes())?; // audio format: 3 = IEEE float
+    f.write_all(&channels.to_le_bytes())?;
+    f.write_all(&sample_rate.to_le_bytes())?;
+    f.write_all(&byte_rate.to_le_bytes())?;
+    f.write_all(&block_align.to_le_bytes())?;
+    f.write_all(&bits_per_sample.to_le_bytes())?;
+
+    // data chunk
+    f.write_all(b"data")?;
+    f.write_all(&data_bytes.to_le_bytes())?;
+    for &s in samples {
+        f.write_all(&s.to_le_bytes())?;
+    }
+
+    f.flush()?;
+    Ok(())
+}

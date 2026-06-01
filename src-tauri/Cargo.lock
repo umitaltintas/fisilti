@@ -774,6 +774,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "cidre"
+version = "0.11.3"
+source = "git+https://github.com/yury/cidre?rev=a9587fa#a9587fa1d4ff6f0d5d082849ae7c62880fd739f7"
+dependencies = [
+ "cidre-macros",
+ "half",
+ "parking_lot",
+ "tokio",
+]
+
+[[package]]
+name = "cidre-macros"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "82bc2f84c0baaa09299da3a03864491549685912c1e338a54211e00589dc1e4c"
+
+[[package]]
 name = "clang-sys"
 version = "1.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2417,12 +2434,14 @@ version = "0.7.12"
 dependencies = [
  "anyhow",
  "chrono",
+ "cidre",
  "clap",
  "cpal",
  "enigo",
  "env_filter",
  "ferrous-opencc",
  "flate2",
+ "futures-channel",
  "futures-util",
  "gtk",
  "gtk-layer-shell",
@@ -2430,10 +2449,12 @@ dependencies = [
  "hound",
  "log",
  "natural",
+ "objc",
  "once_cell",
  "rdev 0.5.0-2",
  "regex",
  "reqwest 0.12.28",
+ "ringbuf",
  "rodio",
  "rubato",
  "rusqlite",
@@ -4981,6 +5002,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ringbuf"
+version = "0.4.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fe47b720588c8702e34b5979cb3271a8b1842c7cb6f57408efa70c779363488c"
+dependencies = [
+ "crossbeam-utils",
+ "portable-atomic",
+ "portable-atomic-util",
+]
+
+[[package]]
 name = "ringbuffer"
 version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6769,6 +6801,7 @@ dependencies = [
  "libc",
  "mio 1.1.1",
  "pin-project-lite",
+ "signal-hook-registry",
  "socket2",
  "tokio-macros",
  "windows-sys 0.61.2",

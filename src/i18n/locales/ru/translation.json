@@ -623,6 +623,7 @@
     "loadError": "Failed to load meeting",
     "summary": "Summary",
     "copySummary": "Copy summary",
-    "noSummary": "No summary for this meeting."
+    "noSummary": "No summary for this meeting.",
+    "signal": "Сигнал"
   }
 }

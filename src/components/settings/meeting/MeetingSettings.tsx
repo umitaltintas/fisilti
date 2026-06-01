@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "../../ui/Button";
+import { MeetingSignal } from "./MeetingSignal";
 import {
   deleteMeeting,
   getMeeting,
@@ -340,6 +341,8 @@ export const MeetingSettings: React.FC = () => {
               {error}
             </p>
           )}
+
+          {isRunning && <MeetingSignal active={isRunning} />}
         </div>
       </div>
 

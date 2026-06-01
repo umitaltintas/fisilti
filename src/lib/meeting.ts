@@ -24,6 +24,18 @@ export interface MeetingTranscriptUpdate {
   full_transcript: string;
 }
 
+/** Payload of the `"meeting-audio-level"` event. Mirrors Rust
+ * `MeetingAudioLevel`. Emitted throttled (~20 fps) while a meeting records;
+ * a flat (zeros) event is emitted when silent or stopped. */
+export interface MeetingAudioLevel {
+  /** 16 level-bar values, each in 0..1. */
+  bars: number[];
+  /** 96 oscilloscope waveform samples, each in -1..1. */
+  wave: number[];
+  /** Overall peak amplitude, 0..1. */
+  peak: number;
+}
+
 export type MeetingStatus = "idle" | "running";
 
 /** Lightweight row for the past-meetings list. Mirrors Rust `MeetingListItem`
@@ -59,6 +71,7 @@ export interface MeetingRecord {
 }
 
 const MEETING_TRANSCRIPT_UPDATE = "meeting-transcript-update";
+const MEETING_AUDIO_LEVEL = "meeting-audio-level";
 
 /** Begin a capture + mix + VAD + transcribe meeting session (macOS). */
 export function startMeeting(): Promise<void> {
@@ -108,6 +121,17 @@ export function listenMeetingTranscript(
   cb: (update: MeetingTranscriptUpdate) => void,
 ): Promise<UnlistenFn> {
   return listen<MeetingTranscriptUpdate>(MEETING_TRANSCRIPT_UPDATE, (event) => {
+    cb(event.payload);
+  });
+}
+
+/** Subscribe to live audio-level updates (oscilloscope wave + level bars +
+ * peak), emitted throttled (~20 fps) while a meeting is recording. Returns a
+ * promise resolving to the unlisten function (call it to clean up). */
+export function listenMeetingAudioLevel(
+  cb: (lvl: MeetingAudioLevel) => void,
+): Promise<UnlistenFn> {
+  return listen<MeetingAudioLevel>(MEETING_AUDIO_LEVEL, (event) => {
     cb(event.payload);
   });
 }

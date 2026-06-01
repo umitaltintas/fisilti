@@ -10,6 +10,7 @@ mod helpers;
 mod input;
 mod llm_client;
 mod managers;
+mod meeting;
 mod overlay;
 pub mod portable;
 mod settings;
@@ -156,6 +157,13 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     let history_manager =
         Arc::new(HistoryManager::new(app_handle).expect("Failed to initialize history manager"));
 
+    // Meeting mode (Step 3): continuous meeting session manager. Reuses the
+    // transcription manager but is otherwise isolated from the dictation flow.
+    let meeting_manager = Arc::new(meeting::MeetingManager::new(
+        app_handle,
+        transcription_manager.clone(),
+    ));
+
     // Apply accelerator preferences before any model loads
     managers::transcription::apply_accelerator_settings(app_handle);
 
@@ -164,6 +172,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(model_manager.clone());
     app_handle.manage(transcription_manager.clone());
     app_handle.manage(history_manager.clone());
+    app_handle.manage(meeting_manager.clone());
 
     // Note: Shortcuts are NOT initialized here.
     // The frontend is responsible for calling the `initialize_shortcuts` command
@@ -413,6 +422,10 @@ pub fn run(cli_args: CliArgs) {
             commands::audio::is_recording,
             commands::audio::capture_system_audio_test,
             commands::audio::capture_mixed_audio_test,
+            commands::meeting::start_meeting,
+            commands::meeting::stop_meeting,
+            commands::meeting::get_meeting_transcript,
+            commands::meeting::get_meeting_status,
             commands::transcription::set_model_unload_timeout,
             commands::transcription::get_model_load_status,
             commands::transcription::unload_model_manually,

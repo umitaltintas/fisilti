@@ -346,11 +346,28 @@ impl MeetingManager {
         // --- VAD setup (dedicated instance, NOT shared with dictation) ---
         const VAD_FRAME_SAMPLES: usize = (WHISPER_SAMPLE_RATE as usize * 30) / 1000; // 480 samples / 30 ms
 
+        // ----- Meeting VAD segmentation tuning (WIDER / fewer segments) -----
+        // These are intentionally more generous than dictation's SmoothedVad so a
+        // speaker's brief pauses don't shatter an utterance into many tiny blocks.
+        //
+        // Pre-roll captured before speech onset (~450 ms). Same as dictation.
+        const VAD_PREFILL_FRAMES: usize = 15;
+        // Silence tail tolerated before a segment ends: 40 frames * 30 ms = 1200 ms.
+        // (Dictation uses 15 ≈ 450 ms.) Pauses shorter than this stay in one segment.
+        const VAD_HANGOVER_FRAMES: usize = 40;
+        // Consecutive voice frames required to (re)enter speech. Same as dictation.
+        const VAD_ONSET_FRAMES: usize = 2;
         // Max samples per segment before forced flush (~22 s) so a continuous
         // talker still gets periodic transcription.
         const MAX_SEGMENT_SAMPLES: usize = WHISPER_SAMPLE_RATE as usize * 22;
-        // Minimum segment length worth transcribing (~200 ms) to skip blips.
-        const MIN_SEGMENT_SAMPLES: usize = WHISPER_SAMPLE_RATE as usize / 5;
+        // Minimum segment length worth transcribing (~400 ms) to skip blips. Raised
+        // from ~200 ms so very short noise bursts don't become standalone segments.
+        const MIN_SEGMENT_SAMPLES: usize = (WHISPER_SAMPLE_RATE as usize * 2) / 5;
+        // If a new segment starts within this gap of the previous one's END, merge
+        // them into a single transcript block instead of pushing separately
+        // (~800 ms). Belt-and-suspenders on top of the longer hangover, and also
+        // bridges the gap created by MAX_SEGMENT_SAMPLES forced flushes.
+        const SEGMENT_MERGE_GAP_SAMPLES: u64 = (WHISPER_SAMPLE_RATE as u64 * 4) / 5;
 
         // --- Live audio-level visualizer (SEPARATE from dictation mic-level) ---
         // Reuse the same AudioVisualiser config dictation uses for `bars`.
@@ -386,9 +403,14 @@ impl MeetingManager {
 
         let silero = SileroVad::new(&vad_path, 0.3)
             .map_err(|e| format!("Failed to create SileroVad for meeting: {}", e))?;
-        // prefill=15, hangover=15 (~450 ms silence tail), onset=2 — same shape as
-        // dictation's SmoothedVad, but a separate instance.
-        let mut vad: SmoothedVad = SmoothedVad::new(Box::new(silero), 15, 15, 2);
+        // Dedicated SmoothedVad instance tuned for WIDER meeting segments (see
+        // the VAD_* consts above). NOT shared with dictation.
+        let mut vad: SmoothedVad = SmoothedVad::new(
+            Box::new(silero),
+            VAD_PREFILL_FRAMES,
+            VAD_HANGOVER_FRAMES,
+            VAD_ONSET_FRAMES,
+        );
 
         // --- Mic capture on a dedicated thread (independent cpal stream) ---
         let (mic_tx, mic_rx) = mpsc::channel::<Vec<f32>>();
@@ -581,6 +603,11 @@ impl MeetingManager {
         let mut total_samples: u64 = 0;
         // Sample index (since session start) where the current segment began.
         let mut segment_start_samples: u64 = 0;
+        // Pending (already-finished) segment audio + start, held back so the NEXT
+        // segment can be merged into it if it starts within SEGMENT_MERGE_GAP.
+        let mut pending: Option<(Vec<f32>, u64)> = None;
+        // Sample index where the pending segment's audio ended.
+        let mut pending_end_samples: u64 = 0;
 
         loop {
             if self.stop_signal.load(Ordering::Relaxed) {
@@ -640,14 +667,30 @@ impl MeetingManager {
 
                             // Forced flush for a very long continuous talker.
                             if segment.len() >= MAX_SEGMENT_SAMPLES {
-                                self.flush_segment(&mut segment, segment_start_samples);
+                                finish_segment(
+                                    self,
+                                    &mut segment,
+                                    segment_start_samples,
+                                    total_samples,
+                                    &mut pending,
+                                    &mut pending_end_samples,
+                                    SEGMENT_MERGE_GAP_SAMPLES,
+                                );
                             }
                         }
                         Ok(VadFrame::Noise) => {
                             // Silence past hangover -> end of segment.
                             if !segment.is_empty() {
                                 if segment.len() >= MIN_SEGMENT_SAMPLES {
-                                    self.flush_segment(&mut segment, segment_start_samples);
+                                    finish_segment(
+                                        self,
+                                        &mut segment,
+                                        segment_start_samples,
+                                        total_samples,
+                                        &mut pending,
+                                        &mut pending_end_samples,
+                                        SEGMENT_MERGE_GAP_SAMPLES,
+                                    );
                                 } else {
                                     segment.clear();
                                 }
@@ -694,9 +737,22 @@ impl MeetingManager {
             }
         }
 
-        // Flush the final in-progress segment regardless of min length.
+        // Flush the final in-progress segment regardless of min length, merging
+        // into any pending segment as usual.
         if !segment.is_empty() {
-            self.flush_segment(&mut segment, segment_start_samples);
+            finish_segment(
+                self,
+                &mut segment,
+                segment_start_samples,
+                total_samples,
+                &mut pending,
+                &mut pending_end_samples,
+                SEGMENT_MERGE_GAP_SAMPLES,
+            );
+        }
+        // Flush whatever remains buffered for merging.
+        if let Some((mut audio, start)) = pending.take() {
+            self.flush_segment(&mut audio, start);
         }
 
         // Emit one final flat level so the visualiser settles to a flat line.
@@ -726,6 +782,54 @@ impl MeetingManager {
             Err(e) => {
                 log::warn!("meeting segment transcription failed: {}", e);
             }
+        }
+    }
+}
+
+/// Finish the current in-progress `segment`, either merging it into the
+/// `pending` (already-finished) segment when they are separated by only a short
+/// gap, or flushing the previous pending and making this one the new pending.
+///
+/// Merging keeps the audio contiguous by inserting `gap` samples of silence so
+/// the merged transcript reads naturally. `pending` is held back (not yet
+/// transcribed) so a subsequent close segment can still merge into it; the
+/// caller flushes the final pending on teardown.
+#[cfg(target_os = "macos")]
+#[allow(clippy::too_many_arguments)]
+fn finish_segment(
+    manager: &MeetingManager,
+    segment: &mut Vec<f32>,
+    segment_start: u64,
+    segment_end: u64,
+    pending: &mut Option<(Vec<f32>, u64)>,
+    pending_end: &mut u64,
+    merge_gap: u64,
+) {
+    if segment.is_empty() {
+        return;
+    }
+    let audio = std::mem::take(segment);
+
+    match pending.take() {
+        Some((mut prev_audio, prev_start)) => {
+            let gap = segment_start.saturating_sub(*pending_end);
+            if gap <= merge_gap {
+                // Close enough: merge into the pending segment, bridging the gap
+                // with silence so timing stays roughly aligned.
+                prev_audio.extend(std::iter::repeat(0.0).take(gap as usize));
+                prev_audio.extend_from_slice(&audio);
+                *pending = Some((prev_audio, prev_start));
+                *pending_end = segment_end;
+            } else {
+                // Too far apart: flush the previous block, start a new pending.
+                manager.flush_segment(&mut prev_audio, prev_start);
+                *pending = Some((audio, segment_start));
+                *pending_end = segment_end;
+            }
+        }
+        None => {
+            *pending = Some((audio, segment_start));
+            *pending_end = segment_end;
         }
     }
 }

@@ -624,6 +624,13 @@
     "summary": "Summary",
     "copySummary": "Copy summary",
     "noSummary": "No summary for this meeting.",
-    "signal": "Sinyal"
+    "signal": "Sinyal",
+    "speakerYou": "Sen",
+    "speakerOthers": "Karşı taraf",
+    "finalizing": "Transkript sonlandırılıyor…",
+    "livePreview": "Canlı önizleme",
+    "autoSummarize": "Toplantı bitince otomatik özetle",
+    "audio": "Ses",
+    "noAudio": "Bu toplantı için ses kaydı yok."
   }
 }

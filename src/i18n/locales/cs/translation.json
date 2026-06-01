@@ -624,6 +624,13 @@
     "summary": "Summary",
     "copySummary": "Copy summary",
     "noSummary": "No summary for this meeting.",
-    "signal": "Signál"
+    "signal": "Signál",
+    "speakerYou": "You",
+    "speakerOthers": "Others",
+    "finalizing": "Finalizing transcript…",
+    "livePreview": "Live preview",
+    "autoSummarize": "Auto-summarize when the meeting ends",
+    "audio": "Audio",
+    "noAudio": "No audio recording available for this meeting."
   }
 }

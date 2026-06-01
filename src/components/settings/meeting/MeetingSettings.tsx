@@ -1,9 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { convertFileSrc } from "@tauri-apps/api/core";
+import type { UnlistenFn } from "@tauri-apps/api/event";
 import {
   ArrowLeft,
   Check,
   Copy,
+  Loader2,
   Mic,
   Sparkles,
   Square,
@@ -13,11 +16,16 @@ import {
 import { Button } from "../../ui/Button";
 import { MeetingSignal } from "./MeetingSignal";
 import {
+  changeMeetingAutoSummarize,
   deleteMeeting,
   getMeeting,
+  getMeetingAudioPath,
+  getMeetingAutoSummarize,
   getMeetingStatus,
   getMeetingTranscript,
   listMeetings,
+  listenMeetingFinalizing,
+  listenMeetingSummary,
   listenMeetingTranscript,
   startMeeting,
   stopMeeting,
@@ -25,6 +33,8 @@ import {
   type MeetingListItem,
   type MeetingRecord,
   type MeetingStatus,
+  type TranscriptSegment,
+  type TranscriptSource,
 } from "@/lib/meeting";
 
 const CopyButton: React.FC<{
@@ -56,6 +66,59 @@ const CopyButton: React.FC<{
     </button>
   );
 };
+
+// A speaker "chip" + body for a single labeled transcript segment. "You"
+// (mic / local speaker) is accented and aligned right; "others" (system /
+// remote) is neutral and aligned left, so the two sides read like a chat.
+const SpeakerSegment: React.FC<{
+  source: TranscriptSource;
+  text: string;
+  t: (key: string) => string;
+}> = ({ source, text, t }) => {
+  const isYou = source === "you";
+  const label = isYou ? t("meeting.speakerYou") : t("meeting.speakerOthers");
+  return (
+    <div className={`flex ${isYou ? "justify-end" : "justify-start"}`}>
+      <div
+        className={`max-w-[85%] min-w-0 flex flex-col gap-1 ${
+          isYou ? "items-end" : "items-start"
+        }`}
+      >
+        <span
+          className={`text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded ${
+            isYou
+              ? "bg-logo-primary/15 text-logo-primary"
+              : "bg-mid-gray/15 text-mid-gray"
+          }`}
+        >
+          {label}
+        </span>
+        <p
+          className={`text-sm whitespace-pre-wrap break-words select-text rounded-lg px-3 py-2 ${
+            isYou
+              ? "bg-logo-primary/10 text-text/90"
+              : "bg-mid-gray/10 text-text/90"
+          }`}
+        >
+          {text}
+        </p>
+      </div>
+    </div>
+  );
+};
+
+// Render a list of labeled segments as a chat-like transcript. Falls back to
+// nothing when there are no segments (callers handle the empty/plain case).
+const SpeakerTranscript: React.FC<{
+  segments: TranscriptSegment[];
+  t: (key: string) => string;
+}> = ({ segments, t }) => (
+  <div className="space-y-3">
+    {segments.map((seg, i) => (
+      <SpeakerSegment key={i} source={seg.source} text={seg.text} t={t} />
+    ))}
+  </div>
+);
 
 function formatElapsed(seconds: number): string {
   const mins = Math.floor(seconds / 60);
@@ -97,6 +160,11 @@ export const MeetingSettings: React.FC = () => {
 
   const [status, setStatus] = useState<MeetingStatus>("idle");
   const [transcript, setTranscript] = useState("");
+  // Accumulated labeled segments for the live (and final) transcript so we can
+  // render per-source speaker labels. Replaced wholesale by the polished list
+  // when the finalize pass completes.
+  const [liveSegments, setLiveSegments] = useState<TranscriptSegment[]>([]);
+  const [finalizing, setFinalizing] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -104,6 +172,7 @@ export const MeetingSettings: React.FC = () => {
   const [notes, setNotes] = useState("");
   const [summarizing, setSummarizing] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
+  const [autoSummarize, setAutoSummarize] = useState(false);
 
   // Past meetings list + detail view.
   const [pastMeetings, setPastMeetings] = useState<MeetingListItem[]>([]);
@@ -144,10 +213,14 @@ export const MeetingSettings: React.FC = () => {
 
   // Reflect an already-running session on mount and subscribe to updates.
   useEffect(() => {
-    let unlisten: (() => void) | undefined;
     let cancelled = false;
 
     void loadPastMeetings();
+
+    // Read the persisted auto-summarize setting (raw get_app_settings).
+    void getMeetingAutoSummarize().then((v) => {
+      if (!cancelled) setAutoSummarize(v);
+    });
 
     (async () => {
       try {
@@ -167,23 +240,42 @@ export const MeetingSettings: React.FC = () => {
       }
     })();
 
-    listenMeetingTranscript((update) => {
-      setTranscript(update.full_transcript);
-    })
-      .then((fn) => {
-        if (cancelled) {
-          fn();
-        } else {
-          unlisten = fn;
-        }
-      })
-      .catch((e) => {
+    const unlisteners: UnlistenFn[] = [];
+    const register = (p: Promise<UnlistenFn>) => {
+      p.then((fn) => {
+        if (cancelled) fn();
+        else unlisteners.push(fn);
+      }).catch((e) => {
         if (!cancelled) setError(String(e));
       });
+    };
+
+    register(
+      listenMeetingTranscript((update) => {
+        setTranscript(update.full_transcript);
+        // Accumulate labeled segments for the live preview. The on-stop
+        // finalize pass replaces the full transcript text but only re-emits
+        // the LAST segment, so the polished labeled list is re-fetched from
+        // the saved record in handleStop; here we just append live segments.
+        setLiveSegments((prev) => [...prev, update.segment]);
+      }),
+    );
+
+    register(
+      listenMeetingFinalizing((value) => {
+        setFinalizing(value);
+      }),
+    );
+
+    register(
+      listenMeetingSummary((summary) => {
+        setNotes(summary);
+      }),
+    );
 
     return () => {
       cancelled = true;
-      if (unlisten) unlisten();
+      for (const fn of unlisteners) fn();
       stopTimer();
     };
   }, [startTimer, stopTimer, loadPastMeetings]);
@@ -194,7 +286,7 @@ export const MeetingSettings: React.FC = () => {
     if (el) {
       el.scrollTop = el.scrollHeight;
     }
-  }, [transcript]);
+  }, [transcript, liveSegments]);
 
   const handleStart = async () => {
     setError(null);
@@ -204,6 +296,8 @@ export const MeetingSettings: React.FC = () => {
       setNotes("");
       setSummaryError(null);
       setTranscript("");
+      setLiveSegments([]);
+      setFinalizing(false);
       setElapsed(0);
       setStatus("running");
       startTimer();
@@ -218,16 +312,45 @@ export const MeetingSettings: React.FC = () => {
     setError(null);
     setBusy(true);
     try {
+      // stopMeeting() resolves only after the finalize pass + persistence,
+      // returning the polished full transcript. The finalize pass re-emits
+      // only the last labeled segment, so to render the polished, interleaved
+      // labeled transcript we re-fetch the just-saved record's segments.
       const finalTranscript = await stopMeeting();
       setTranscript(finalTranscript);
       setStatus("idle");
       stopTimer();
-      // A new meeting was just saved; refresh the past-meetings list.
-      void loadPastMeetings();
+      // A new meeting was just saved; refresh the past-meetings list and pull
+      // its polished labeled segments to replace the live preview.
+      const items = await listMeetings().catch(() => [] as MeetingListItem[]);
+      setPastMeetings(items);
+      const newest = items[0];
+      if (newest) {
+        try {
+          const record = await getMeeting(newest.id);
+          if (record.segments.length > 0) {
+            setLiveSegments(record.segments);
+          }
+        } catch {
+          // Best-effort: keep the accumulated live segments as a fallback.
+        }
+      }
     } catch (e) {
       setError(String(e));
     } finally {
       setBusy(false);
+    }
+  };
+
+  const handleToggleAutoSummarize = async () => {
+    const next = !autoSummarize;
+    setAutoSummarize(next);
+    try {
+      await changeMeetingAutoSummarize(next);
+    } catch (e) {
+      // Revert the optimistic toggle on failure.
+      setAutoSummarize(!next);
+      setSummaryError(String(e));
     }
   };
 
@@ -342,6 +465,30 @@ export const MeetingSettings: React.FC = () => {
             </p>
           )}
 
+          <label className="flex items-center gap-2.5 cursor-pointer select-none">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={autoSummarize}
+              onClick={handleToggleAutoSummarize}
+              className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                autoSummarize ? "bg-logo-primary" : "bg-mid-gray/30"
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                  autoSummarize ? "translate-x-4" : "translate-x-0.5"
+                }`}
+              />
+            </button>
+            <span
+              className="text-sm text-text/80"
+              onClick={handleToggleAutoSummarize}
+            >
+              {t("meeting.autoSummarize")}
+            </span>
+          </label>
+
           {isRunning && <MeetingSignal active={isRunning} />}
         </div>
       </div>
@@ -364,27 +511,44 @@ export const MeetingSettings: React.FC = () => {
               <h2 className="text-xs font-medium text-mid-gray uppercase tracking-wide">
                 {t("meeting.transcript")}
               </h2>
-              <CopyButton
-                onCopy={copyTranscript}
-                disabled={!hasTranscript}
-                title={t("meeting.copyTranscript")}
-                copiedTitle={t("meeting.copied")}
-              />
+              <div className="flex items-center gap-2">
+                {isRunning && (
+                  <span className="text-[10px] font-medium uppercase tracking-wide text-text/40">
+                    {t("meeting.livePreview")}
+                  </span>
+                )}
+                <CopyButton
+                  onCopy={copyTranscript}
+                  disabled={!hasTranscript}
+                  title={t("meeting.copyTranscript")}
+                  copiedTitle={t("meeting.copied")}
+                />
+              </div>
             </div>
-            <div
-              ref={transcriptRef}
-              className="bg-background border border-mid-gray/20 rounded-lg p-4 h-64 overflow-y-auto"
-            >
-              {hasTranscript ? (
-                <p className="text-sm text-text/90 whitespace-pre-wrap break-words select-text">
-                  {transcript}
-                </p>
-              ) : (
-                <p className="text-sm text-text/40">
-                  {isRunning
-                    ? t("meeting.listening")
-                    : t("meeting.transcriptEmpty")}
-                </p>
+            <div className="relative">
+              <div
+                ref={transcriptRef}
+                className="bg-background border border-mid-gray/20 rounded-lg p-4 h-64 overflow-y-auto"
+              >
+                {liveSegments.length > 0 ? (
+                  <SpeakerTranscript segments={liveSegments} t={t} />
+                ) : hasTranscript ? (
+                  <p className="text-sm text-text/90 whitespace-pre-wrap break-words select-text">
+                    {transcript}
+                  </p>
+                ) : (
+                  <p className="text-sm text-text/40">
+                    {isRunning
+                      ? t("meeting.listening")
+                      : t("meeting.transcriptEmpty")}
+                  </p>
+                )}
+              </div>
+              {finalizing && (
+                <div className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-2 rounded-b-lg border-t border-mid-gray/20 bg-background/95 py-2 text-sm text-text/70 backdrop-blur-sm">
+                  <Loader2 width={15} height={15} className="animate-spin" />
+                  <span>{t("meeting.finalizing")}</span>
+                </div>
               )}
             </div>
           </div>
@@ -585,7 +749,31 @@ const MeetingDetailView: React.FC<MeetingDetailViewProps> = ({
     ? detail.title.trim() || t("meeting.untitledMeeting")
     : "";
   const hasTranscript = !!detail && detail.transcript.trim().length > 0;
+  const labeledSegments = detail?.segments ?? [];
+  const hasLabeledSegments = labeledSegments.length > 0;
   const summary = detail?.summary?.trim() ?? "";
+
+  // Resolve a playable audio URL for the saved recording, if any. Older
+  // meetings have no `audio_path`; we ask the backend for the absolute path
+  // and wrap it with convertFileSrc so the asset protocol can serve it.
+  const [audioSrc, setAudioSrc] = useState<string | null>(null);
+  const detailId = detail?.id;
+  const detailHasAudioPath = !!detail?.audio_path;
+  useEffect(() => {
+    let cancelled = false;
+    setAudioSrc(null);
+    if (detailId == null || !detailHasAudioPath) return;
+    getMeetingAudioPath(detailId)
+      .then((path) => {
+        if (!cancelled) setAudioSrc(convertFileSrc(path));
+      })
+      .catch(() => {
+        // Audio missing or unreadable; fall back to the no-audio hint.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [detailId, detailHasAudioPath]);
 
   return (
     <div className="space-y-2">
@@ -639,7 +827,9 @@ const MeetingDetailView: React.FC<MeetingDetailViewProps> = ({
                   copiedTitle={t("meeting.copied")}
                 />
               </div>
-              {hasTranscript ? (
+              {hasLabeledSegments ? (
+                <SpeakerTranscript segments={labeledSegments} t={t} />
+              ) : hasTranscript ? (
                 <p className="text-sm text-text/90 whitespace-pre-wrap break-words select-text">
                   {detail.transcript}
                 </p>
@@ -647,6 +837,22 @@ const MeetingDetailView: React.FC<MeetingDetailViewProps> = ({
                 <p className="text-sm text-text/40">
                   {t("meeting.transcriptEmpty")}
                 </p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <h2 className="text-xs font-medium text-mid-gray uppercase tracking-wide">
+                {t("meeting.audio")}
+              </h2>
+              {audioSrc ? (
+                <audio
+                  controls
+                  src={audioSrc}
+                  className="w-full"
+                  preload="metadata"
+                />
+              ) : (
+                <p className="text-sm text-text/40">{t("meeting.noAudio")}</p>
               )}
             </div>
 

@@ -8,12 +8,19 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
+/** Which captured source produced a transcript segment. `"you"` is the local
+ * microphone / local speaker; `"others"` is system / remote audio. */
+export type TranscriptSource = "you" | "others";
+
 /** A single transcribed speech segment. Mirrors Rust `TranscriptSegment`. */
 export interface TranscriptSegment {
   /** Cleaned transcript text for this segment. */
   text: string;
   /** Milliseconds since the meeting session started. */
   timestamp_ms: number;
+  /** Which captured source produced this segment (mic = "you",
+   * system = "others"). */
+  source: TranscriptSource;
 }
 
 /** Payload of the `"meeting-transcript-update"` event. Mirrors Rust
@@ -68,10 +75,23 @@ export interface MeetingRecord {
   summary: string | null;
   /** Epoch milliseconds. */
   created_at: number;
+  /** Absolute path to the saved mixed-audio file, if one exists. Older
+   * meetings recorded before audio persistence have no audio. */
+  audio_path?: string | null;
+}
+
+/** Payload of the `"meeting-finalizing"` event. Mirrors Rust
+ * `MeetingFinalizing`. Emitted `true` right after Stop while the high-quality
+ * full-audio re-transcription runs, then `false` once the polished final
+ * transcript has replaced the live preview. */
+export interface MeetingFinalizing {
+  finalizing: boolean;
 }
 
 const MEETING_TRANSCRIPT_UPDATE = "meeting-transcript-update";
 const MEETING_AUDIO_LEVEL = "meeting-audio-level";
+const MEETING_FINALIZING = "meeting-finalizing";
+const MEETING_SUMMARY_UPDATE = "meeting-summary-update";
 
 /** Begin a capture + mix + VAD + transcribe meeting session (macOS). */
 export function startMeeting(): Promise<void> {
@@ -115,6 +135,28 @@ export function deleteMeeting(id: number): Promise<void> {
   return invoke<void>("delete_meeting", { id });
 }
 
+/** Get the absolute path to a meeting's saved mixed-audio file. Rejects if the
+ * meeting has no saved audio. Pass the result through Tauri's
+ * `convertFileSrc()` before using it as an `<audio>` `src`. */
+export function getMeetingAudioPath(id: number): Promise<string> {
+  return invoke<string>("get_meeting_audio_path", { id });
+}
+
+/** Persist the meeting auto-summarize setting (`meeting_auto_summarize`). When
+ * enabled, a summary is produced automatically after Stop and pushed via the
+ * `"meeting-summary-update"` event. */
+export function changeMeetingAutoSummarize(enabled: boolean): Promise<void> {
+  return invoke<void>("change_meeting_auto_summarize_setting", { enabled });
+}
+
+/** Read the current meeting auto-summarize setting from persisted app
+ * settings. Falls back to `false` if the setting cannot be read. */
+export function getMeetingAutoSummarize(): Promise<boolean> {
+  return invoke<{ meeting_auto_summarize?: boolean }>("get_app_settings")
+    .then((s) => s?.meeting_auto_summarize ?? false)
+    .catch(() => false);
+}
+
 /** Subscribe to live transcript updates. Returns a promise resolving to the
  * unlisten function (call it to clean up). */
 export function listenMeetingTranscript(
@@ -132,6 +174,29 @@ export function listenMeetingAudioLevel(
   cb: (lvl: MeetingAudioLevel) => void,
 ): Promise<UnlistenFn> {
   return listen<MeetingAudioLevel>(MEETING_AUDIO_LEVEL, (event) => {
+    cb(event.payload);
+  });
+}
+
+/** Subscribe to the on-stop "finalizing" signal. Fires `true` while the
+ * high-quality re-transcription runs after Stop, then `false` once the
+ * polished final transcript has been emitted. Returns a promise resolving to
+ * the unlisten function (call it to clean up). */
+export function listenMeetingFinalizing(
+  cb: (finalizing: boolean) => void,
+): Promise<UnlistenFn> {
+  return listen<MeetingFinalizing>(MEETING_FINALIZING, (event) => {
+    cb(event.payload.finalizing);
+  });
+}
+
+/** Subscribe to automatic summary updates. Fires only when auto-summarize is
+ * enabled; the payload is the summary string. Returns a promise resolving to
+ * the unlisten function (call it to clean up). */
+export function listenMeetingSummary(
+  cb: (summary: string) => void,
+): Promise<UnlistenFn> {
+  return listen<string>(MEETING_SUMMARY_UPDATE, (event) => {
     cb(event.payload);
   });
 }

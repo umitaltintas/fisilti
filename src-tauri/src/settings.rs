@@ -426,7 +426,11 @@ fn default_autostart_enabled() -> bool {
 }
 
 fn default_update_checks_enabled() -> bool {
-    true
+    // Fısıltı has no update server yet. Default OFF so the app doesn't check
+    // (the inherited updater endpoint pointed at upstream Handy releases, which
+    // produced a false "update available"). Enable once our own release feed +
+    // signing key exist.
+    false
 }
 
 fn default_selected_language() -> String {

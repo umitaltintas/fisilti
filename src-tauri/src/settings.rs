@@ -415,6 +415,24 @@ pub struct AppSettings {
     /// the meeting path; dictation keeps using `selected_language`.
     #[serde(default = "default_meeting_language")]
     pub meeting_language: String,
+    /// Meeting mode: preset summary prompt templates the user can choose from
+    /// when summarizing a meeting. Each produces structured markdown. Additive;
+    /// defaults to a built-in set (General / Standup / 1:1 / Decisions & Action
+    /// Items / Q&A). The picker UI is Phase 4; the backend exposes them now.
+    #[serde(default = "default_meeting_summary_templates")]
+    pub meeting_summary_templates: Vec<MeetingSummaryTemplate>,
+}
+
+/// A preset summary prompt template for meeting mode. `id` is a stable key the
+/// frontend passes to `summarize_meeting_with`; `name` is the display label;
+/// `prompt` is the system instruction sent to the LLM (it should instruct the
+/// model to produce structured markdown and to answer in the transcript's
+/// language).
+#[derive(Serialize, Deserialize, Debug, Clone, Type)]
+pub struct MeetingSummaryTemplate {
+    pub id: String,
+    pub name: String,
+    pub prompt: String,
 }
 
 fn default_model() -> String {
@@ -427,6 +445,76 @@ fn default_meeting_final_model() -> String {
 
 fn default_meeting_language() -> String {
     "tr".to_string()
+}
+
+/// Built-in meeting summary templates. Each prompt instructs the model to emit
+/// structured markdown and to answer in the SAME language as the transcript.
+/// The frontend picker (Phase 4) lets the user choose one by `id`.
+pub fn default_meeting_summary_templates() -> Vec<MeetingSummaryTemplate> {
+    let common = "Respond in the SAME LANGUAGE as the transcript (do not translate). \
+Format the answer as clean, well-structured Markdown. Use the section headings in the \
+transcript's language. Only use information present in the transcript; do not invent details.";
+    vec![
+        MeetingSummaryTemplate {
+            id: "general".to_string(),
+            name: "General".to_string(),
+            prompt: format!(
+                "You write clear, concise meeting notes from a raw transcript. {common}\n\n\
+Produce these Markdown sections:\n\
+## Summary - a short paragraph.\n\
+## Key discussion points - a bullet list of the main topics.\n\
+## Decisions - a bullet list of decisions made (or note none).\n\
+## Action items - a bullet list of follow-ups, with the responsible person if mentioned."
+            ),
+        },
+        MeetingSummaryTemplate {
+            id: "standup".to_string(),
+            name: "Standup".to_string(),
+            prompt: format!(
+                "You summarize a team standup from a raw transcript. {common}\n\n\
+Produce a Markdown section per participant (use their name as a `###` heading), each with:\n\
+- **Yesterday / Done**: what they completed.\n\
+- **Today / Next**: what they will work on.\n\
+- **Blockers**: anything blocking them (or none).\n\
+End with a `## Blockers & follow-ups` section aggregating open blockers."
+            ),
+        },
+        MeetingSummaryTemplate {
+            id: "one_on_one".to_string(),
+            name: "1:1".to_string(),
+            prompt: format!(
+                "You write notes for a 1:1 meeting from a raw transcript. {common}\n\n\
+Produce these Markdown sections:\n\
+## Topics discussed - a bullet list.\n\
+## Feedback - feedback exchanged in either direction.\n\
+## Decisions & agreements - what was agreed.\n\
+## Action items - follow-ups with owner and (if mentioned) due date."
+            ),
+        },
+        MeetingSummaryTemplate {
+            id: "decisions_actions".to_string(),
+            name: "Decisions & Action Items".to_string(),
+            prompt: format!(
+                "You extract the decisions and action items from a raw meeting transcript. {common}\n\n\
+Produce these Markdown sections:\n\
+## Decisions - a numbered list of every decision made, each with a one-line rationale if stated.\n\
+## Action items - a table with columns | Task | Owner | Due | so each row is one follow-up. \
+Use '-' where a field is unknown.\n\
+Keep it focused on decisions and actions; omit general discussion."
+            ),
+        },
+        MeetingSummaryTemplate {
+            id: "qa".to_string(),
+            name: "Q&A".to_string(),
+            prompt: format!(
+                "You summarize a Q&A / interview session from a raw transcript. {common}\n\n\
+Produce a `## Q&A` Markdown section listing each question and its answer as:\n\
+**Q:** <the question>\n\n**A:** <the answer, concise>\n\n\
+Preserve the order questions were asked. End with a `## Open questions` section for any \
+questions left unanswered."
+            ),
+        },
+    ]
 }
 
 fn default_always_on_microphone() -> bool {
@@ -799,6 +887,7 @@ pub fn get_default_settings() -> AppSettings {
         meeting_auto_summarize: false,
         meeting_final_model: default_meeting_final_model(),
         meeting_language: default_meeting_language(),
+        meeting_summary_templates: default_meeting_summary_templates(),
     }
 }
 

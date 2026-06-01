@@ -157,7 +157,7 @@ export const MeetingSignal: React.FC<MeetingSignalProps> = ({ active }) => {
 
       const mid = cssH / 2;
       const grid = cssVar("--color-mid-gray", "#808080");
-      const trace = cssVar("--color-logo-primary", "#faa2ca");
+      const trace = cssVar("--color-logo-primary", "#6d28d9");
 
       // Zero baseline.
       ctx.strokeStyle = grid;

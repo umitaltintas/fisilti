@@ -176,6 +176,10 @@
           "transcribe_with_post_process": {
             "name": "Post-Processing Hotkey",
             "description": "Optional: A dedicated hotkey that always applies AI post-processing to your transcription."
+          },
+          "toggle_meeting": {
+            "name": "Meeting Shortcut",
+            "description": "Optional: A global hotkey to start or stop a meeting recording without opening the window."
           }
         },
         "errors": {

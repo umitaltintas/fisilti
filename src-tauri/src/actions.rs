@@ -659,6 +659,28 @@ impl ShortcutAction for TestAction {
     }
 }
 
+// Toggle Meeting Action
+//
+// Opt-in global shortcut to start/stop a meeting recording without opening the
+// window. Toggles on key press only (start when idle, stop when running) via
+// the SAME shared helper the `start_meeting`/`stop_meeting` commands and the
+// tray menu item use, so there is no duplicated start/stop logic. stop() can
+// block (finalize pass), so the work is done on a background thread.
+struct ToggleMeetingAction;
+
+impl ShortcutAction for ToggleMeetingAction {
+    fn start(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
+        let app_clone = app.clone();
+        std::thread::spawn(move || {
+            crate::commands::meeting::toggle_meeting_from_app(&app_clone);
+        });
+    }
+
+    fn stop(&self, _app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
+        // Toggle fires on press only; nothing to do on release.
+    }
+}
+
 // Static Action Map
 pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::new(|| {
     let mut map = HashMap::new();
@@ -679,6 +701,10 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
     map.insert(
         "test".to_string(),
         Arc::new(TestAction) as Arc<dyn ShortcutAction>,
+    );
+    map.insert(
+        "toggle_meeting".to_string(),
+        Arc::new(ToggleMeetingAction) as Arc<dyn ShortcutAction>,
     );
     map
 });

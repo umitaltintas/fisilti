@@ -23,6 +23,7 @@ import {
 
 import { Button } from "../../ui/Button";
 import { Select, type SelectOption } from "../../ui/Select";
+import { ShortcutInput } from "../ShortcutInput";
 import { MeetingSignal } from "./MeetingSignal";
 import { Markdown } from "./Markdown";
 import {
@@ -717,6 +718,11 @@ export const MeetingSettings: React.FC = () => {
               {error}
             </p>
           )}
+
+          {/* Optional global shortcut to start/stop a meeting without opening
+              the window. Unbound by default; mirrors the tray quick-start. */}
+          <ShortcutInput shortcutId="toggle_meeting" descriptionMode="inline" />
+
 
           <label className="flex items-center gap-2.5 cursor-pointer select-none">
             <button

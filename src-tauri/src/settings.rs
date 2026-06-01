@@ -834,6 +834,20 @@ pub fn get_default_settings() -> AppSettings {
             current_binding: "escape".to_string(),
         },
     );
+    // Opt-in (no default binding): toggle a meeting recording on/off without
+    // opening the window. Unbound by default so it never collides with the
+    // dictation shortcut; the user assigns a key in Settings. The empty binding
+    // is skipped by the shortcut registration loops.
+    bindings.insert(
+        "toggle_meeting".to_string(),
+        ShortcutBinding {
+            id: "toggle_meeting".to_string(),
+            name: "Start/Stop Meeting".to_string(),
+            description: "Starts or stops a meeting recording.".to_string(),
+            default_binding: "".to_string(),
+            current_binding: "".to_string(),
+        },
+    );
 
     AppSettings {
         bindings,

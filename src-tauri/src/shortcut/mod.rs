@@ -364,6 +364,10 @@ fn unregister_all_shortcuts(app: &AppHandle, implementation: KeyboardImplementat
         if id == "cancel" {
             continue;
         }
+        // Skip opt-in bindings with no shortcut assigned (never registered).
+        if binding.current_binding.trim().is_empty() {
+            continue;
+        }
 
         let result = match implementation {
             KeyboardImplementation::Tauri => tauri_impl::unregister_shortcut(app, binding),
@@ -404,6 +408,11 @@ fn register_all_shortcuts_for_implementation(
             .get(id)
             .cloned()
             .unwrap_or_else(|| default_binding.clone());
+
+        // Skip opt-in bindings with no shortcut assigned (e.g. toggle_meeting).
+        if binding.current_binding.trim().is_empty() {
+            continue;
+        }
 
         // Validate the shortcut for the target implementation
         if let Err(e) =

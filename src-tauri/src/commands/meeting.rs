@@ -7,11 +7,80 @@
 
 use std::sync::Arc;
 
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::meeting::{
     InterruptedMeeting, MeetingListItem, MeetingManager, MeetingRecord, MeetingState,
 };
+
+/// Event emitted (with payload `"running"` or `"idle"`) whenever a meeting
+/// session is started or stopped through the shared helpers below — regardless
+/// of whether the trigger was the UI command, the tray menu item, or a global
+/// shortcut. Observers (e.g. the tray) listen for this to keep their recording
+/// indicator in sync.
+pub const MEETING_STATE_CHANGED_EVENT: &str = "meeting-state-changed";
+
+/// Emit `MEETING_STATE_CHANGED_EVENT` with the manager's current status so any
+/// observer (the tray indicator) can refresh.
+fn emit_meeting_state(app: &AppHandle, manager: &MeetingManager) {
+    let status = match manager.status() {
+        MeetingState::Idle => "idle",
+        MeetingState::Running => "running",
+    };
+    let _ = app.emit(MEETING_STATE_CHANGED_EVENT, status);
+}
+
+/// SHARED start path used by the `start_meeting` command, the tray menu item,
+/// and (optionally) a global shortcut. Starts the session via the manager and
+/// emits `MEETING_STATE_CHANGED_EVENT` on success so the tray indicator updates.
+pub fn start_meeting_session(
+    app: &AppHandle,
+    meeting_manager: &Arc<MeetingManager>,
+) -> Result<(), String> {
+    meeting_manager.start()?;
+    emit_meeting_state(app, meeting_manager);
+    Ok(())
+}
+
+/// SHARED stop path used by the `stop_meeting` command, the tray menu item, and
+/// (optionally) a global shortcut. Stops the session via the manager and emits
+/// `MEETING_STATE_CHANGED_EVENT` so the tray indicator returns to idle. Returns
+/// the final transcript.
+pub fn stop_meeting_session(
+    app: &AppHandle,
+    meeting_manager: &Arc<MeetingManager>,
+) -> Result<String, String> {
+    let transcript = meeting_manager.stop()?;
+    emit_meeting_state(app, meeting_manager);
+    Ok(transcript)
+}
+
+/// SHARED toggle path: stop if running, otherwise start. Used by the tray menu
+/// item and the optional global shortcut so a meeting can be controlled without
+/// opening the window. Returns the final transcript when stopping, `None` when
+/// starting.
+pub fn toggle_meeting_session(
+    app: &AppHandle,
+    meeting_manager: &Arc<MeetingManager>,
+) -> Result<Option<String>, String> {
+    match meeting_manager.status() {
+        MeetingState::Running => stop_meeting_session(app, meeting_manager).map(Some),
+        MeetingState::Idle => start_meeting_session(app, meeting_manager).map(|()| None),
+    }
+}
+
+/// Convenience for the tray / shortcut handlers that only have an `AppHandle`:
+/// resolves the managed `Arc<MeetingManager>` and toggles the session. Logs and
+/// swallows errors (e.g. capture unsupported off-macOS) so callers stay simple.
+pub fn toggle_meeting_from_app(app: &AppHandle) {
+    let manager = app.state::<Arc<MeetingManager>>();
+    let manager = (*manager).clone();
+    match toggle_meeting_session(app, &manager) {
+        Ok(Some(_)) => log::info!("Meeting stopped via tray/shortcut"),
+        Ok(None) => log::info!("Meeting started via tray/shortcut"),
+        Err(e) => log::warn!("Toggle meeting via tray/shortcut failed: {}", e),
+    }
+}
 
 /// Default system prompt for summarizing a meeting transcript into notes.
 ///
@@ -35,15 +104,21 @@ Only use information present in the transcript. Do not invent details.";
 /// platforms.
 #[tauri::command]
 #[specta::specta]
-pub fn start_meeting(meeting_manager: State<Arc<MeetingManager>>) -> Result<(), String> {
-    meeting_manager.start()
+pub fn start_meeting(
+    app: AppHandle,
+    meeting_manager: State<Arc<MeetingManager>>,
+) -> Result<(), String> {
+    start_meeting_session(&app, &meeting_manager)
 }
 
 /// Stop the meeting session and return the final accumulated transcript text.
 #[tauri::command]
 #[specta::specta]
-pub fn stop_meeting(meeting_manager: State<Arc<MeetingManager>>) -> Result<String, String> {
-    meeting_manager.stop()
+pub fn stop_meeting(
+    app: AppHandle,
+    meeting_manager: State<Arc<MeetingManager>>,
+) -> Result<String, String> {
+    stop_meeting_session(&app, &meeting_manager)
 }
 
 /// Return the transcript accumulated so far (for polling during a session).

@@ -607,6 +607,22 @@
     "summarizing": "Summarizing...",
     "copyTranscript": "Copy transcript",
     "copyNotes": "Copy notes",
-    "copied": "Copied!"
+    "copied": "Copied!",
+    "pastMeetings": "Past meetings",
+    "pastMeetingsEmpty": "No past meetings yet",
+    "pastMeetingsError": "Failed to load past meetings",
+    "hasSummary": "Has summary",
+    "untitledMeeting": "Untitled meeting",
+    "delete": "Delete",
+    "confirmDelete": "Delete this meeting?",
+    "confirm": "Confirm",
+    "cancel": "Cancel",
+    "deleteError": "Failed to delete meeting",
+    "back": "Back",
+    "loading": "Loading...",
+    "loadError": "Failed to load meeting",
+    "summary": "Summary",
+    "copySummary": "Copy summary",
+    "noSummary": "No summary for this meeting."
   }
 }

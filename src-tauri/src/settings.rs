@@ -403,10 +403,30 @@ pub struct AppSettings {
     /// (using the active post-process provider). Additive; defaults to false.
     #[serde(default)]
     pub meeting_auto_summarize: bool,
+    /// Meeting mode: the model used for the high-quality FINAL (on-stop)
+    /// re-transcription pass. Swapped in for finalize only, then the user's
+    /// normal `selected_model` is restored. Defaults to "turbo"
+    /// (large-v3-turbo). The LIVE preview path keeps using `selected_model`.
+    #[serde(default = "default_meeting_final_model")]
+    pub meeting_final_model: String,
+    /// Meeting mode: language forced for meeting transcription windows. Fixes
+    /// per-window language flapping that auto-detect causes. Defaults to "tr"
+    /// (Turkish). Set to "auto" to restore per-window auto-detect. Only affects
+    /// the meeting path; dictation keeps using `selected_language`.
+    #[serde(default = "default_meeting_language")]
+    pub meeting_language: String,
 }
 
 fn default_model() -> String {
     "".to_string()
+}
+
+fn default_meeting_final_model() -> String {
+    "turbo".to_string()
+}
+
+fn default_meeting_language() -> String {
+    "tr".to_string()
 }
 
 fn default_always_on_microphone() -> bool {
@@ -777,6 +797,8 @@ pub fn get_default_settings() -> AppSettings {
         ort_accelerator: OrtAcceleratorSetting::default(),
         extra_recording_buffer_ms: 0,
         meeting_auto_summarize: false,
+        meeting_final_model: default_meeting_final_model(),
+        meeting_language: default_meeting_language(),
     }
 }
 

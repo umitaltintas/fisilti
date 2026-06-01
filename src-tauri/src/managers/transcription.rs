@@ -45,6 +45,69 @@ enum LoadedEngine {
     Canary(CanaryModel),
 }
 
+/// A short, well-punctuated Turkish style exemplar used as the meeting-mode
+/// whisper `initial_prompt`. Priming with correctly cased text that contains the
+/// Turkish diacritics (ç ğ ı ö ş ü) nudges whisper toward proper punctuation,
+/// casing and diacritics in the output. Kept short so it doesn't crowd out the
+/// real audio context.
+#[cfg(target_os = "macos")]
+const MEETING_TURKISH_STYLE_PROMPT: &str =
+    "Merhaba, toplantıya hoş geldiniz. Bugünkü gündem maddelerini gözden geçirelim ve kararları netleştirelim.";
+
+/// Options that distinguish the meeting transcription path from dictation.
+/// Dictation always uses `dictation()`, which is a no-op (all `None`), so its
+/// behavior is byte-for-byte unchanged. Only meeting mode populates these.
+#[derive(Clone, Default)]
+struct MeetingTranscribeOpts {
+    /// Override the transcription language (e.g. "tr" or "auto"). `None` means
+    /// use the user's `selected_language` (dictation behavior).
+    language_override: Option<String>,
+    /// Override whisper's `no_speech_thold`. `None` means use the transcribe-rs
+    /// default (dictation behavior).
+    no_speech_thold: Option<f32>,
+    /// Optional style-exemplar prompt prepended to the whisper `initial_prompt`
+    /// (before any custom words). `None` means custom-words-only (dictation).
+    style_prompt: Option<&'static str>,
+}
+
+impl MeetingTranscribeOpts {
+    /// Dictation defaults: a no-op so `transcribe()` behaves exactly as before.
+    fn dictation() -> Self {
+        Self::default()
+    }
+
+    /// Meeting-mode options derived from settings.
+    #[cfg(target_os = "macos")]
+    fn meeting(settings: &crate::settings::AppSettings) -> Self {
+        Self {
+            language_override: Some(settings.meeting_language.clone()),
+            no_speech_thold: Some(0.5),
+            style_prompt: Some(MEETING_TURKISH_STYLE_PROMPT),
+        }
+    }
+
+    /// Build the whisper `initial_prompt`. Dictation: custom words joined, or
+    /// `None`. Meeting: style exemplar, then custom words appended.
+    fn build_initial_prompt(&self, custom_words: &[String]) -> Option<String> {
+        match self.style_prompt {
+            Some(style) => {
+                if custom_words.is_empty() {
+                    Some(style.to_string())
+                } else {
+                    Some(format!("{} {}", style, custom_words.join(", ")))
+                }
+            }
+            None => {
+                if custom_words.is_empty() {
+                    None
+                } else {
+                    Some(custom_words.join(", "))
+                }
+            }
+        }
+    }
+}
+
 /// RAII guard that clears the `is_loading` flag and notifies waiters on drop.
 /// Ensures the loading flag is always reset, even on early returns or panics.
 pub struct LoadingGuard {
@@ -441,7 +504,28 @@ impl TranscriptionManager {
         current_model.clone()
     }
 
+    /// Dictation transcription entry point. Behavior is unchanged: it delegates
+    /// to the shared `transcribe_with_opts` with default (dictation) options.
     pub fn transcribe(&self, audio: Vec<f32>) -> Result<String> {
+        self.transcribe_with_opts(audio, MeetingTranscribeOpts::dictation())
+    }
+
+    /// Meeting-mode transcription entry point (ADDITIVE; does not affect
+    /// dictation). Forces the configured meeting language, primes punctuation
+    /// with a Turkish style exemplar, and raises `no_speech_thold` so silent /
+    /// near-silent windows don't hallucinate text. Only the Whisper engine path
+    /// honors these knobs; other engines behave exactly as in dictation.
+    #[cfg(target_os = "macos")]
+    pub fn transcribe_meeting(&self, audio: Vec<f32>) -> Result<String> {
+        let settings = get_settings(&self.app_handle);
+        self.transcribe_with_opts(audio, MeetingTranscribeOpts::meeting(&settings))
+    }
+
+    fn transcribe_with_opts(
+        &self,
+        audio: Vec<f32>,
+        opts: MeetingTranscribeOpts,
+    ) -> Result<String> {
         #[cfg(debug_assertions)]
         if std::env::var("HANDY_FORCE_TRANSCRIPTION_FAILURE").is_ok() {
             return Err(anyhow::anyhow!(
@@ -479,9 +563,18 @@ impl TranscriptionManager {
         // Get current settings for configuration
         let settings = get_settings(&self.app_handle);
 
+        // Meeting mode can force a specific language (default "tr"); otherwise
+        // dictation uses the user's `selected_language`. This keeps dictation's
+        // language resolution byte-for-byte identical when `opts` is the
+        // dictation default (language_override = None).
+        let requested_language = opts
+            .language_override
+            .clone()
+            .unwrap_or_else(|| settings.selected_language.clone());
+
         // Validate selected language against the model's supported languages.
         // If the language isn't supported, fall back to "auto" to prevent errors.
-        let validated_language = if settings.selected_language == "auto" {
+        let validated_language = if requested_language == "auto" {
             "auto".to_string()
         } else {
             let is_supported = self
@@ -489,18 +582,16 @@ impl TranscriptionManager {
                 .get_model_info(&settings.selected_model)
                 .map(|info| {
                     info.supported_languages.is_empty()
-                        || info
-                            .supported_languages
-                            .contains(&settings.selected_language)
+                        || info.supported_languages.contains(&requested_language)
                 })
                 .unwrap_or(true);
 
             if is_supported {
-                settings.selected_language.clone()
+                requested_language.clone()
             } else {
                 warn!(
                     "Language '{}' not supported by current model, falling back to auto-detect",
-                    settings.selected_language
+                    requested_language
                 );
                 "auto".to_string()
             }
@@ -544,14 +635,23 @@ impl TranscriptionManager {
                                 Some(normalized)
                             };
 
+                            // Initial prompt: dictation primes only with custom
+                            // words (unchanged). Meeting mode prepends a
+                            // well-punctuated Turkish style exemplar so whisper
+                            // emits proper casing + diacritics, then appends any
+                            // custom words.
+                            let initial_prompt = opts.build_initial_prompt(&settings.custom_words);
+
                             let params = WhisperInferenceParams {
                                 language: whisper_language,
                                 translate: settings.translate_to_english,
-                                initial_prompt: if settings.custom_words.is_empty() {
-                                    None
-                                } else {
-                                    Some(settings.custom_words.join(", "))
-                                },
+                                initial_prompt,
+                                // Meeting mode raises this above the 0.2 default
+                                // to drop silent windows that would otherwise
+                                // hallucinate. Dictation keeps the default.
+                                no_speech_thold: opts
+                                    .no_speech_thold
+                                    .unwrap_or(WhisperInferenceParams::default().no_speech_thold),
                                 ..Default::default()
                             };
 

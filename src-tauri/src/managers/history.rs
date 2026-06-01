@@ -48,6 +48,10 @@ static MIGRATIONS: &[M] = &[
             created_at INTEGER NOT NULL
         );",
     ),
+    // Meeting audio playback: store the absolute path to the persisted mixed
+    // 16 kHz mono WAV for each meeting so the frontend can play it back via the
+    // asset protocol. APPENDED at the end; never reorder/edit earlier entries.
+    M::up("ALTER TABLE meetings ADD COLUMN audio_path TEXT;"),
 ];
 
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]

@@ -25,6 +25,8 @@ pub struct MeetingRecordInput {
     pub transcript: String,
     pub segments: Vec<TranscriptSegment>,
     pub summary: Option<String>,
+    /// Absolute path to the persisted mixed 16 kHz mono WAV, if saved.
+    pub audio_path: Option<String>,
 }
 
 /// Lightweight row for the meetings list view (newest-first).
@@ -52,6 +54,8 @@ pub struct MeetingRecord {
     pub segments: Vec<TranscriptSegment>,
     pub summary: Option<String>,
     pub created_at: i64,
+    /// Absolute path to the persisted mixed 16 kHz mono WAV, if saved.
+    pub audio_path: Option<String>,
 }
 
 /// Persistence handle for meeting sessions. Resolves the same `history.db` path
@@ -109,8 +113,9 @@ impl MeetingStore {
                 transcript,
                 segments_json,
                 summary,
-                created_at
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                created_at,
+                audio_path
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 record.started_at,
                 record.ended_at,
@@ -120,6 +125,7 @@ impl MeetingStore {
                 &segments_json,
                 &record.summary,
                 created_at,
+                &record.audio_path,
             ],
         )?;
         Ok(conn.last_insert_rowid())
@@ -133,6 +139,30 @@ impl MeetingStore {
             params![summary, id],
         )?;
         Ok(())
+    }
+
+    /// Update the audio_path column of an existing meeting row.
+    pub fn update_audio_path(&self, id: i64, audio_path: &str) -> Result<()> {
+        let conn = self.get_connection()?;
+        conn.execute(
+            "UPDATE meetings SET audio_path = ?1 WHERE id = ?2",
+            params![audio_path, id],
+        )?;
+        Ok(())
+    }
+
+    /// Fetch the absolute audio path for a meeting, if one was saved.
+    pub fn get_audio_path(&self, id: i64) -> Result<Option<String>> {
+        let conn = self.get_connection()?;
+        let path = conn
+            .query_row(
+                "SELECT audio_path FROM meetings WHERE id = ?1",
+                params![id],
+                |row| row.get::<_, Option<String>>("audio_path"),
+            )
+            .optional()?
+            .flatten();
+        Ok(path)
     }
 
     /// List all meetings, newest-first.
@@ -153,7 +183,10 @@ impl MeetingStore {
                     ended_at: row.get("ended_at")?,
                     duration_ms: row.get("duration_ms")?,
                     title: row.get("title")?,
-                    has_summary: summary.as_deref().map(|s| !s.trim().is_empty()).unwrap_or(false),
+                    has_summary: summary
+                        .as_deref()
+                        .map(|s| !s.trim().is_empty())
+                        .unwrap_or(false),
                     transcript_preview: make_preview(&transcript),
                 })
             })?
@@ -166,7 +199,7 @@ impl MeetingStore {
         let conn = self.get_connection()?;
         let record = conn
             .query_row(
-                "SELECT id, started_at, ended_at, duration_ms, title, transcript, segments_json, summary, created_at
+                "SELECT id, started_at, ended_at, duration_ms, title, transcript, segments_json, summary, created_at, audio_path
                  FROM meetings WHERE id = ?1",
                 params![id],
                 |row| {
@@ -182,6 +215,7 @@ impl MeetingStore {
                             segments: Vec::new(),
                             summary: row.get("summary")?,
                             created_at: row.get("created_at")?,
+                            audio_path: row.get("audio_path")?,
                         },
                         segments_json,
                     ))

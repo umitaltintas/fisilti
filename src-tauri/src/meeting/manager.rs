@@ -26,6 +26,20 @@ use tauri::AppHandle;
 use crate::managers::transcription::TranscriptionManager;
 use crate::meeting::store::{MeetingRecordInput, MeetingStore};
 
+/// Which captured source a transcript segment came from.
+///
+/// Serializes as `"you"` (microphone / the local speaker) and `"others"`
+/// (system audio / remote participants) so the frontend can label segments
+/// directly without an extra mapping step.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "lowercase")]
+pub enum TranscriptSource {
+    #[serde(rename = "you")]
+    Mic,
+    #[serde(rename = "others")]
+    System,
+}
+
 /// A single transcribed speech segment with its (relative) start timestamp.
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
 pub struct TranscriptSegment {
@@ -33,6 +47,16 @@ pub struct TranscriptSegment {
     pub text: String,
     /// Milliseconds since the meeting session started.
     pub timestamp_ms: u64,
+    /// Which captured source produced this segment (mic = "you",
+    /// system = "others").
+    #[serde(default = "default_transcript_source")]
+    pub source: TranscriptSource,
+}
+
+/// Default source for segments deserialized from older records that predate the
+/// per-source labeling feature: treat them as microphone ("you").
+fn default_transcript_source() -> TranscriptSource {
+    TranscriptSource::Mic
 }
 
 /// Event payload emitted on `"meeting-transcript-update"` after each segment.
@@ -46,6 +70,17 @@ pub struct MeetingTranscriptUpdate {
 /// Event payload emitted on `"meeting-audio-level"` (~20 fps) for a live UI
 /// visualizer. This is SEPARATE from the dictation `"mic-level"` event so the
 /// two visualizers never interfere.
+/// Event payload emitted on `"meeting-finalizing"` to signal the on-stop
+/// full-audio re-transcription pass. The UI keeps showing the live (rough)
+/// transcript as a preview while `finalizing` is true, then receives the
+/// replacement final transcript via the usual `"meeting-transcript-update"`
+/// event once it is `false` again.
+#[derive(Clone, Debug, Serialize, Type)]
+pub struct MeetingFinalizing {
+    /// True when the finalize pass starts, false when it completes.
+    pub finalizing: bool,
+}
+
 #[derive(Clone, Debug, Serialize, Type)]
 pub struct MeetingAudioLevel {
     /// ~16 normalized 0..1 frequency-bar levels (same shape as `mic-level`,
@@ -91,6 +126,26 @@ pub struct MeetingManager {
     /// Row id of the meeting persisted on the most recent `stop()`. Used by
     /// `summarize_meeting` to update the same row with the generated summary.
     last_saved_meeting_id: Arc<Mutex<Option<i64>>>,
+    /// Absolute path to the persisted mixed WAV written on the most recent
+    /// `stop()`, if any. Stored on the meeting row via `audio_path`.
+    last_saved_audio_path: Arc<Mutex<Option<String>>>,
+    /// Raw f32 (little-endian, 16 kHz mono) buffer files the capture loop
+    /// streams the FULL per-source audio into for the on-stop finalize pass.
+    /// Bounded-memory: written incrementally, read back once on stop. Set by the
+    /// capture loop, consumed by `finalize_session`.
+    buffer_paths: Arc<Mutex<Option<SessionBuffers>>>,
+}
+
+/// Temp-file paths holding the full session audio for the on-stop finalize
+/// pass. All paths are raw little-endian f32 at 16 kHz mono.
+#[derive(Clone, Debug)]
+struct SessionBuffers {
+    /// Full microphone ("you") audio.
+    mic: std::path::PathBuf,
+    /// Full system ("others") audio.
+    system: std::path::PathBuf,
+    /// Full mixed mono audio (used for the saved playback WAV).
+    mixed: std::path::PathBuf,
 }
 
 impl MeetingManager {
@@ -113,6 +168,8 @@ impl MeetingManager {
             store,
             session_started_at_ms: Arc::new(Mutex::new(None)),
             last_saved_meeting_id: Arc::new(Mutex::new(None)),
+            last_saved_audio_path: Arc::new(Mutex::new(None)),
+            buffer_paths: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -126,10 +183,16 @@ impl MeetingManager {
         *self.state.lock().unwrap()
     }
 
-    /// Return the full accumulated transcript text (segments joined by spaces).
+    /// Return the full accumulated transcript text. Segments are sorted by their
+    /// relative timestamp first (segments now arrive from two independent
+    /// per-source VAD pipelines, so insertion order is not chronological) and
+    /// joined by spaces.
     pub fn full_transcript(&self) -> String {
         let segs = self.transcript.lock().unwrap();
-        segs.iter()
+        let mut ordered: Vec<&TranscriptSegment> = segs.iter().collect();
+        ordered.sort_by_key(|s| s.timestamp_ms);
+        ordered
+            .iter()
             .map(|s| s.text.as_str())
             .filter(|t| !t.is_empty())
             .collect::<Vec<_>>()
@@ -168,6 +231,8 @@ impl MeetingManager {
             // timestamps remain relative to this.
             *self.session_started_at_ms.lock().unwrap() = Some(now_epoch_ms());
             *self.last_saved_meeting_id.lock().unwrap() = None;
+            *self.last_saved_audio_path.lock().unwrap() = None;
+            *self.buffer_paths.lock().unwrap() = None;
             self.stop_signal.store(false, Ordering::Relaxed);
             self.active.store(true, Ordering::Relaxed);
 
@@ -217,9 +282,23 @@ impl MeetingManager {
         // status reads).
         drop(state);
 
+        // Hybrid transcription: re-transcribe the FULL per-source audio for a
+        // higher-quality, labeled transcript that REPLACES the live preview.
+        // macOS-only; on other platforms this is a no-op (no buffers written).
+        #[cfg(target_os = "macos")]
+        self.finalize_session();
+
         // Persist the session. Failures are logged, never propagated, so a
         // stop always succeeds and returns the transcript.
         self.persist_session();
+
+        // Save the mixed audio WAV for playback (needs the persisted row id).
+        #[cfg(target_os = "macos")]
+        self.save_session_audio();
+
+        // Best-effort auto-summarize (behind a setting). Runs after persistence
+        // so it can update the saved row. Never blocks/fails the stop.
+        self.maybe_auto_summarize();
 
         log::info!("Meeting session stopped");
         Ok(self.full_transcript())
@@ -254,6 +333,7 @@ impl MeetingManager {
             transcript,
             segments,
             summary: None,
+            audio_path: None,
         };
 
         match self.store.save_meeting(&record) {
@@ -289,12 +369,175 @@ impl MeetingManager {
         &self.store
     }
 
+    /// HYBRID TRANSCRIPTION (Feature 2). On stop, re-transcribe the FULL mic and
+    /// system audio buffered to temp files during the session, producing a
+    /// higher-quality labeled transcript that REPLACES the live rough preview.
+    ///
+    /// Emits `"meeting-finalizing"` (true) before and (false) after. If no
+    /// buffers were captured (e.g. capture failed early), leaves the live
+    /// transcript untouched.
+    #[cfg(target_os = "macos")]
+    fn finalize_session(&self) {
+        let buffers = match self.buffer_paths.lock().unwrap().clone() {
+            Some(b) => b,
+            None => return,
+        };
+
+        self.emit_finalizing(true);
+
+        let mut final_segments: Vec<TranscriptSegment> = Vec::new();
+        for (path, source) in [
+            (&buffers.mic, TranscriptSource::Mic),
+            (&buffers.system, TranscriptSource::System),
+        ] {
+            match read_f32_raw(path) {
+                Ok(audio) if !audio.is_empty() => {
+                    self.transcribe_full_source(&audio, source, &mut final_segments);
+                }
+                Ok(_) => {}
+                Err(e) => log::warn!("meeting finalize: failed to read {:?}: {}", path, e),
+            }
+        }
+
+        // Only replace the live transcript if the finalize pass produced
+        // something; otherwise keep the live preview as-is.
+        let has_text = final_segments.iter().any(|s| !s.text.trim().is_empty());
+        if has_text {
+            final_segments.sort_by_key(|s| s.timestamp_ms);
+            self.replace_transcript(final_segments);
+        } else {
+            log::warn!(
+                "meeting finalize: full re-transcription yielded no text; keeping live transcript"
+            );
+        }
+
+        self.emit_finalizing(false);
+    }
+
+    /// Transcribe the full audio of one source. whisper.cpp internally windows
+    /// long audio in 30s chunks with context, so we pass the whole buffer as a
+    /// single segment. For engines that cannot handle arbitrarily long audio,
+    /// `transcribe()` is still the right entry point (it honors the selected
+    /// language); a future chunking refinement can live here without changing
+    /// callers. The whole source becomes one timestamped segment at its start.
+    #[cfg(target_os = "macos")]
+    fn transcribe_full_source(
+        &self,
+        audio: &[f32],
+        source: TranscriptSource,
+        out: &mut Vec<TranscriptSegment>,
+    ) {
+        match self.transcription_manager.transcribe(audio.to_vec()) {
+            Ok(text) => {
+                let text = text.trim().to_string();
+                if !text.is_empty() {
+                    out.push(TranscriptSegment {
+                        text,
+                        timestamp_ms: 0,
+                        source,
+                    });
+                }
+            }
+            Err(e) => log::warn!(
+                "meeting finalize: transcription failed for {:?}: {}",
+                source,
+                e
+            ),
+        }
+    }
+
+    /// AUDIO SAVE (Feature 4). Persist the mixed 16 kHz mono audio to
+    /// `{app_data_dir}/meetings/{id}.wav` and record its path on the meeting
+    /// row. Requires a saved row id (set by `persist_session`). Best-effort:
+    /// failures are logged, never propagated.
+    #[cfg(target_os = "macos")]
+    fn save_session_audio(&self) {
+        let id = match self.last_saved_meeting_id() {
+            Some(id) => id,
+            None => return,
+        };
+        let buffers = match self.buffer_paths.lock().unwrap().clone() {
+            Some(b) => b,
+            None => return,
+        };
+        let mixed = match read_f32_raw(&buffers.mixed) {
+            Ok(m) if !m.is_empty() => m,
+            Ok(_) => return,
+            Err(e) => {
+                log::warn!("meeting: failed to read mixed buffer: {}", e);
+                return;
+            }
+        };
+
+        let dir = match crate::portable::app_data_dir(&self.app_handle) {
+            Ok(d) => d.join("meetings"),
+            Err(e) => {
+                log::error!("meeting: cannot resolve app data dir for audio save: {}", e);
+                return;
+            }
+        };
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            log::error!("meeting: failed to create meetings dir {:?}: {}", dir, e);
+            return;
+        }
+        let wav_path = dir.join(format!("{}.wav", id));
+        use crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE;
+        if let Err(e) = write_f32_wav(&wav_path, &mixed, WHISPER_SAMPLE_RATE) {
+            log::error!("meeting: failed to write audio WAV {:?}: {}", wav_path, e);
+            return;
+        }
+        let path_str = wav_path.to_string_lossy().to_string();
+        if let Err(e) = self.store.update_audio_path(id, &path_str) {
+            log::error!("meeting: failed to record audio path: {}", e);
+            return;
+        }
+        *self.last_saved_audio_path.lock().unwrap() = Some(path_str);
+        // Clean up the temp buffer files now that everything is persisted.
+        let _ = std::fs::remove_file(&buffers.mic);
+        let _ = std::fs::remove_file(&buffers.system);
+        let _ = std::fs::remove_file(&buffers.mixed);
+        log::info!("meeting: saved playback audio to {:?}", wav_path);
+    }
+
+    /// AUTO-SUMMARIZE (Feature 3). If `meeting_auto_summarize` is enabled, run
+    /// the same summary path as the `summarize_meeting` command and persist +
+    /// emit the result. Best-effort: spawned async, never blocks/fails stop.
+    fn maybe_auto_summarize(&self) {
+        let settings = crate::settings::get_settings(&self.app_handle);
+        if !settings.meeting_auto_summarize {
+            return;
+        }
+        let transcript = self.full_transcript();
+        if transcript.trim().is_empty() {
+            return;
+        }
+        let manager = self.clone();
+        tauri::async_runtime::spawn(async move {
+            match crate::commands::meeting::summarize_transcript(&manager.app_handle, &transcript)
+                .await
+            {
+                Ok(summary) => {
+                    if let Err(e) = manager.update_saved_summary(&summary) {
+                        log::error!("meeting auto-summarize: failed to persist: {}", e);
+                    }
+                    use tauri::Emitter;
+                    let _ = manager.app_handle.emit("meeting-summary-update", summary);
+                }
+                Err(e) => log::error!("meeting auto-summarize failed: {}", e),
+            }
+        });
+    }
+
     /// Append a transcribed segment and emit an update event.
-    fn push_segment(&self, text: String, timestamp_ms: u64) {
+    fn push_segment(&self, text: String, timestamp_ms: u64, source: TranscriptSource) {
         if text.trim().is_empty() {
             return;
         }
-        let segment = TranscriptSegment { text, timestamp_ms };
+        let segment = TranscriptSegment {
+            text,
+            timestamp_ms,
+            source,
+        };
         {
             let mut segs = self.transcript.lock().unwrap();
             segs.push(segment.clone());
@@ -308,6 +551,39 @@ impl MeetingManager {
                 full_transcript: full,
             },
         );
+    }
+
+    /// Emit a `"meeting-finalizing"` signal so the UI can show progress while
+    /// the on-stop full-audio re-transcription runs.
+    fn emit_finalizing(&self, finalizing: bool) {
+        use tauri::Emitter;
+        let _ = self
+            .app_handle
+            .emit("meeting-finalizing", MeetingFinalizing { finalizing });
+    }
+
+    /// Replace the entire accumulated transcript with `segments` (the FINAL
+    /// labeled transcript) and emit a synthetic update so the UI swaps the live
+    /// preview for the final result. The emitted `segment` is the last one for
+    /// payload-shape compatibility; the authoritative content is
+    /// `full_transcript` plus the persisted record.
+    fn replace_transcript(&self, segments: Vec<TranscriptSegment>) {
+        {
+            let mut segs = self.transcript.lock().unwrap();
+            *segs = segments;
+        }
+        let full = self.full_transcript();
+        let last = { self.transcript.lock().unwrap().last().cloned() };
+        if let Some(segment) = last {
+            use tauri::Emitter;
+            let _ = self.app_handle.emit(
+                "meeting-transcript-update",
+                MeetingTranscriptUpdate {
+                    segment,
+                    full_transcript: full,
+                },
+            );
+        }
     }
 
     /// Emit a throttled `"meeting-audio-level"` event for the live visualizer.
@@ -335,7 +611,7 @@ impl MeetingManager {
             AudioVisualiser, FrameResampler, MeetingMixer, MixSource, SystemAudioCapture,
         };
         use crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE;
-        use crate::audio_toolkit::vad::{SmoothedVad, VadFrame, VoiceActivityDetector};
+        use crate::audio_toolkit::vad::SmoothedVad;
         use crate::audio_toolkit::SileroVad;
         use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
         use futures_util::StreamExt;
@@ -401,16 +677,48 @@ impl MeetingManager {
             )
             .map_err(|e| format!("Failed to resolve VAD path: {}", e))?;
 
-        let silero = SileroVad::new(&vad_path, 0.3)
-            .map_err(|e| format!("Failed to create SileroVad for meeting: {}", e))?;
-        // Dedicated SmoothedVad instance tuned for WIDER meeting segments (see
-        // the VAD_* consts above). NOT shared with dictation.
-        let mut vad: SmoothedVad = SmoothedVad::new(
-            Box::new(silero),
-            VAD_PREFILL_FRAMES,
-            VAD_HANGOVER_FRAMES,
-            VAD_ONSET_FRAMES,
-        );
+        // Build a fresh SmoothedVad tuned for WIDER meeting segments. We build
+        // TWO independent instances (mic + system) so each source is segmented
+        // and labeled separately (Feature 1). NOT shared with dictation.
+        let make_vad = || -> Result<SmoothedVad, String> {
+            let silero = SileroVad::new(&vad_path, 0.3)
+                .map_err(|e| format!("Failed to create SileroVad for meeting: {}", e))?;
+            Ok(SmoothedVad::new(
+                Box::new(silero),
+                VAD_PREFILL_FRAMES,
+                VAD_HANGOVER_FRAMES,
+                VAD_ONSET_FRAMES,
+            ))
+        };
+        let mic_vad = make_vad()?;
+        let system_vad = make_vad()?;
+
+        // --- Per-source full-audio buffer files (Feature 2: hybrid finalize) ---
+        // Stream each source's full 16 kHz mono audio (raw little-endian f32) to
+        // a temp file so a 2h meeting doesn't hold ~230 MB/source in RAM. Read
+        // back once on stop for the high-quality finalize pass.
+        let buf_dir = std::env::temp_dir();
+        let pid = std::process::id();
+        let stamp = now_epoch_ms();
+        let mic_buf_path = buf_dir.join(format!("handy_meeting_{}_{}_mic.f32", pid, stamp));
+        let system_buf_path = buf_dir.join(format!("handy_meeting_{}_{}_sys.f32", pid, stamp));
+        let mixed_buf_path = buf_dir.join(format!("handy_meeting_{}_{}_mix.f32", pid, stamp));
+        let mut mic_buf_writer = RawF32Writer::create(&mic_buf_path)
+            .map_err(|e| format!("Failed to create mic buffer: {}", e))?;
+        let mut system_buf_writer = RawF32Writer::create(&system_buf_path)
+            .map_err(|e| format!("Failed to create system buffer: {}", e))?;
+        let mut mixed_buf_writer = RawF32Writer::create(&mixed_buf_path)
+            .map_err(|e| format!("Failed to create mixed buffer: {}", e))?;
+        // Publish the buffer paths so stop()'s finalize/audio-save can read them.
+        *self.buffer_paths.lock().unwrap() = Some(SessionBuffers {
+            mic: mic_buf_path.clone(),
+            system: system_buf_path.clone(),
+            mixed: mixed_buf_path.clone(),
+        });
+
+        // Per-source live segmentation state (mirrors the old single-VAD state).
+        let mut mic_proc = SourceProcessor::new(mic_vad, TranscriptSource::Mic);
+        let mut system_proc = SourceProcessor::new(system_vad, TranscriptSource::System);
 
         // --- Mic capture on a dedicated thread (independent cpal stream) ---
         let (mic_tx, mic_rx) = mpsc::channel::<Vec<f32>>();
@@ -593,30 +901,33 @@ impl MeetingManager {
             sys_rate
         );
 
-        // --- Mix + VAD + segment state ---
+        // --- Mixer (kept ONLY for the level meter + saved playback WAV) ---
         let mut mixer = MeetingMixer::new();
         let mut mixed: Vec<f32> = Vec::new();
-        // Carry-over of mixed samples not yet aligned to a 480-sample frame.
-        let mut frame_accum: Vec<f32> = Vec::with_capacity(VAD_FRAME_SAMPLES);
-        // Current in-progress speech segment.
-        let mut segment: Vec<f32> = Vec::new();
-        let mut total_samples: u64 = 0;
-        // Sample index (since session start) where the current segment began.
-        let mut segment_start_samples: u64 = 0;
-        // Pending (already-finished) segment audio + start, held back so the NEXT
-        // segment can be merged into it if it starts within SEGMENT_MERGE_GAP.
-        let mut pending: Option<(Vec<f32>, u64)> = None;
-        // Sample index where the pending segment's audio ended.
-        let mut pending_end_samples: u64 = 0;
+        // Per-source 16 kHz frames pulled this tick, fed to each VAD + buffer.
+        let mut mic_frames: Vec<f32> = Vec::new();
+        let mut sys_frames: Vec<f32> = Vec::new();
+
+        // Segmentation tuning shared by both source processors.
+        let seg_cfg = SegConfig {
+            frame_samples: VAD_FRAME_SAMPLES,
+            min_samples: MIN_SEGMENT_SAMPLES,
+            max_samples: MAX_SEGMENT_SAMPLES,
+            merge_gap_samples: SEGMENT_MERGE_GAP_SAMPLES,
+        };
 
         loop {
             if self.stop_signal.load(Ordering::Relaxed) {
                 break;
             }
 
-            // Drain any available mic frames (non-blocking).
+            mic_frames.clear();
+            sys_frames.clear();
+
+            // Drain any available mic frames (already 16 kHz mono, non-blocking).
             while let Ok(frame) = mic_rx.try_recv() {
                 mixer.push(MixSource::Microphone, &frame);
+                mic_frames.extend_from_slice(&frame);
             }
 
             // Pull a system-audio batch (blocks up to 100 ms to pace the loop).
@@ -624,6 +935,7 @@ impl MeetingManager {
                 Ok(batch) => {
                     sys_resampler.push(&batch, &mut |frame: &[f32]| {
                         mixer.push(MixSource::System, frame);
+                        sys_frames.extend_from_slice(frame);
                     });
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) => {
@@ -632,12 +944,20 @@ impl MeetingManager {
                 Err(mpsc::RecvTimeoutError::Disconnected) => break,
             }
 
-            mixer.drain_into(&mut mixed);
+            // Buffer + segment each source independently (Features 1 & 2).
+            if !mic_frames.is_empty() {
+                let _ = mic_buf_writer.write(&mic_frames);
+                mic_proc.feed(&mic_frames, &seg_cfg, self);
+            }
+            if !sys_frames.is_empty() {
+                let _ = system_buf_writer.write(&sys_frames);
+                system_proc.feed(&sys_frames, &seg_cfg, self);
+            }
 
-            // Feed mixed samples into the VAD frame-by-frame.
+            // --- Mixed stream: level meter + playback buffer ONLY ---
+            mixer.drain_into(&mut mixed);
             if !mixed.is_empty() {
-                // --- Live audio level: accumulate raw mixed samples, feed the
-                // visualiser for bars, and emit a throttled event (~20 fps). ---
+                let _ = mixed_buf_writer.write(&mixed);
                 level_accum.extend_from_slice(&mixed);
                 if let Some(bars) = visualizer.feed(&mixed) {
                     last_bars = bars;
@@ -648,59 +968,7 @@ impl MeetingManager {
                     level_accum.clear();
                     last_level_emit = Instant::now();
                 }
-
-                frame_accum.append(&mut mixed);
-                while frame_accum.len() >= VAD_FRAME_SAMPLES {
-                    let frame: Vec<f32> = frame_accum.drain(0..VAD_FRAME_SAMPLES).collect();
-                    total_samples += VAD_FRAME_SAMPLES as u64;
-
-                    match vad.push_frame(&frame) {
-                        Ok(VadFrame::Speech(speech)) => {
-                            if segment.is_empty() {
-                                // New segment begins. The SmoothedVad returns
-                                // prefill+current on onset, so back-date the
-                                // start by the speech length already captured.
-                                let prelen = speech.len() as u64;
-                                segment_start_samples = total_samples.saturating_sub(prelen);
-                            }
-                            segment.extend_from_slice(speech);
-
-                            // Forced flush for a very long continuous talker.
-                            if segment.len() >= MAX_SEGMENT_SAMPLES {
-                                finish_segment(
-                                    self,
-                                    &mut segment,
-                                    segment_start_samples,
-                                    total_samples,
-                                    &mut pending,
-                                    &mut pending_end_samples,
-                                    SEGMENT_MERGE_GAP_SAMPLES,
-                                );
-                            }
-                        }
-                        Ok(VadFrame::Noise) => {
-                            // Silence past hangover -> end of segment.
-                            if !segment.is_empty() {
-                                if segment.len() >= MIN_SEGMENT_SAMPLES {
-                                    finish_segment(
-                                        self,
-                                        &mut segment,
-                                        segment_start_samples,
-                                        total_samples,
-                                        &mut pending,
-                                        &mut pending_end_samples,
-                                        SEGMENT_MERGE_GAP_SAMPLES,
-                                    );
-                                } else {
-                                    segment.clear();
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            log::warn!("meeting VAD frame error: {}", e);
-                        }
-                    }
-                }
+                mixed.clear();
             }
         }
 
@@ -710,50 +978,49 @@ impl MeetingManager {
         sys_stop.store(true, Ordering::Relaxed);
         // The async task tears down the CoreAudio tap on drop; wait for it.
         let _ = tauri::async_runtime::block_on(sys_task);
+
+        // Drain trailing mic frames.
+        let mut tail_mic: Vec<f32> = Vec::new();
         while let Ok(frame) = mic_rx.try_recv() {
             mixer.push(MixSource::Microphone, &frame);
+            tail_mic.extend_from_slice(&frame);
         }
-        // Drain any remaining system batches the task forwarded before exit.
+        if !tail_mic.is_empty() {
+            let _ = mic_buf_writer.write(&tail_mic);
+            mic_proc.feed(&tail_mic, &seg_cfg, self);
+        }
+
+        // Drain + flush trailing system audio.
+        let mut tail_sys: Vec<f32> = Vec::new();
         while let Ok(batch) = sys_rx.try_recv() {
             sys_resampler.push(&batch, &mut |frame: &[f32]| {
                 mixer.push(MixSource::System, frame);
+                tail_sys.extend_from_slice(frame);
             });
         }
         sys_resampler.finish(&mut |frame: &[f32]| {
             mixer.push(MixSource::System, frame);
+            tail_sys.extend_from_slice(frame);
         });
+        if !tail_sys.is_empty() {
+            let _ = system_buf_writer.write(&tail_sys);
+            system_proc.feed(&tail_sys, &seg_cfg, self);
+        }
+
+        // Flush any remaining mixed audio to the playback buffer.
         mixer.flush_into(&mut mixed);
-
-        // Push any trailing mixed audio through the VAD.
-        frame_accum.append(&mut mixed);
-        while frame_accum.len() >= VAD_FRAME_SAMPLES {
-            let frame: Vec<f32> = frame_accum.drain(0..VAD_FRAME_SAMPLES).collect();
-            total_samples += VAD_FRAME_SAMPLES as u64;
-            if let Ok(VadFrame::Speech(speech)) = vad.push_frame(&frame) {
-                if segment.is_empty() {
-                    segment_start_samples = total_samples.saturating_sub(speech.len() as u64);
-                }
-                segment.extend_from_slice(speech);
-            }
+        if !mixed.is_empty() {
+            let _ = mixed_buf_writer.write(&mixed);
         }
 
-        // Flush the final in-progress segment regardless of min length, merging
-        // into any pending segment as usual.
-        if !segment.is_empty() {
-            finish_segment(
-                self,
-                &mut segment,
-                segment_start_samples,
-                total_samples,
-                &mut pending,
-                &mut pending_end_samples,
-                SEGMENT_MERGE_GAP_SAMPLES,
-            );
-        }
-        // Flush whatever remains buffered for merging.
-        if let Some((mut audio, start)) = pending.take() {
-            self.flush_segment(&mut audio, start);
-        }
+        // Flush each source's final in-progress + pending segments.
+        mic_proc.finish(&seg_cfg, self);
+        system_proc.finish(&seg_cfg, self);
+
+        // Ensure buffers are fully written to disk before stop() reads them.
+        let _ = mic_buf_writer.flush();
+        let _ = system_buf_writer.flush();
+        let _ = mixed_buf_writer.flush();
 
         // Emit one final flat level so the visualiser settles to a flat line.
         self.emit_audio_level(vec![0.0; VIS_BUCKETS], vec![0.0; WAVE_POINTS], 0.0);
@@ -761,9 +1028,11 @@ impl MeetingManager {
         Ok(())
     }
 
-    /// Transcribe a completed segment and append the result. Clears `segment`.
+    /// Transcribe a completed live segment and append the result with its source
+    /// label. Clears `segment`. This is the LIVE rough pass; the on-stop
+    /// finalize replaces these with full-audio re-transcription.
     #[cfg(target_os = "macos")]
-    fn flush_segment(&self, segment: &mut Vec<f32>, start_samples: u64) {
+    fn flush_segment(&self, segment: &mut Vec<f32>, start_samples: u64, source: TranscriptSource) {
         use crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE;
 
         if segment.is_empty() {
@@ -775,8 +1044,13 @@ impl MeetingManager {
         match self.transcription_manager.transcribe(audio) {
             Ok(text) => {
                 if !text.trim().is_empty() {
-                    log::info!("meeting segment @ {}ms: {}", timestamp_ms, text);
-                    self.push_segment(text, timestamp_ms);
+                    log::info!(
+                        "meeting segment [{:?}] @ {}ms: {}",
+                        source,
+                        timestamp_ms,
+                        text
+                    );
+                    self.push_segment(text, timestamp_ms, source);
                 }
             }
             Err(e) => {
@@ -786,52 +1060,204 @@ impl MeetingManager {
     }
 }
 
-/// Finish the current in-progress `segment`, either merging it into the
-/// `pending` (already-finished) segment when they are separated by only a short
-/// gap, or flushing the previous pending and making this one the new pending.
-///
-/// Merging keeps the audio contiguous by inserting `gap` samples of silence so
-/// the merged transcript reads naturally. `pending` is held back (not yet
-/// transcribed) so a subsequent close segment can still merge into it; the
-/// caller flushes the final pending on teardown.
+/// Segmentation tuning shared by both per-source processors.
 #[cfg(target_os = "macos")]
-#[allow(clippy::too_many_arguments)]
-fn finish_segment(
-    manager: &MeetingManager,
-    segment: &mut Vec<f32>,
-    segment_start: u64,
-    segment_end: u64,
-    pending: &mut Option<(Vec<f32>, u64)>,
-    pending_end: &mut u64,
-    merge_gap: u64,
-) {
-    if segment.is_empty() {
-        return;
-    }
-    let audio = std::mem::take(segment);
+struct SegConfig {
+    frame_samples: usize,
+    min_samples: usize,
+    max_samples: usize,
+    merge_gap_samples: u64,
+}
 
-    match pending.take() {
-        Some((mut prev_audio, prev_start)) => {
-            let gap = segment_start.saturating_sub(*pending_end);
-            if gap <= merge_gap {
-                // Close enough: merge into the pending segment, bridging the gap
-                // with silence so timing stays roughly aligned.
-                prev_audio.extend(std::iter::repeat(0.0).take(gap as usize));
-                prev_audio.extend_from_slice(&audio);
-                *pending = Some((prev_audio, prev_start));
-                *pending_end = segment_end;
-            } else {
-                // Too far apart: flush the previous block, start a new pending.
-                manager.flush_segment(&mut prev_audio, prev_start);
-                *pending = Some((audio, segment_start));
-                *pending_end = segment_end;
+/// Owns the live VAD segmentation state for a SINGLE capture source (mic or
+/// system). Each source has its own `SmoothedVad`, segment buffer, and pending
+/// merge state, producing source-labeled segments (Feature 1). The previous
+/// implementation ran one VAD on the mix; this splits it in two.
+#[cfg(target_os = "macos")]
+struct SourceProcessor {
+    vad: crate::audio_toolkit::vad::SmoothedVad,
+    source: TranscriptSource,
+    /// Carry-over of samples not yet aligned to a VAD frame.
+    frame_accum: Vec<f32>,
+    /// Current in-progress speech segment.
+    segment: Vec<f32>,
+    /// Total samples seen for this source (relative timestamps).
+    total_samples: u64,
+    /// Sample index where the current segment began.
+    segment_start: u64,
+    /// Already-finished segment held back for possible merge with the next.
+    pending: Option<(Vec<f32>, u64)>,
+    /// Sample index where the pending segment's audio ended.
+    pending_end: u64,
+}
+
+#[cfg(target_os = "macos")]
+impl SourceProcessor {
+    fn new(vad: crate::audio_toolkit::vad::SmoothedVad, source: TranscriptSource) -> Self {
+        Self {
+            vad,
+            source,
+            frame_accum: Vec::new(),
+            segment: Vec::new(),
+            total_samples: 0,
+            segment_start: 0,
+            pending: None,
+            pending_end: 0,
+        }
+    }
+
+    /// Feed newly-captured 16 kHz mono samples for this source, segmenting them
+    /// and transcribing completed segments (live rough pass) via `manager`.
+    fn feed(&mut self, samples: &[f32], cfg: &SegConfig, manager: &MeetingManager) {
+        use crate::audio_toolkit::vad::{VadFrame, VoiceActivityDetector};
+
+        self.frame_accum.extend_from_slice(samples);
+        while self.frame_accum.len() >= cfg.frame_samples {
+            let frame: Vec<f32> = self.frame_accum.drain(0..cfg.frame_samples).collect();
+            self.total_samples += cfg.frame_samples as u64;
+
+            match self.vad.push_frame(&frame) {
+                Ok(VadFrame::Speech(speech)) => {
+                    if self.segment.is_empty() {
+                        let prelen = speech.len() as u64;
+                        self.segment_start = self.total_samples.saturating_sub(prelen);
+                    }
+                    self.segment.extend_from_slice(speech);
+                    if self.segment.len() >= cfg.max_samples {
+                        self.finish_current(cfg, manager);
+                    }
+                }
+                Ok(VadFrame::Noise) => {
+                    if !self.segment.is_empty() {
+                        if self.segment.len() >= cfg.min_samples {
+                            self.finish_current(cfg, manager);
+                        } else {
+                            self.segment.clear();
+                        }
+                    }
+                }
+                Err(e) => log::warn!("meeting VAD frame error [{:?}]: {}", self.source, e),
             }
         }
-        None => {
-            *pending = Some((audio, segment_start));
-            *pending_end = segment_end;
+    }
+
+    /// Finish the in-progress segment: merge into `pending` when close, else
+    /// flush the previous pending and make this the new pending. Mirrors the
+    /// previous free `finish_segment` function, scoped to one source.
+    fn finish_current(&mut self, cfg: &SegConfig, manager: &MeetingManager) {
+        if self.segment.is_empty() {
+            return;
+        }
+        let audio = std::mem::take(&mut self.segment);
+        let segment_start = self.segment_start;
+        let segment_end = self.total_samples;
+
+        match self.pending.take() {
+            Some((mut prev_audio, prev_start)) => {
+                let gap = segment_start.saturating_sub(self.pending_end);
+                if gap <= cfg.merge_gap_samples {
+                    prev_audio.extend(std::iter::repeat(0.0).take(gap as usize));
+                    prev_audio.extend_from_slice(&audio);
+                    self.pending = Some((prev_audio, prev_start));
+                    self.pending_end = segment_end;
+                } else {
+                    manager.flush_segment(&mut prev_audio, prev_start, self.source);
+                    self.pending = Some((audio, segment_start));
+                    self.pending_end = segment_end;
+                }
+            }
+            None => {
+                self.pending = Some((audio, segment_start));
+                self.pending_end = segment_end;
+            }
         }
     }
+
+    /// Flush any trailing in-progress + pending segment on teardown.
+    fn finish(&mut self, cfg: &SegConfig, manager: &MeetingManager) {
+        if !self.segment.is_empty() {
+            self.finish_current(cfg, manager);
+        }
+        if let Some((mut audio, start)) = self.pending.take() {
+            manager.flush_segment(&mut audio, start, self.source);
+        }
+    }
+}
+
+/// Incrementally append raw little-endian f32 samples to a file (bounded
+/// memory: full session audio lives on disk, not in RAM).
+#[cfg(target_os = "macos")]
+struct RawF32Writer {
+    inner: std::io::BufWriter<std::fs::File>,
+}
+
+#[cfg(target_os = "macos")]
+impl RawF32Writer {
+    fn create(path: &std::path::Path) -> std::io::Result<Self> {
+        Ok(Self {
+            inner: std::io::BufWriter::new(std::fs::File::create(path)?),
+        })
+    }
+
+    fn write(&mut self, samples: &[f32]) -> std::io::Result<()> {
+        use std::io::Write;
+        // f32 is plain-old-data; write the little-endian byte view directly.
+        let mut buf = Vec::with_capacity(samples.len() * 4);
+        for &s in samples {
+            buf.extend_from_slice(&s.to_le_bytes());
+        }
+        self.inner.write_all(&buf)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        use std::io::Write;
+        self.inner.flush()
+    }
+}
+
+/// Read a raw little-endian f32 buffer file back into a Vec<f32>.
+#[cfg(target_os = "macos")]
+fn read_f32_raw(path: &std::path::Path) -> std::io::Result<Vec<f32>> {
+    let bytes = std::fs::read(path)?;
+    let mut out = Vec::with_capacity(bytes.len() / 4);
+    for chunk in bytes.chunks_exact(4) {
+        out.push(f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
+    }
+    Ok(out)
+}
+
+/// Write mono f32 samples as a 32-bit float PCM WAV (format tag 3). Mirrors the
+/// helper in `commands::audio` so meeting playback audio is in the same format.
+#[cfg(target_os = "macos")]
+fn write_f32_wav(path: &std::path::Path, samples: &[f32], sample_rate: u32) -> std::io::Result<()> {
+    use std::io::Write;
+
+    let channels: u16 = 1;
+    let bits_per_sample: u16 = 32;
+    let block_align: u16 = channels * (bits_per_sample / 8);
+    let byte_rate: u32 = sample_rate * block_align as u32;
+    let data_bytes: u32 = (samples.len() * std::mem::size_of::<f32>()) as u32;
+    let riff_chunk_size: u32 = 36 + data_bytes;
+
+    let mut f = std::io::BufWriter::new(std::fs::File::create(path)?);
+    f.write_all(b"RIFF")?;
+    f.write_all(&riff_chunk_size.to_le_bytes())?;
+    f.write_all(b"WAVE")?;
+    f.write_all(b"fmt ")?;
+    f.write_all(&16u32.to_le_bytes())?;
+    f.write_all(&3u16.to_le_bytes())?; // IEEE float
+    f.write_all(&channels.to_le_bytes())?;
+    f.write_all(&sample_rate.to_le_bytes())?;
+    f.write_all(&byte_rate.to_le_bytes())?;
+    f.write_all(&block_align.to_le_bytes())?;
+    f.write_all(&bits_per_sample.to_le_bytes())?;
+    f.write_all(b"data")?;
+    f.write_all(&data_bytes.to_le_bytes())?;
+    for &s in samples {
+        f.write_all(&s.to_le_bytes())?;
+    }
+    f.flush()?;
+    Ok(())
 }
 
 /// Downsample a window of mixed samples into a fixed-length oscilloscope trace
@@ -887,7 +1313,32 @@ fn default_meeting_title(started_at_ms: i64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::downsample_wave;
+    use super::{downsample_wave, TranscriptSegment, TranscriptSource};
+
+    #[test]
+    fn transcript_source_serializes_as_you_and_others() {
+        assert_eq!(
+            serde_json::to_string(&TranscriptSource::Mic).unwrap(),
+            "\"you\""
+        );
+        assert_eq!(
+            serde_json::to_string(&TranscriptSource::System).unwrap(),
+            "\"others\""
+        );
+        // Round-trip.
+        let back: TranscriptSource = serde_json::from_str("\"others\"").unwrap();
+        assert_eq!(back, TranscriptSource::System);
+    }
+
+    #[test]
+    fn transcript_segment_defaults_source_for_legacy_records() {
+        // Older persisted segments have no `source` field; they default to Mic.
+        let legacy = r#"{"text":"hello","timestamp_ms":1200}"#;
+        let seg: TranscriptSegment = serde_json::from_str(legacy).unwrap();
+        assert_eq!(seg.source, TranscriptSource::Mic);
+        assert_eq!(seg.text, "hello");
+        assert_eq!(seg.timestamp_ms, 1200);
+    }
 
     #[test]
     fn downsample_wave_empty_is_flat() {

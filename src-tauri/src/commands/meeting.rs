@@ -16,7 +16,7 @@ use crate::meeting::{MeetingListItem, MeetingManager, MeetingRecord, MeetingStat
 /// Reused by `summarize_meeting`. Instructs the model to answer in the SAME
 /// language as the transcript (so a Turkish transcript yields Turkish notes)
 /// and to produce a short summary, key points, decisions, and action items.
-const DEFAULT_MEETING_SUMMARY_PROMPT: &str = "You are an assistant that writes clear, concise meeting notes from a raw meeting transcript. \
+pub(crate) const DEFAULT_MEETING_SUMMARY_PROMPT: &str = "You are an assistant that writes clear, concise meeting notes from a raw meeting transcript. \
 Respond in the SAME LANGUAGE as the transcript (do not translate). \
 Produce well-structured notes with the following sections, using the section names in the transcript's language:\n\
 1. Summary - a short paragraph summarizing the meeting.\n\
@@ -84,9 +84,28 @@ pub async fn summarize_meeting(
         return Err("No transcript to summarize. Start and run a meeting first.".to_string());
     }
 
-    // 2. Resolve the active post-process provider/model/api-key from settings
-    //    (same selection logic dictation uses).
-    let settings = crate::settings::get_settings(&app);
+    // 2-3. Run the shared summarization path (resolve active provider, send
+    // transcript to the LLM with the meeting-notes prompt).
+    let content = summarize_transcript(&app, &transcript).await?;
+
+    // Persist the summary onto the meeting row saved on the most recent stop().
+    // If there's no saved id (summarize called for an unsaved session), this is
+    // a no-op and we still return the summary.
+    if let Err(e) = meeting_manager.update_saved_summary(&content) {
+        log::error!("{}", e);
+    }
+    Ok(content)
+}
+
+/// Summarize a meeting `transcript` into notes using the SAME active
+/// post-processing provider/model/api-key the user configured for dictation.
+/// Shared by the `summarize_meeting` command and the on-stop auto-summarize
+/// path in `MeetingManager`. Returns the generated notes, or a clear error.
+pub(crate) async fn summarize_transcript(
+    app: &AppHandle,
+    transcript: &str,
+) -> Result<String, String> {
+    let settings = crate::settings::get_settings(app);
 
     let provider = settings.active_post_process_provider().cloned().ok_or_else(|| {
         "No LLM provider is configured. Set up a post-processing provider in Settings (e.g. a local Ollama instance or an API key) and try again.".to_string()
@@ -110,10 +129,9 @@ pub async fn summarize_meeting(
         .cloned()
         .unwrap_or_default();
 
-    // 3. Send the transcript to the LLM with a meeting-notes summary prompt.
-    //    Use the plain (non-structured) chat completion path: meeting notes are
-    //    free-form text, so we send the summary instructions as the system
-    //    prompt and the transcript as the user message.
+    // Use the plain (non-structured) chat completion path: meeting notes are
+    // free-form text, so we send the summary instructions as the system prompt
+    // and the transcript as the user message.
     let prompt = format!(
         "{}\n\nTranscript:\n{}",
         DEFAULT_MEETING_SUMMARY_PROMPT, transcript
@@ -125,13 +143,6 @@ pub async fn summarize_meeting(
             if content.is_empty() {
                 Err("The LLM returned an empty summary.".to_string())
             } else {
-                // Persist the summary onto the meeting row saved on the most
-                // recent stop(). If there's no saved id (summarize called for an
-                // unsaved session), this is a no-op and we still return the
-                // summary.
-                if let Err(e) = meeting_manager.update_saved_summary(&content) {
-                    log::error!("{}", e);
-                }
                 Ok(content)
             }
         }
@@ -165,13 +176,31 @@ pub fn get_meeting(
         .map_err(|e| format!("Failed to get meeting: {}", e))
 }
 
+/// Return the absolute filesystem path to a meeting's saved mixed-audio WAV,
+/// for the frontend to play back. The frontend should pass this path to
+/// Tauri's `convertFileSrc()` and use the result as an `<audio>` `src`; the
+/// app's asset protocol is enabled with a broad scope so the converted URL is
+/// directly loadable. Errors if the meeting has no saved audio.
+#[tauri::command]
+#[specta::specta]
+pub fn get_meeting_audio_path(
+    meeting_manager: State<Arc<MeetingManager>>,
+    id: i64,
+) -> Result<String, String> {
+    match meeting_manager
+        .store()
+        .get_audio_path(id)
+        .map_err(|e| format!("Failed to get meeting audio path: {}", e))?
+    {
+        Some(path) => Ok(path),
+        None => Err(format!("Meeting {} has no saved audio", id)),
+    }
+}
+
 /// Delete a persisted meeting by id.
 #[tauri::command]
 #[specta::specta]
-pub fn delete_meeting(
-    meeting_manager: State<Arc<MeetingManager>>,
-    id: i64,
-) -> Result<(), String> {
+pub fn delete_meeting(meeting_manager: State<Arc<MeetingManager>>, id: i64) -> Result<(), String> {
     meeting_manager
         .store()
         .delete_meeting(id)

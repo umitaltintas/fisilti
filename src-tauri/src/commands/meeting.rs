@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use tauri::{AppHandle, State};
 
-use crate::meeting::{MeetingManager, MeetingState};
+use crate::meeting::{MeetingListItem, MeetingManager, MeetingRecord, MeetingState};
 
 /// Default system prompt for summarizing a meeting transcript into notes.
 ///
@@ -125,10 +125,55 @@ pub async fn summarize_meeting(
             if content.is_empty() {
                 Err("The LLM returned an empty summary.".to_string())
             } else {
+                // Persist the summary onto the meeting row saved on the most
+                // recent stop(). If there's no saved id (summarize called for an
+                // unsaved session), this is a no-op and we still return the
+                // summary.
+                if let Err(e) = meeting_manager.update_saved_summary(&content) {
+                    log::error!("{}", e);
+                }
                 Ok(content)
             }
         }
         Ok(None) => Err("The LLM response contained no content.".to_string()),
         Err(e) => Err(format!("Failed to summarize meeting: {}", e)),
     }
+}
+
+/// List all persisted meetings, newest-first (lightweight rows).
+#[tauri::command]
+#[specta::specta]
+pub fn list_meetings(
+    meeting_manager: State<Arc<MeetingManager>>,
+) -> Result<Vec<MeetingListItem>, String> {
+    meeting_manager
+        .store()
+        .list_meetings()
+        .map_err(|e| format!("Failed to list meetings: {}", e))
+}
+
+/// Fetch a single full meeting record (transcript + segments + summary).
+#[tauri::command]
+#[specta::specta]
+pub fn get_meeting(
+    meeting_manager: State<Arc<MeetingManager>>,
+    id: i64,
+) -> Result<MeetingRecord, String> {
+    meeting_manager
+        .store()
+        .get_meeting(id)
+        .map_err(|e| format!("Failed to get meeting: {}", e))
+}
+
+/// Delete a persisted meeting by id.
+#[tauri::command]
+#[specta::specta]
+pub fn delete_meeting(
+    meeting_manager: State<Arc<MeetingManager>>,
+    id: i64,
+) -> Result<(), String> {
+    meeting_manager
+        .store()
+        .delete_meeting(id)
+        .map_err(|e| format!("Failed to delete meeting: {}", e))
 }

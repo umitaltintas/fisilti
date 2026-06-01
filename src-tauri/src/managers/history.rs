@@ -31,6 +31,23 @@ static MIGRATIONS: &[M] = &[
     M::up("ALTER TABLE transcription_history ADD COLUMN post_processed_text TEXT;"),
     M::up("ALTER TABLE transcription_history ADD COLUMN post_process_prompt TEXT;"),
     M::up("ALTER TABLE transcription_history ADD COLUMN post_process_requested BOOLEAN NOT NULL DEFAULT 0;"),
+    // Meeting mode persistence: store each meeting session (transcript + summary
+    // + timestamps). Lives in the same history.db so migrations are tracked by
+    // the shared rusqlite_migration framework. APPENDED at the end of the array;
+    // never reorder/edit earlier entries.
+    M::up(
+        "CREATE TABLE IF NOT EXISTS meetings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            started_at INTEGER NOT NULL,
+            ended_at INTEGER NOT NULL,
+            duration_ms INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            transcript TEXT NOT NULL,
+            segments_json TEXT NOT NULL,
+            summary TEXT,
+            created_at INTEGER NOT NULL
+        );",
+    ),
 ];
 
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]

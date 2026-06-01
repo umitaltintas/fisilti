@@ -6,7 +6,10 @@
     "unloadModel": "Avlasta modell",
     "model": "Modell",
     "quit": "Avsluta",
-    "cancel": "Avbryt"
+    "cancel": "Avbryt",
+    "startMeeting": "Starta möte",
+    "stopMeeting": "Stoppa möte",
+    "recordingIndicator": "Fısıltı — Spelar in…"
   },
   "sidebar": {
     "general": "Allmänt",

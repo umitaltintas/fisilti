@@ -6,7 +6,10 @@
     "unloadModel": "Modeli boşalt",
     "model": "Model",
     "quit": "Çıkış",
-    "cancel": "İptal"
+    "cancel": "İptal",
+    "startMeeting": "Toplantıyı Başlat",
+    "stopMeeting": "Toplantıyı Durdur",
+    "recordingIndicator": "Fısıltı — Kaydediliyor…"
   },
   "sidebar": {
     "general": "Genel",

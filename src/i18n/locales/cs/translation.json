@@ -6,7 +6,10 @@
     "unloadModel": "Uvolnit model",
     "model": "Model",
     "quit": "Ukončit",
-    "cancel": "Zrušit"
+    "cancel": "Zrušit",
+    "startMeeting": "Zahájit schůzku",
+    "stopMeeting": "Ukončit schůzku",
+    "recordingIndicator": "Fısıltı — Nahrávání…"
   },
   "sidebar": {
     "general": "Obecné",

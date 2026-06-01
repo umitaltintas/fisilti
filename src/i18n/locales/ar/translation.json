@@ -6,7 +6,10 @@
     "unloadModel": "تفريغ النموذج",
     "model": "النموذج",
     "quit": "إنهاء",
-    "cancel": "إلغاء"
+    "cancel": "إلغاء",
+    "startMeeting": "بدء الاجتماع",
+    "stopMeeting": "إيقاف الاجتماع",
+    "recordingIndicator": "Fısıltı — جارٍ التسجيل…"
   },
   "sidebar": {
     "general": "عام",

@@ -226,6 +226,16 @@ fn initialize_core_logic(app_handle: &AppHandle) {
             "copy_last_transcript" => {
                 tray::copy_last_transcript(app);
             }
+            "toggle_meeting" => {
+                // Start/stop a meeting from the tray without opening the window.
+                // The shared helper emits "meeting-state-changed", which the
+                // listener below uses to refresh the tray indicator. stop() can
+                // block (finalize pass), so run off the menu-event thread.
+                let app_clone = app.clone();
+                std::thread::spawn(move || {
+                    commands::meeting::toggle_meeting_from_app(&app_clone);
+                });
+            }
             "unload_model" => {
                 let transcription_manager = app.state::<Arc<TranscriptionManager>>();
                 if !transcription_manager.is_model_loaded() {
@@ -284,6 +294,15 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     let app_handle_for_listener = app_handle.clone();
     app_handle.listen("model-state-changed", move |_| {
         tray::update_tray_menu(&app_handle_for_listener, &tray::TrayIconState::Idle, None);
+    });
+
+    // Refresh the tray recording indicator (icon + tooltip + Start/Stop label)
+    // whenever a meeting starts or stops, regardless of whether the trigger was
+    // the tray item or the UI command. Both paths emit "meeting-state-changed"
+    // via the shared helpers in commands::meeting.
+    let app_handle_for_meeting = app_handle.clone();
+    app_handle.listen(commands::meeting::MEETING_STATE_CHANGED_EVENT, move |_| {
+        tray::update_meeting_indicator(&app_handle_for_meeting);
     });
 
     // Get the autostart manager and configure based on user setting

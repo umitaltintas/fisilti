@@ -6,7 +6,10 @@
     "unloadModel": "Décharger le modèle",
     "model": "Modèle",
     "quit": "Quitter",
-    "cancel": "Annuler"
+    "cancel": "Annuler",
+    "startMeeting": "Démarrer la réunion",
+    "stopMeeting": "Arrêter la réunion",
+    "recordingIndicator": "Fısıltı — Enregistrement…"
   },
   "sidebar": {
     "general": "Général",

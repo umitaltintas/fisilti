@@ -6,7 +6,10 @@
     "unloadModel": "Dỡ mô hình",
     "model": "Mô hình",
     "quit": "Thoát",
-    "cancel": "Hủy"
+    "cancel": "Hủy",
+    "startMeeting": "Bắt đầu cuộc họp",
+    "stopMeeting": "Dừng cuộc họp",
+    "recordingIndicator": "Fısıltı — Đang ghi…"
   },
   "sidebar": {
     "general": "Chung",

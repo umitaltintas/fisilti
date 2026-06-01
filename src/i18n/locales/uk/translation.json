@@ -6,7 +6,10 @@
     "unloadModel": "Вивантажити модель",
     "model": "Модель",
     "quit": "Вийти",
-    "cancel": "Скасувати"
+    "cancel": "Скасувати",
+    "startMeeting": "Почати зустріч",
+    "stopMeeting": "Зупинити зустріч",
+    "recordingIndicator": "Fısıltı — Запис…"
   },
   "sidebar": {
     "general": "Загальні",

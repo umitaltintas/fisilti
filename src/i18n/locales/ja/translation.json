@@ -6,7 +6,10 @@
     "unloadModel": "モデルをアンロード",
     "model": "モデル",
     "quit": "終了",
-    "cancel": "キャンセル"
+    "cancel": "キャンセル",
+    "startMeeting": "会議を開始",
+    "stopMeeting": "会議を停止",
+    "recordingIndicator": "Fısıltı — 録音中…"
   },
   "sidebar": {
     "general": "一般",

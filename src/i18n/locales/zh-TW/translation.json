@@ -6,7 +6,10 @@
     "unloadModel": "卸載模型",
     "model": "模型",
     "quit": "結束",
-    "cancel": "取消"
+    "cancel": "取消",
+    "startMeeting": "開始會議",
+    "stopMeeting": "停止會議",
+    "recordingIndicator": "Fısıltı — 錄製中…"
   },
   "sidebar": {
     "general": "一般",

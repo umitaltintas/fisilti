@@ -1,6 +1,7 @@
 use crate::managers::history::{HistoryEntry, HistoryManager};
 use crate::managers::model::ModelManager;
 use crate::managers::transcription::TranscriptionManager;
+use crate::meeting::{MeetingManager, MeetingState};
 use crate::settings;
 use crate::tray_i18n::get_tray_translations;
 use log::{error, info, warn};
@@ -66,7 +67,15 @@ pub fn change_tray_icon(app: &AppHandle, icon: TrayIconState) {
     let tray = app.state::<TrayIcon>();
     let theme = get_current_theme(app);
 
-    let icon_path = get_icon_path(theme, icon.clone());
+    // A running meeting keeps the recording icon even when dictation reports
+    // Idle, so the meeting indicator survives a dictation-driven Idle reset.
+    let effective = if icon == TrayIconState::Idle && meeting_is_active(app) {
+        TrayIconState::Recording
+    } else {
+        icon.clone()
+    };
+
+    let icon_path = get_icon_path(theme, effective.clone());
 
     let _ = tray.set_icon(Some(
         Image::from_path(
@@ -81,11 +90,90 @@ pub fn change_tray_icon(app: &AppHandle, icon: TrayIconState) {
     update_tray_menu(app, &icon, None);
 }
 
+/// Reflect the current meeting recording state in the tray: swap the icon to a
+/// recording variant + set a "Recording…" tooltip/title while a meeting runs,
+/// and restore the idle icon/tooltip when it stops. Also refreshes the menu so
+/// the Start/Stop Meeting label flips. Called from the `meeting-state-changed`
+/// listener so BOTH tray- and UI-initiated meetings update the indicator.
+pub fn update_meeting_indicator(app: &AppHandle) {
+    let active = meeting_is_active(app);
+    let tray = app.state::<TrayIcon>();
+
+    let theme = get_current_theme(app);
+    let icon_state = if active {
+        TrayIconState::Recording
+    } else {
+        TrayIconState::Idle
+    };
+    let icon_path = get_icon_path(theme, icon_state.clone());
+    if let Ok(resolved) = app
+        .path()
+        .resolve(icon_path, tauri::path::BaseDirectory::Resource)
+    {
+        if let Ok(image) = Image::from_path(resolved) {
+            let _ = tray.set_icon(Some(image));
+        }
+    }
+
+    // Tooltip/title indicator. The title is hidden on most platforms but the
+    // tooltip is widely shown on hover; set both for good measure.
+    let strings = get_tray_translations(Some(settings::get_settings(app).app_language));
+    let tooltip = if active {
+        Some(strings.recording_indicator.clone())
+    } else {
+        None
+    };
+    let _ = tray.set_tooltip(tooltip.as_deref());
+    #[cfg(target_os = "macos")]
+    {
+        let _ = tray.set_title(if active {
+            Some(strings.recording_indicator.as_str())
+        } else {
+            None
+        });
+    }
+
+    // Refresh the menu so the Start/Stop Meeting label reflects the new state.
+    update_tray_menu(app, &icon_state, None);
+}
+
+/// Whether a meeting session is currently running. Resolved from the managed
+/// `Arc<MeetingManager>` if present (it always is after core init); defaults to
+/// `false` when the manager isn't available yet (early startup).
+fn meeting_is_active(app: &AppHandle) -> bool {
+    app.try_state::<Arc<MeetingManager>>()
+        .map(|m| m.status() == MeetingState::Running)
+        .unwrap_or(false)
+}
+
 pub fn update_tray_menu(app: &AppHandle, state: &TrayIconState, locale: Option<&str>) {
     let settings = settings::get_settings(app);
 
     let locale = locale.unwrap_or(&settings.app_language);
     let strings = get_tray_translations(Some(locale.to_string()));
+
+    // Meeting quick-start item: "Start Meeting" when idle, "Stop Meeting" while
+    // a meeting is running. Capture is macOS-only; on other platforms keep the
+    // item present but disabled so the menu layout stays cross-platform and the
+    // user gets a visible hint rather than a silent no-op.
+    let meeting_active = meeting_is_active(app);
+    #[cfg(target_os = "macos")]
+    let meeting_enabled = true;
+    #[cfg(not(target_os = "macos"))]
+    let meeting_enabled = false;
+    let meeting_label = if meeting_active {
+        &strings.stop_meeting
+    } else {
+        &strings.start_meeting
+    };
+    let toggle_meeting_i = MenuItem::with_id(
+        app,
+        "toggle_meeting",
+        meeting_label,
+        meeting_enabled,
+        None::<&str>,
+    )
+    .expect("failed to create toggle meeting item");
 
     // Platform-specific accelerators
     #[cfg(target_os = "macos")]
@@ -180,6 +268,8 @@ pub fn update_tray_menu(app: &AppHandle, state: &TrayIconState, locale: Option<&
                     &separator(),
                     &cancel_i,
                     &separator(),
+                    &toggle_meeting_i,
+                    &separator(),
                     &copy_last_transcript_i,
                     &separator(),
                     &settings_i,
@@ -194,6 +284,8 @@ pub fn update_tray_menu(app: &AppHandle, state: &TrayIconState, locale: Option<&
             app,
             &[
                 &version_i,
+                &separator(),
+                &toggle_meeting_i,
                 &separator(),
                 &copy_last_transcript_i,
                 &separator(),

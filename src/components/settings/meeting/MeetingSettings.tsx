@@ -723,7 +723,6 @@ export const MeetingSettings: React.FC = () => {
               the window. Unbound by default; mirrors the tray quick-start. */}
           <ShortcutInput shortcutId="toggle_meeting" descriptionMode="inline" />
 
-
           <label className="flex items-center gap-2.5 cursor-pointer select-none">
             <button
               type="button"

@@ -18,3 +18,6 @@ src/bindings.ts
 # Misc
 .DS_Store
 *.log
+
+# Vendored third-party crates (do not reformat)
+src-tauri/vendor/

@@ -58,6 +58,8 @@ export interface MeetingListItem {
   has_summary: boolean;
   /** Short preview of the transcript (first ~200 chars). */
   transcript_preview: string;
+  /** Lifecycle status: `"recording"` (interrupted) or `"completed"`. */
+  status: string;
 }
 
 /** Full meeting record. Mirrors Rust `MeetingRecord`
@@ -78,6 +80,44 @@ export interface MeetingRecord {
   /** Absolute path to the saved mixed-audio file, if one exists. Older
    * meetings recorded before audio persistence have no audio. */
   audio_path?: string | null;
+  /** The user's own editable notes, distinct from the AI `summary`. */
+  notes?: string | null;
+  /** Lifecycle status: `"recording"` or `"completed"`. */
+  status?: string;
+}
+
+/** A preset summary prompt template. Mirrors Rust `MeetingSummaryTemplate`
+ * (`src-tauri/src/settings.rs`). The `id` is passed to `summarizeMeetingWith`
+ * / `regenerateMeetingSummary`; `name` is the display label. */
+export interface MeetingSummaryTemplate {
+  id: string;
+  name: string;
+  prompt: string;
+}
+
+/** An interrupted meeting (status still `"recording"`) detected at startup.
+ * Mirrors Rust `InterruptedMeeting` (`src-tauri/src/meeting/store.rs`). */
+export interface InterruptedMeeting {
+  id: number;
+  /** Epoch milliseconds. */
+  started_at: number;
+  title: string;
+  transcript: string;
+  /** True if the per-source temp audio buffers still exist on disk, so a
+   * re-finalize can recover a high-quality transcript. */
+  has_buffers: boolean;
+}
+
+/** Where the summary LLM runs, derived from the active post-process provider.
+ * `local` → on-device (Apple Intelligence / localhost Ollama); `cloud` → the
+ * request leaves the device; `none` → no provider configured. */
+export type SummaryLocation = "local" | "cloud" | "none";
+
+/** Resolved info about the summary provider for the trust indicator. */
+export interface SummaryProviderInfo {
+  /** Display label of the active provider, if any. */
+  label: string;
+  location: SummaryLocation;
 }
 
 /** Payload of the `"meeting-finalizing"` event. Mirrors Rust
@@ -92,6 +132,7 @@ const MEETING_TRANSCRIPT_UPDATE = "meeting-transcript-update";
 const MEETING_AUDIO_LEVEL = "meeting-audio-level";
 const MEETING_FINALIZING = "meeting-finalizing";
 const MEETING_SUMMARY_UPDATE = "meeting-summary-update";
+const MEETING_TITLE_UPDATE = "meeting-title-update";
 
 /** Begin a capture + mix + VAD + transcribe meeting session (macOS). */
 export function startMeeting(): Promise<void> {
@@ -120,9 +161,112 @@ export function summarizeMeeting(): Promise<string> {
   return invoke<string>("summarize_meeting");
 }
 
-/** List all persisted meetings, newest-first. */
-export function listMeetings(): Promise<MeetingListItem[]> {
-  return invoke<MeetingListItem[]>("list_meetings");
+/** List persisted meetings, newest-first. An optional `query` filters by a
+ * case-insensitive substring match against title, transcript, or summary;
+ * omit or pass an empty string for all meetings. */
+export function listMeetings(query?: string): Promise<MeetingListItem[]> {
+  const trimmed = query?.trim();
+  return invoke<MeetingListItem[]>("list_meetings", {
+    query: trimmed && trimmed.length > 0 ? trimmed : null,
+  });
+}
+
+/** Produce an LLM summary using an optional template selector (a configured
+ * template id) OR a raw custom prompt. The backend merges any stored user
+ * notes as context. Empty/undefined → the default prompt. */
+export function summarizeMeetingWith(template?: string): Promise<string> {
+  const trimmed = template?.trim();
+  return invoke<string>("summarize_meeting_with", {
+    template: trimmed && trimmed.length > 0 ? trimmed : null,
+  });
+}
+
+/** Regenerate the summary for an already-saved meeting `id` (optionally with a
+ * template id or raw custom prompt). Persists + returns the new summary. */
+export function regenerateMeetingSummary(
+  id: number,
+  template?: string,
+): Promise<string> {
+  const trimmed = template?.trim();
+  return invoke<string>("regenerate_meeting_summary", {
+    id,
+    template: trimmed && trimmed.length > 0 ? trimmed : null,
+  });
+}
+
+/** Persist the meeting's title (manual rename). */
+export function updateMeetingTitle(id: number, title: string): Promise<void> {
+  return invoke<void>("update_meeting_title", { id, title });
+}
+
+/** Persist the user's own editable notes for a meeting (distinct from the AI
+ * summary). */
+export function updateMeetingNotes(id: number, notes: string): Promise<void> {
+  return invoke<void>("update_meeting_notes", { id, notes });
+}
+
+/** Render a meeting as a clean Markdown document (title, metadata, notes,
+ * summary, labeled transcript). Returns the markdown string. */
+export function exportMeetingMarkdown(id: number): Promise<string> {
+  return invoke<string>("export_meeting_markdown", { id });
+}
+
+/** List meetings interrupted by a crash (still in `recording` status). */
+export function listInterruptedMeetings(): Promise<InterruptedMeeting[]> {
+  return invoke<InterruptedMeeting[]>("list_interrupted_meetings");
+}
+
+/** Recover an interrupted meeting (re-finalizes from temp buffers if present,
+ * else keeps the partial transcript). Resolves with the recovered transcript.
+ * Async / potentially slow; show a spinner. */
+export function recoverMeeting(id: number): Promise<string> {
+  return invoke<string>("recover_meeting", { id });
+}
+
+/** Read the configured meeting summary templates from persisted app settings.
+ * Falls back to an empty list on error. */
+export function getMeetingSummaryTemplates(): Promise<
+  MeetingSummaryTemplate[]
+> {
+  return invoke<{ meeting_summary_templates?: MeetingSummaryTemplate[] }>(
+    "get_app_settings",
+  )
+    .then((s) => s?.meeting_summary_templates ?? [])
+    .catch(() => []);
+}
+
+/** Resolve the active post-process provider used for summaries and whether it
+ * runs locally or in the cloud, for the honest trust indicator. */
+export function getSummaryProviderInfo(): Promise<SummaryProviderInfo> {
+  return invoke<{
+    post_process_provider_id?: string;
+    post_process_providers?: {
+      id: string;
+      label?: string;
+      base_url?: string;
+    }[];
+  }>("get_app_settings")
+    .then((s) => {
+      const id = s?.post_process_provider_id ?? "";
+      const provider = (s?.post_process_providers ?? []).find(
+        (p) => p.id === id,
+      );
+      if (!provider) {
+        return { label: "", location: "none" as SummaryLocation };
+      }
+      const base = (provider.base_url ?? "").toLowerCase();
+      // Local: Apple Intelligence or a localhost endpoint (e.g. Ollama).
+      const isLocal =
+        provider.id === "apple_intelligence" ||
+        base.includes("apple-intelligence://") ||
+        base.includes("localhost") ||
+        base.includes("127.0.0.1");
+      return {
+        label: provider.label ?? provider.id,
+        location: (isLocal ? "local" : "cloud") as SummaryLocation,
+      };
+    })
+    .catch(() => ({ label: "", location: "none" as SummaryLocation }));
 }
 
 /** Fetch a single full meeting record by id. */
@@ -197,6 +341,17 @@ export function listenMeetingSummary(
   cb: (summary: string) => void,
 ): Promise<UnlistenFn> {
   return listen<string>(MEETING_SUMMARY_UPDATE, (event) => {
+    cb(event.payload);
+  });
+}
+
+/** Subscribe to automatic title updates (fired after the auto-title pass
+ * generates a title for the just-finished meeting). The payload is the new
+ * title string. Returns a promise resolving to the unlisten function. */
+export function listenMeetingTitle(
+  cb: (title: string) => void,
+): Promise<UnlistenFn> {
+  return listen<string>(MEETING_TITLE_UPDATE, (event) => {
     cb(event.payload);
   });
 }

@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 @theme {
-  /* Design tokens - Fısıltı brand (purple/indigo) */
+  /* Design tokens - Fisilti brand (purple/indigo) */
   --color-text: #0f0f0f;
   --color-background: #fbfbfb;
   --color-background-ui: #6d28d9;

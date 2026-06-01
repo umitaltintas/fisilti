@@ -16,7 +16,7 @@ const FisiltiMark = ({
     xmlns="http://www.w3.org/2000/svg"
   >
     {/*
-      Fısıltı mark — a "whisper" glyph: a solid source dot with three
+      Fisilti mark — a "whisper" glyph: a solid source dot with three
       concentric sound ripples radiating to the right, like a quiet
       voice signal travelling outward. Uses currentColor so it inherits
       the brand purple from `.text-logo-primary` / `text-logo-primary`.

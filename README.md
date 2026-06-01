@@ -1,13 +1,13 @@
-# Fısıltı
+# Fisilti
 
 **Private, local-first dictation and AI meeting notes for macOS.**
 
 <!-- TODO: add screenshot / logo here -->
-<!-- ![Fısıltı](docs/screenshot.png) -->
+<!-- ![Fisilti](docs/screenshot.png) -->
 
 ## What it is
 
-Fısıltı (technical id: `fisilti`) is a privacy-first desktop app that keeps your
+Fisilti (technical id: `fisilti`) is a privacy-first desktop app that keeps your
 voice on your own machine. Nothing is sent to the cloud for transcription —
 speech recognition runs 100% locally on your computer. It does two things:
 
@@ -51,7 +51,7 @@ where — if anywhere — your data goes.
 ## Models
 
 Transcription models are **downloaded on first use** — there is nothing to
-configure manually to get started. Pick a model in Settings and Fısıltı fetches
+configure manually to get started. Pick a model in Settings and Fisilti fetches
 it the first time it's needed. AI summary models are provided by whichever
 external provider you configure (and are optional).
 
@@ -82,10 +82,10 @@ tip applies).
 
 ## Built on Handy
 
-Fısıltı is a fork / derivative work of
+Fisilti is a fork / derivative work of
 [**Handy**](https://github.com/cjpais/handy) by cjpais, used under the MIT
 License. The dictation engine, audio pipeline, and Tauri + Rust + React
-foundation come from Handy; Fısıltı adds meeting mode and rebrands the product.
+foundation come from Handy; Fisilti adds meeting mode and rebrands the product.
 Huge thanks to cjpais and the Handy community. See [CREDITS.md](CREDITS.md) for
 full attribution.
 

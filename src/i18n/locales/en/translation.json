@@ -9,7 +9,7 @@
     "cancel": "Cancel",
     "startMeeting": "Start Meeting",
     "stopMeeting": "Stop Meeting",
-    "recordingIndicator": "Fısıltı — Recording…"
+    "recordingIndicator": "Fisilti — Recording…"
   },
   "sidebar": {
     "general": "General",
@@ -100,7 +100,7 @@
     },
     "permissions": {
       "title": "Permissions Required",
-      "description": "Fısıltı needs a couple of permissions to work properly.",
+      "description": "Fisilti needs a couple of permissions to work properly.",
       "microphone": {
         "title": "Microphone Access",
         "description": "Required to hear your voice for transcription."
@@ -158,7 +158,7 @@
     "general": {
       "title": "General",
       "shortcut": {
-        "title": "Fısıltı Shortcuts",
+        "title": "Fisilti Shortcuts",
         "description": "Configure keyboard shortcuts to trigger speech-to-text recording",
         "loading": "Loading shortcuts...",
         "none": "No shortcuts configured",
@@ -275,11 +275,11 @@
       },
       "autostart": {
         "label": "Launch on Startup",
-        "description": "Automatically start Fısıltı when you log in to your computer."
+        "description": "Automatically start Fisilti when you log in to your computer."
       },
       "showTrayIcon": {
         "label": "Show Tray Icon",
-        "description": "Display the Fısıltı icon in the system tray."
+        "description": "Display the Fisilti icon in the system tray."
       },
       "overlay": {
         "title": "Overlay Position",
@@ -444,7 +444,7 @@
       },
       "updateChecks": {
         "label": "Check for Updates",
-        "description": "Automatically check for new versions of Fısıltı"
+        "description": "Automatically check for new versions of Fisilti"
       },
       "soundTheme": {
         "label": "Sound Theme",
@@ -512,11 +512,11 @@
       "title": "About",
       "version": {
         "title": "Version",
-        "description": "Current version of Fısıltı"
+        "description": "Current version of Fisilti"
       },
       "appDataDirectory": {
         "title": "App Data Directory",
-        "description": "Location where Fısıltı stores its data"
+        "description": "Location where Fisilti stores its data"
       },
       "sourceCode": {
         "title": "Source Code",
@@ -525,7 +525,7 @@
       },
       "supportDevelopment": {
         "title": "Support Development",
-        "description": "Help us continue building Fısıltı",
+        "description": "Help us continue building Fisilti",
         "button": "Donate"
       },
       "acknowledgments": {
@@ -533,7 +533,7 @@
         "whisper": {
           "title": "Whisper.cpp",
           "description": "High-performance inference of OpenAI's Whisper automatic speech recognition model",
-          "details": "Fısıltı uses Whisper.cpp for fast, local speech-to-text processing. Thanks to the amazing work by Georgi Gerganov and contributors."
+          "details": "Fisilti uses Whisper.cpp for fast, local speech-to-text processing. Thanks to the amazing work by Georgi Gerganov and contributors."
         }
       }
     }
@@ -576,7 +576,7 @@
   },
   "accessibility": {
     "permissionsRequired": "Accessibility Permissions Required",
-    "permissionsDescription": "Fısıltı needs accessibility permissions to type transcribed text.",
+    "permissionsDescription": "Fisilti needs accessibility permissions to type transcribed text.",
     "openSettings": "Open System Settings",
     "dismiss": "Dismiss"
   },
@@ -595,7 +595,7 @@
   },
   "appLanguage": {
     "title": "Application Language",
-    "description": "Change the language of the Fısıltı interface"
+    "description": "Change the language of the Fisilti interface"
   },
   "overlay": {
     "transcribing": "Transcribing...",

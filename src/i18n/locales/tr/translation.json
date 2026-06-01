@@ -9,7 +9,7 @@
     "cancel": "İptal",
     "startMeeting": "Toplantıyı Başlat",
     "stopMeeting": "Toplantıyı Durdur",
-    "recordingIndicator": "Fısıltı — Kaydediliyor…"
+    "recordingIndicator": "Fisilti — Kaydediliyor…"
   },
   "sidebar": {
     "general": "Genel",
@@ -100,7 +100,7 @@
     },
     "permissions": {
       "title": "İzinler Gerekli",
-      "description": "Fısıltı'nin düzgün çalışabilmesi için birkaç izne ihtiyacı var.",
+      "description": "Fisilti'nin düzgün çalışabilmesi için birkaç izne ihtiyacı var.",
       "microphone": {
         "title": "Mikrofon Erişimi",
         "description": "Sesinizi transkripsiyon için alabilmek için gereklidir."
@@ -176,7 +176,7 @@
     "general": {
       "title": "Genel",
       "shortcut": {
-        "title": "Fısıltı Kısayolları",
+        "title": "Fisilti Kısayolları",
         "description": "Sesle yazma kaydını başlatmak için klavye kısayollarını yapılandırın",
         "loading": "Kısayollar yükleniyor...",
         "none": "Kısayol yapılandırılmadı",
@@ -275,11 +275,11 @@
       },
       "autostart": {
         "label": "Başlangıçta Çalıştır",
-        "description": "Bilgisayara giriş yaptığınızda Fısıltı otomatik olarak başlatılır."
+        "description": "Bilgisayara giriş yaptığınızda Fisilti otomatik olarak başlatılır."
       },
       "showTrayIcon": {
         "label": "Tepsi simgesini göster",
-        "description": "Fısıltı simgesini sistem tepsisinde göster."
+        "description": "Fisilti simgesini sistem tepsisinde göster."
       },
       "overlay": {
         "title": "Overlay Konumu",
@@ -444,7 +444,7 @@
       },
       "updateChecks": {
         "label": "Güncellemeleri Kontrol Et",
-        "description": "Fısıltı için yeni sürümleri otomatik olarak kontrol eder"
+        "description": "Fisilti için yeni sürümleri otomatik olarak kontrol eder"
       },
       "soundTheme": {
         "label": "Ses Teması",
@@ -512,11 +512,11 @@
       "title": "Hakkında",
       "version": {
         "title": "Sürüm",
-        "description": "Fısıltı'nin mevcut sürümü"
+        "description": "Fisilti'nin mevcut sürümü"
       },
       "appDataDirectory": {
         "title": "Uygulama Veri Dizini",
-        "description": "Fısıltı'nin verilerini sakladığı konum"
+        "description": "Fisilti'nin verilerini sakladığı konum"
       },
       "sourceCode": {
         "title": "Kaynak Kodu",
@@ -525,7 +525,7 @@
       },
       "supportDevelopment": {
         "title": "Geliştirmeyi Destekle",
-        "description": "Fısıltı'yi geliştirmeye devam etmemize yardımcı olun",
+        "description": "Fisilti'yi geliştirmeye devam etmemize yardımcı olun",
         "button": "Bağış Yap"
       },
       "acknowledgments": {
@@ -533,7 +533,7 @@
         "whisper": {
           "title": "Whisper.cpp",
           "description": "OpenAI'nin Whisper otomatik konuşma tanıma modelinin yüksek performanslı çıkarımı",
-          "details": "Fısıltı, hızlı ve yerel konuşmadan metne dönüştürme için Whisper.cpp kullanır. Georgi Gerganov ve katkıda bulunanların harika çalışmaları için teşekkür ederiz."
+          "details": "Fisilti, hızlı ve yerel konuşmadan metne dönüştürme için Whisper.cpp kullanır. Georgi Gerganov ve katkıda bulunanların harika çalışmaları için teşekkür ederiz."
         }
       }
     }
@@ -576,7 +576,7 @@
   },
   "accessibility": {
     "permissionsRequired": "Erişilebilirlik İzinleri Gerekli",
-    "permissionsDescription": "Fısıltı, transkribe edilen metni yazabilmek için erişilebilirlik izinlerine ihtiyaç duyar.",
+    "permissionsDescription": "Fisilti, transkribe edilen metni yazabilmek için erişilebilirlik izinlerine ihtiyaç duyar.",
     "openSettings": "Sistem Ayarlarını Aç",
     "dismiss": "Yoksay"
   },
@@ -595,7 +595,7 @@
   },
   "appLanguage": {
     "title": "Uygulama Dili",
-    "description": "Fısıltı arayüzünün dilini değiştirin"
+    "description": "Fisilti arayüzünün dilini değiştirin"
   },
   "overlay": {
     "transcribing": "Transkribe ediliyor...",

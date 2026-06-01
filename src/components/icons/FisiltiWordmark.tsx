@@ -1,6 +1,6 @@
 // Brand wordmark text. Defined as a constant (not inline JSX text) so the
 // i18next no-literal-string lint rule doesn't flag the product name.
-const BRAND_NAME = "Fısıltı";
+const BRAND_NAME = "Fisilti";
 
 const FisiltiWordmark = ({
   width,
@@ -21,7 +21,7 @@ const FisiltiWordmark = ({
       xmlns="http://www.w3.org/2000/svg"
     >
       {/*
-        Fısıltı wordmark. A small whisper-ripple mark sits before the
+        Fisilti wordmark. A small whisper-ripple mark sits before the
         word. The text and mark use `.logo-primary` (fill via the brand
         var --color-logo-primary), so the wordmark rebrands with the theme.
         Note Turkish orthography: dotless "ı" and dotted "i".

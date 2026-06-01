@@ -2,7 +2,7 @@
   "name": "fisilti",
   "private": true,
   "version": "0.1.0",
-  "description": "Fısıltı — private, local-first dictation & AI meeting notes for macOS (based on Handy)",
+  "description": "Fisilti — private, local-first dictation & AI meeting notes for macOS (based on Handy)",
   "type": "module",
   "scripts": {
     "dev": "vite",

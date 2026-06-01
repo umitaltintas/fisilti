@@ -1,10 +1,10 @@
 # Credits & Attribution
 
-**Fısıltı is a fork of [Handy](https://github.com/cjpais/handy) by cjpais, used
+**Fisilti is a fork of [Handy](https://github.com/cjpais/handy) by cjpais, used
 under the MIT License.**
 
 The dictation functionality, audio pipeline, model management, and the overall
-Tauri + Rust + React application structure originate from Handy. Fısıltı extends
+Tauri + Rust + React application structure originate from Handy. Fisilti extends
 it with a meeting mode (system-audio capture, live transcript, speaker labels,
 AI summaries, and persistent history) and rebrands the product. We are grateful
 to cjpais and the Handy contributors for making the project open source and

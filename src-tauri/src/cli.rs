@@ -1,7 +1,7 @@
 use clap::Parser;
 
 #[derive(Parser, Debug, Clone, Default)]
-#[command(name = "fisilti", about = "Fısıltı - Speech to Text")]
+#[command(name = "fisilti", about = "Fisilti - Speech to Text")]
 pub struct CliArgs {
     /// Start with the main window hidden
     #[arg(long)]

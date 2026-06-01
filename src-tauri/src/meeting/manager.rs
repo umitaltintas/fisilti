@@ -99,6 +99,13 @@ pub enum MeetingState {
     Running,
 }
 
+/// CRASH-RECOVERY: number of newly-finalized transcript segments to accumulate
+/// before writing the partial transcript to the in-progress meeting row. Batches
+/// incremental persistence so a busy meeting does ~one UPDATE every few segments
+/// instead of per segment. Small enough that a crash loses at most this many
+/// segments of partial transcript.
+const INCREMENTAL_PERSIST_BATCH: usize = 3;
+
 /// Owns the state of a continuous meeting session.
 ///
 /// Cloneable handle around shared state; the actual capture work runs on a
@@ -126,6 +133,15 @@ pub struct MeetingManager {
     /// Row id of the meeting persisted on the most recent `stop()`. Used by
     /// `summarize_meeting` to update the same row with the generated summary.
     last_saved_meeting_id: Arc<Mutex<Option<i64>>>,
+    /// Row id of the CURRENTLY in-progress meeting (status `recording`). The row
+    /// is INSERTED on start() (crash-recovery: a kill mid-meeting still leaves a
+    /// recoverable row) and updated incrementally during capture. Flipped to
+    /// `last_saved_meeting_id` + status `completed` on stop().
+    current_meeting_id: Arc<Mutex<Option<i64>>>,
+    /// Monotonic counter of segments persisted to the in-progress row, used to
+    /// batch incremental DB writes (write every N new segments) so a long
+    /// meeting doesn't thrash SQLite.
+    persisted_segment_count: Arc<Mutex<usize>>,
     /// Absolute path to the persisted mixed WAV written on the most recent
     /// `stop()`, if any. Stored on the meeting row via `audio_path`.
     last_saved_audio_path: Arc<Mutex<Option<String>>>,
@@ -170,6 +186,8 @@ impl MeetingManager {
             last_saved_meeting_id: Arc::new(Mutex::new(None)),
             last_saved_audio_path: Arc::new(Mutex::new(None)),
             buffer_paths: Arc::new(Mutex::new(None)),
+            current_meeting_id: Arc::new(Mutex::new(None)),
+            persisted_segment_count: Arc::new(Mutex::new(0)),
         }
     }
 
@@ -233,6 +251,8 @@ impl MeetingManager {
             *self.last_saved_meeting_id.lock().unwrap() = None;
             *self.last_saved_audio_path.lock().unwrap() = None;
             *self.buffer_paths.lock().unwrap() = None;
+            *self.current_meeting_id.lock().unwrap() = None;
+            *self.persisted_segment_count.lock().unwrap() = 0;
             self.stop_signal.store(false, Ordering::Relaxed);
             self.active.store(true, Ordering::Relaxed);
 
@@ -296,6 +316,12 @@ impl MeetingManager {
         #[cfg(target_os = "macos")]
         self.save_session_audio();
 
+        // Best-effort auto-title from the transcript via the active LLM provider.
+        // Replaces the datetime default; keeps the datetime title on any error or
+        // when no provider is configured. Runs after persistence so it can update
+        // the saved row. Never blocks/fails the stop.
+        self.maybe_auto_title();
+
         // Best-effort auto-summarize (behind a setting). Runs after persistence
         // so it can update the saved row. Never blocks/fails the stop.
         self.maybe_auto_summarize();
@@ -304,17 +330,16 @@ impl MeetingManager {
         Ok(self.full_transcript())
     }
 
-    /// Build a `MeetingRecordInput` from the accumulated session and save it via
-    /// `MeetingStore`. Skips empty meetings (no transcript). Remembers the saved
-    /// row id so a later summary can update the same record. Never panics or
-    /// returns an error to the caller.
+    /// Persist the accumulated session on stop(). The common path FINALIZES the
+    /// in-progress row inserted at start() (status `recording` → `completed`,
+    /// writing the final transcript/segments and clearing the temp-buffer paths).
+    /// If no in-progress row exists (e.g. the row insert failed, or a platform
+    /// where capture never ran), falls back to a plain INSERT so the transcript
+    /// isn't lost. Skips empty meetings. Remembers the saved row id so a later
+    /// summary can update the same record. Never panics or propagates errors.
     fn persist_session(&self) {
         let segments: Vec<TranscriptSegment> = { self.transcript.lock().unwrap().clone() };
         let transcript = self.full_transcript();
-        if transcript.trim().is_empty() {
-            log::debug!("Meeting transcript empty; skipping persistence");
-            return;
-        }
 
         let ended_at = now_epoch_ms();
         let started_at = self
@@ -323,26 +348,56 @@ impl MeetingManager {
             .unwrap()
             .unwrap_or(ended_at);
         let duration_ms = (ended_at - started_at).max(0);
-        let title = default_meeting_title(started_at);
 
-        let record = MeetingRecordInput {
-            started_at,
-            ended_at,
-            duration_ms,
-            title,
-            transcript,
-            segments,
-            summary: None,
-            audio_path: None,
-        };
+        let current_id = *self.current_meeting_id.lock().unwrap();
 
-        match self.store.save_meeting(&record) {
-            Ok(id) => {
-                log::info!("Persisted meeting session as row {}", id);
-                *self.last_saved_meeting_id.lock().unwrap() = Some(id);
+        if transcript.trim().is_empty() {
+            // Empty meeting: don't keep a dangling `recording` row. Delete the
+            // in-progress row (if any) so it isn't offered for recovery.
+            log::debug!("Meeting transcript empty; skipping persistence");
+            if let Some(id) = current_id {
+                let _ = self.store.delete_meeting(id);
+                *self.current_meeting_id.lock().unwrap() = None;
             }
-            Err(e) => {
-                log::error!("Failed to persist meeting session: {}", e);
+            return;
+        }
+
+        match current_id {
+            Some(id) => {
+                // Finalize the existing in-progress row.
+                match self
+                    .store
+                    .finalize_meeting(id, &transcript, &segments, ended_at, duration_ms)
+                {
+                    Ok(()) => {
+                        log::info!("Finalized meeting row {} (completed)", id);
+                        *self.last_saved_meeting_id.lock().unwrap() = Some(id);
+                        *self.current_meeting_id.lock().unwrap() = None;
+                    }
+                    Err(e) => log::error!("Failed to finalize meeting row {}: {}", id, e),
+                }
+            }
+            None => {
+                // Fallback: no in-progress row (insert failed or capture path
+                // never ran). Insert a completed row directly.
+                let title = default_meeting_title(started_at);
+                let record = MeetingRecordInput {
+                    started_at,
+                    ended_at,
+                    duration_ms,
+                    title,
+                    transcript,
+                    segments,
+                    summary: None,
+                    audio_path: None,
+                };
+                match self.store.save_meeting(&record) {
+                    Ok(id) => {
+                        log::info!("Persisted meeting session as row {}", id);
+                        *self.last_saved_meeting_id.lock().unwrap() = Some(id);
+                    }
+                    Err(e) => log::error!("Failed to persist meeting session: {}", e),
+                }
             }
         }
     }
@@ -364,9 +419,191 @@ impl MeetingManager {
             .map_err(|e| format!("Failed to update meeting summary: {}", e))
     }
 
+    /// AUTO-TITLE (Phase 2 item 2). Generate a short title from the transcript
+    /// via the active post-process LLM provider and store it on the saved row,
+    /// replacing the datetime default. Best-effort + graceful: if no provider is
+    /// configured or the call errors, the datetime title is kept. Runs async so
+    /// it never blocks stop(). Emits `"meeting-title-update"` (the new title) on
+    /// success so the UI can refresh.
+    fn maybe_auto_title(&self) {
+        let id = match self.last_saved_meeting_id() {
+            Some(id) => id,
+            None => return,
+        };
+        let transcript = self.full_transcript();
+        if transcript.trim().is_empty() {
+            return;
+        }
+        let manager = self.clone();
+        tauri::async_runtime::spawn(async move {
+            match crate::commands::meeting::generate_title(&manager.app_handle, &transcript).await {
+                Ok(title) => {
+                    let title = title.trim().to_string();
+                    if title.is_empty() {
+                        return;
+                    }
+                    if let Err(e) = manager.store.update_title(id, &title) {
+                        log::error!("meeting auto-title: failed to persist: {}", e);
+                        return;
+                    }
+                    use tauri::Emitter;
+                    let _ = manager.app_handle.emit("meeting-title-update", title);
+                }
+                // Graceful fallback: keep the datetime title.
+                Err(e) => log::info!("meeting auto-title skipped: {}", e),
+            }
+        });
+    }
+
     /// Access the persistence store (used by list/get/delete commands).
     pub fn store(&self) -> &MeetingStore {
         &self.store
+    }
+
+    /// CRASH-RECOVERY (Phase 2 item 1). Recover an interrupted meeting `id` left
+    /// in `recording` status. On macOS, if the per-source temp buffers still
+    /// exist, re-runs the finalize pass for a high-quality labeled transcript and
+    /// writes the mixed playback WAV. Otherwise (or on other platforms) keeps the
+    /// partial transcript that was incrementally saved. The row is flipped to
+    /// `completed` and temp files are removed. Returns the recovered transcript.
+    ///
+    /// Refuses to run while a live session is active (to avoid clobbering shared
+    /// state / the loaded model).
+    pub fn recover_meeting(&self, id: i64) -> Result<String, String> {
+        if self.status() == MeetingState::Running {
+            return Err("Cannot recover while a meeting is running.".to_string());
+        }
+
+        let record = self
+            .store
+            .get_meeting(id)
+            .map_err(|e| format!("Failed to load meeting {}: {}", id, e))?;
+        if record.status != crate::meeting::store::STATUS_RECORDING {
+            // Already completed (or recovered concurrently). Nothing to do.
+            return Ok(record.transcript);
+        }
+
+        // Default outcome: keep the partial transcript/segments already saved.
+        let mut final_segments = record.segments.clone();
+        let mut final_transcript = record.transcript.clone();
+
+        #[cfg(target_os = "macos")]
+        {
+            let buffers = self
+                .store
+                .get_buffers(id)
+                .map_err(|e| format!("Failed to read meeting buffers: {}", e))?;
+            if let Some(recovered) = self.refinalize_from_buffers(&buffers) {
+                if recovered.iter().any(|s| !s.text.trim().is_empty()) {
+                    final_segments = recovered;
+                    final_transcript = join_segments(&final_segments);
+                }
+            }
+            // Save mixed playback audio if the mixed buffer survived.
+            if let Some(mixed) = buffers.mixed.as_deref() {
+                self.save_recovered_audio(id, std::path::Path::new(mixed));
+            }
+            // Clean up temp buffers.
+            for p in [&buffers.mic, &buffers.system, &buffers.mixed]
+                .into_iter()
+                .flatten()
+            {
+                let _ = std::fs::remove_file(p);
+            }
+        }
+
+        let ended_at = if record.ended_at > record.started_at {
+            record.ended_at
+        } else {
+            now_epoch_ms()
+        };
+        let duration_ms = (ended_at - record.started_at).max(0);
+        self.store
+            .finalize_meeting(
+                id,
+                &final_transcript,
+                &final_segments,
+                ended_at,
+                duration_ms,
+            )
+            .map_err(|e| format!("Failed to finalize recovered meeting: {}", e))?;
+        log::info!("meeting: recovered interrupted row {} (completed)", id);
+        Ok(final_transcript)
+    }
+
+    /// macOS recovery helper: re-run the finalize windowing/transcription over
+    /// the saved per-source temp buffers. Loads the final model for the pass and
+    /// restores the prior model afterwards. Returns `None` if neither buffer is
+    /// readable / present.
+    #[cfg(target_os = "macos")]
+    fn refinalize_from_buffers(
+        &self,
+        buffers: &crate::meeting::store::StoredBuffers,
+    ) -> Option<Vec<TranscriptSegment>> {
+        use tauri::Manager;
+        // Ensure a transcription model is available for the pass.
+        self.transcription_manager.initiate_model_load();
+        let restore_model = self.swap_in_final_model();
+
+        let vad_path = self.app_handle.path().resolve(
+            "resources/models/silero_vad_v4.onnx",
+            tauri::path::BaseDirectory::Resource,
+        );
+
+        let mut out: Vec<TranscriptSegment> = Vec::new();
+        let mut any = false;
+        for (path_opt, source) in [
+            (&buffers.mic, TranscriptSource::Mic),
+            (&buffers.system, TranscriptSource::System),
+        ] {
+            let path = match path_opt {
+                Some(p) => std::path::PathBuf::from(p),
+                None => continue,
+            };
+            match read_f32_raw(&path) {
+                Ok(audio) if !audio.is_empty() => {
+                    any = true;
+                    let windows = match &vad_path {
+                        Ok(p) => chunk_for_finalize(&audio, p),
+                        Err(_) => chunk_fixed(&audio),
+                    };
+                    self.transcribe_windows(&audio, &windows, source, &mut out);
+                }
+                _ => {}
+            }
+        }
+
+        self.restore_model(restore_model);
+        if any {
+            out.sort_by_key(|s| s.timestamp_ms);
+            Some(out)
+        } else {
+            None
+        }
+    }
+
+    /// macOS recovery helper: write the mixed playback WAV for a recovered
+    /// meeting from its mixed temp buffer and record the path on the row.
+    #[cfg(target_os = "macos")]
+    fn save_recovered_audio(&self, id: i64, mixed_path: &std::path::Path) {
+        let mixed = match read_f32_raw(mixed_path) {
+            Ok(m) if !m.is_empty() => m,
+            _ => return,
+        };
+        let dir = match crate::portable::app_data_dir(&self.app_handle) {
+            Ok(d) => d.join("meetings"),
+            Err(_) => return,
+        };
+        if std::fs::create_dir_all(&dir).is_err() {
+            return;
+        }
+        let wav_path = dir.join(format!("{}.wav", id));
+        use crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE;
+        if write_f32_wav(&wav_path, &mixed, WHISPER_SAMPLE_RATE).is_ok() {
+            let _ = self
+                .store
+                .update_audio_path(id, &wav_path.to_string_lossy());
+        }
     }
 
     /// HYBRID TRANSCRIPTION (Feature 2). On stop, re-transcribe the FULL mic and
@@ -531,7 +768,10 @@ impl MeetingManager {
         let mut prev_tail: Option<String> = None;
         for &(start, end) in windows {
             let slice = &audio[start..end];
-            match self.transcription_manager.transcribe_meeting(slice.to_vec()) {
+            match self
+                .transcription_manager
+                .transcribe_meeting(slice.to_vec())
+            {
                 Ok(text) => {
                     let text = text.trim().to_string();
                     if !text.is_empty() {
@@ -663,6 +903,9 @@ impl MeetingManager {
             segs.push(segment.clone());
         }
         let full = self.full_transcript();
+        // CRASH-RECOVERY: incrementally persist the partial transcript to the
+        // in-progress row, batched so SQLite isn't thrashed on a busy meeting.
+        self.maybe_persist_incremental();
         use tauri::Emitter;
         let _ = self.app_handle.emit(
             "meeting-transcript-update",
@@ -671,6 +914,47 @@ impl MeetingManager {
                 full_transcript: full,
             },
         );
+    }
+
+    /// CRASH-RECOVERY: persist the current partial transcript + segments to the
+    /// in-progress meeting row, batched. Writes only once `INCREMENTAL_PERSIST_BATCH`
+    /// new segments have accumulated since the last write, so a long meeting does
+    /// a single-row UPDATE every few segments rather than per segment. Best-effort:
+    /// failures are logged, never propagated.
+    fn maybe_persist_incremental(&self) {
+        let id = match *self.current_meeting_id.lock().unwrap() {
+            Some(id) => id,
+            None => return,
+        };
+        let seg_count = { self.transcript.lock().unwrap().len() };
+        {
+            let mut persisted = self.persisted_segment_count.lock().unwrap();
+            if seg_count.saturating_sub(*persisted) < INCREMENTAL_PERSIST_BATCH {
+                return;
+            }
+            *persisted = seg_count;
+        }
+        self.persist_incremental_now(id);
+    }
+
+    /// Force an incremental persist of the current transcript to the in-progress
+    /// row (ignores the batch threshold). Used to flush before finalize.
+    fn persist_incremental_now(&self, id: i64) {
+        let segments: Vec<TranscriptSegment> = { self.transcript.lock().unwrap().clone() };
+        let transcript = self.full_transcript();
+        let ended_at = now_epoch_ms();
+        let started_at = self
+            .session_started_at_ms
+            .lock()
+            .unwrap()
+            .unwrap_or(ended_at);
+        let duration_ms = (ended_at - started_at).max(0);
+        if let Err(e) =
+            self.store
+                .update_in_progress(id, &transcript, &segments, ended_at, duration_ms)
+        {
+            log::error!("meeting: failed incremental persist of row {}: {}", id, e);
+        }
     }
 
     /// Emit a `"meeting-finalizing"` signal so the UI can show progress while
@@ -835,6 +1119,32 @@ impl MeetingManager {
             system: system_buf_path.clone(),
             mixed: mixed_buf_path.clone(),
         });
+
+        // CRASH-RECOVERY: INSERT the in-progress meeting row NOW (status
+        // `recording`), recording the per-source temp-buffer paths. If the app
+        // crashes / is killed mid-meeting, the row + incrementally-saved
+        // transcript + temp audio survive and can be recovered on next startup.
+        {
+            let started_at = self
+                .session_started_at_ms
+                .lock()
+                .unwrap()
+                .unwrap_or_else(now_epoch_ms);
+            let title = default_meeting_title(started_at);
+            let stored = crate::meeting::store::StoredBuffers {
+                mic: Some(mic_buf_path.to_string_lossy().to_string()),
+                system: Some(system_buf_path.to_string_lossy().to_string()),
+                mixed: Some(mixed_buf_path.to_string_lossy().to_string()),
+            };
+            match self.store.start_meeting(started_at, &title, &stored) {
+                Ok(id) => {
+                    log::info!("meeting: inserted in-progress row {} (recording)", id);
+                    *self.current_meeting_id.lock().unwrap() = Some(id);
+                    *self.persisted_segment_count.lock().unwrap() = 0;
+                }
+                Err(e) => log::error!("meeting: failed to insert in-progress row: {}", e),
+            }
+        }
 
         // Per-source live segmentation state (mirrors the old single-VAD state).
         let mut mic_proc = SourceProcessor::new(mic_vad, TranscriptSource::Mic);
@@ -1454,7 +1764,10 @@ impl MicLoudnessNorm {
         match ebur128::EbuR128::new(1, sample_rate, ebur128::Mode::S) {
             Ok(meter) => Some(Self { meter }),
             Err(e) => {
-                log::warn!("meeting: failed to init EBU R128 meter: {}; mic norm disabled", e);
+                log::warn!(
+                    "meeting: failed to init EBU R128 meter: {}; mic norm disabled",
+                    e
+                );
                 None
             }
         }
@@ -1474,7 +1787,8 @@ impl MicLoudnessNorm {
             _ => return,
         };
         // Gain (dB) to reach target, clamped, then linearized.
-        let gain_db = (MIC_TARGET_LUFS - loudness).clamp(-MIC_NORM_MAX_GAIN_DB, MIC_NORM_MAX_GAIN_DB);
+        let gain_db =
+            (MIC_TARGET_LUFS - loudness).clamp(-MIC_NORM_MAX_GAIN_DB, MIC_NORM_MAX_GAIN_DB);
         let gain = 10f64.powf(gain_db / 20.0) as f32;
         for s in samples.iter_mut() {
             *s = (*s * gain).clamp(-1.0, 1.0);
@@ -1508,7 +1822,11 @@ impl EchoDuck {
         let enabled = !matches!(route, OutputRoute::Headphones);
         log::info!(
             "meeting: echo duck {} (output route: {:?})",
-            if enabled { "ENABLED" } else { "disabled (headphones)" },
+            if enabled {
+                "ENABLED"
+            } else {
+                "disabled (headphones)"
+            },
             route
         );
         Self {
@@ -1844,9 +2162,7 @@ fn dedup_overlap(prev: &str, curr: &str) -> String {
     // No sentence-level match: try a word-level common-prefix trim against the
     // prev tail (handles long unpunctuated windows). Only trims when a
     // reasonably long run matches, to avoid eating distinct repeated words.
-    let prev_norm_words: Vec<&str> = prev
-        .split_whitespace()
-        .collect::<Vec<_>>();
+    let prev_norm_words: Vec<&str> = prev.split_whitespace().collect::<Vec<_>>();
     let prev_tail_words: Vec<String> = prev_norm_words
         .iter()
         .rev()
@@ -1856,10 +2172,7 @@ fn dedup_overlap(prev: &str, curr: &str) -> String {
         .filter(|w| !w.is_empty())
         .collect();
     let curr_words: Vec<&str> = curr.split_whitespace().collect();
-    let curr_norm: Vec<String> = curr_words
-        .iter()
-        .map(|w| normalize_for_match(w))
-        .collect();
+    let curr_norm: Vec<String> = curr_words.iter().map(|w| normalize_for_match(w)).collect();
 
     // Find the longest k such that curr's first k words appear as a contiguous
     // run at the end of prev's tail.
@@ -1906,6 +2219,20 @@ fn downsample_wave(samples: &[f32], points: usize) -> (Vec<f32>, f32) {
         wave.push(avg.clamp(-1.0, 1.0));
     }
     (wave, peak.min(1.0))
+}
+
+/// Join transcript segments into a single transcript string, ordered by their
+/// relative timestamp and separated by spaces (mirrors
+/// `MeetingManager::full_transcript`). Used by the recovery path.
+fn join_segments(segments: &[TranscriptSegment]) -> String {
+    let mut ordered: Vec<&TranscriptSegment> = segments.iter().collect();
+    ordered.sort_by_key(|s| s.timestamp_ms);
+    ordered
+        .iter()
+        .map(|s| s.text.as_str())
+        .filter(|t| !t.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// Current time as epoch milliseconds.
@@ -2000,7 +2327,10 @@ mod tests {
             !out.to_lowercase().contains("başlayalım"),
             "repeated sentence should be dropped, got: {out}"
         );
-        assert!(out.contains("Gündem maddesi bir."), "new content kept: {out}");
+        assert!(
+            out.contains("Gündem maddesi bir."),
+            "new content kept: {out}"
+        );
     }
 
     #[cfg(target_os = "macos")]

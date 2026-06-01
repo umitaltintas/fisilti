@@ -8,5 +8,7 @@
     <true/>
     <key>com.apple.security.device.audio-output</key>
     <true/>
+    <key>com.apple.security.device.screen-capture</key>
+    <true/>
   </dict>
 </plist>

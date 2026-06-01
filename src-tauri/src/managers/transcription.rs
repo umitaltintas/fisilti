@@ -122,6 +122,20 @@ impl TranscriptionManager {
                         continue;
                     }
 
+                    // Meeting mode (Step 3): a meeting session uses an
+                    // independent capture path (not the dictation recorder), so
+                    // `is_recording()` is false during a meeting. Keep the model
+                    // loaded while a meeting is active, otherwise a long quiet
+                    // stretch could unload it mid-session. This is purely
+                    // additive — it never alters dictation behavior.
+                    let meeting_active = app_handle_cloned
+                        .try_state::<Arc<crate::meeting::MeetingManager>>()
+                        .map_or(false, |m| m.is_active());
+                    if meeting_active {
+                        manager_cloned.touch_activity();
+                        continue;
+                    }
+
                     if let Some(limit_seconds) = timeout.to_seconds() {
                         let last = manager_cloned.last_activity.load(Ordering::Relaxed);
                         let now_ms = TranscriptionManager::now_ms();

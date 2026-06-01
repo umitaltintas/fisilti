@@ -19,14 +19,15 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri::AppHandle;
 
 use crate::managers::transcription::TranscriptionManager;
+use crate::meeting::store::{MeetingRecordInput, MeetingStore};
 
 /// A single transcribed speech segment with its (relative) start timestamp.
-#[derive(Clone, Debug, Serialize, Type)]
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
 pub struct TranscriptSegment {
     /// Cleaned transcript text for this segment.
     pub text: String,
@@ -67,10 +68,25 @@ pub struct MeetingManager {
     active: Arc<AtomicBool>,
     /// Handle of the running capture thread, joined on stop.
     worker: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
+    /// Persistence store for meeting sessions (same history.db as dictation).
+    store: MeetingStore,
+    /// Absolute epoch-ms timestamp of when the current session started.
+    /// Set in `start()`; used to compute `started_at`/`duration_ms` on save.
+    session_started_at_ms: Arc<Mutex<Option<i64>>>,
+    /// Row id of the meeting persisted on the most recent `stop()`. Used by
+    /// `summarize_meeting` to update the same row with the generated summary.
+    last_saved_meeting_id: Arc<Mutex<Option<i64>>>,
 }
 
 impl MeetingManager {
     pub fn new(app_handle: &AppHandle, transcription_manager: Arc<TranscriptionManager>) -> Self {
+        // Resolve the persistence store. If the app data dir cannot be resolved
+        // (should not happen in practice), fall back to a store pointing at a
+        // best-effort path; save errors are logged, not fatal.
+        let store = MeetingStore::new(app_handle).unwrap_or_else(|e| {
+            log::error!("Failed to initialize MeetingStore: {}", e);
+            MeetingStore::with_db_path(std::path::PathBuf::from("history.db"))
+        });
         Self {
             app_handle: app_handle.clone(),
             transcription_manager,
@@ -79,6 +95,9 @@ impl MeetingManager {
             stop_signal: Arc::new(AtomicBool::new(false)),
             active: Arc::new(AtomicBool::new(false)),
             worker: Arc::new(Mutex::new(None)),
+            store,
+            session_started_at_ms: Arc::new(Mutex::new(None)),
+            last_saved_meeting_id: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -130,6 +149,10 @@ impl MeetingManager {
                 let mut segs = self.transcript.lock().unwrap();
                 segs.clear();
             }
+            // Record the ABSOLUTE session start time (epoch ms). Segment
+            // timestamps remain relative to this.
+            *self.session_started_at_ms.lock().unwrap() = Some(now_epoch_ms());
+            *self.last_saved_meeting_id.lock().unwrap() = None;
             self.stop_signal.store(false, Ordering::Relaxed);
             self.active.store(true, Ordering::Relaxed);
 
@@ -175,8 +198,81 @@ impl MeetingManager {
 
         self.active.store(false, Ordering::Relaxed);
         *state = MeetingState::Idle;
+        // Release the state lock before persisting (DB I/O shouldn't block
+        // status reads).
+        drop(state);
+
+        // Persist the session. Failures are logged, never propagated, so a
+        // stop always succeeds and returns the transcript.
+        self.persist_session();
+
         log::info!("Meeting session stopped");
         Ok(self.full_transcript())
+    }
+
+    /// Build a `MeetingRecordInput` from the accumulated session and save it via
+    /// `MeetingStore`. Skips empty meetings (no transcript). Remembers the saved
+    /// row id so a later summary can update the same record. Never panics or
+    /// returns an error to the caller.
+    fn persist_session(&self) {
+        let segments: Vec<TranscriptSegment> =
+            { self.transcript.lock().unwrap().clone() };
+        let transcript = self.full_transcript();
+        if transcript.trim().is_empty() {
+            log::debug!("Meeting transcript empty; skipping persistence");
+            return;
+        }
+
+        let ended_at = now_epoch_ms();
+        let started_at = self
+            .session_started_at_ms
+            .lock()
+            .unwrap()
+            .unwrap_or(ended_at);
+        let duration_ms = (ended_at - started_at).max(0);
+        let title = default_meeting_title(started_at);
+
+        let record = MeetingRecordInput {
+            started_at,
+            ended_at,
+            duration_ms,
+            title,
+            transcript,
+            segments,
+            summary: None,
+        };
+
+        match self.store.save_meeting(&record) {
+            Ok(id) => {
+                log::info!("Persisted meeting session as row {}", id);
+                *self.last_saved_meeting_id.lock().unwrap() = Some(id);
+            }
+            Err(e) => {
+                log::error!("Failed to persist meeting session: {}", e);
+            }
+        }
+    }
+
+    /// Returns the row id of the most recently persisted meeting (set on stop),
+    /// or `None` if the last session was empty/unsaved.
+    pub fn last_saved_meeting_id(&self) -> Option<i64> {
+        *self.last_saved_meeting_id.lock().unwrap()
+    }
+
+    /// Update the summary of the persisted meeting row, if one exists.
+    pub fn update_saved_summary(&self, summary: &str) -> Result<(), String> {
+        let id = match self.last_saved_meeting_id() {
+            Some(id) => id,
+            None => return Ok(()),
+        };
+        self.store
+            .update_summary(id, summary)
+            .map_err(|e| format!("Failed to update meeting summary: {}", e))
+    }
+
+    /// Access the persistence store (used by list/get/delete commands).
+    pub fn store(&self) -> &MeetingStore {
+        &self.store
     }
 
     /// Append a transcribed segment and emit an update event.
@@ -566,5 +662,27 @@ impl MeetingManager {
                 log::warn!("meeting segment transcription failed: {}", e);
             }
         }
+    }
+}
+
+/// Current time as epoch milliseconds.
+fn now_epoch_ms() -> i64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+/// Default human-readable title for a meeting, derived from its absolute start
+/// time. Uses `chrono` (already a dependency) to format the local datetime.
+fn default_meeting_title(started_at_ms: i64) -> String {
+    use chrono::{DateTime, Local};
+    match DateTime::from_timestamp_millis(started_at_ms) {
+        Some(utc) => {
+            let local = utc.with_timezone(&Local);
+            format!("Meeting {}", local.format("%B %e, %Y - %l:%M %p"))
+        }
+        None => "Meeting".to_string(),
     }
 }

@@ -52,6 +52,22 @@ static MIGRATIONS: &[M] = &[
     // 16 kHz mono WAV for each meeting so the frontend can play it back via the
     // asset protocol. APPENDED at the end; never reorder/edit earlier entries.
     M::up("ALTER TABLE meetings ADD COLUMN audio_path TEXT;"),
+    // Phase 2 crash-recovery: lifecycle status for a meeting row. A row is
+    // inserted with status 'recording' on start() and flipped to 'completed' on
+    // a clean stop()/finalize. Rows left at 'recording' after a crash/OS-kill are
+    // detected at startup and offered for recovery. Existing rows (all completed)
+    // default to 'completed'. APPENDED; never reorder/edit earlier entries.
+    M::up("ALTER TABLE meetings ADD COLUMN status TEXT NOT NULL DEFAULT 'completed';"),
+    // Phase 2 crash-recovery: paths to the raw little-endian f32 (16 kHz mono)
+    // per-source temp buffer files the capture loop streams to during a session.
+    // Recorded on the row so a post-crash recovery can re-finalize from them.
+    // Cleared (set NULL) once the session completes and temp files are removed.
+    M::up("ALTER TABLE meetings ADD COLUMN buffer_mic_path TEXT;"),
+    M::up("ALTER TABLE meetings ADD COLUMN buffer_system_path TEXT;"),
+    M::up("ALTER TABLE meetings ADD COLUMN buffer_mixed_path TEXT;"),
+    // Phase 2 editable user notes: the user's own notes for a meeting, distinct
+    // from the AI-generated `summary`. APPENDED; never reorder/edit earlier ones.
+    M::up("ALTER TABLE meetings ADD COLUMN notes TEXT;"),
 ];
 
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]

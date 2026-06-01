@@ -1,12 +1,12 @@
 name: "Main Branch Build"
 
-# Runs the full cross-platform build on every push to main so breakage is
-# caught before a manual release is triggered. Artifacts are kept for 30 days
-# so any commit on main has a downloadable, testable build.
+# Full cross-platform build. Manual-only (workflow_dispatch) for now: this
+# matrix needs signing secrets (Apple/Azure) and infra we don't have set up yet,
+# so it is not run automatically on every push. Trigger it from the Actions tab
+# once the required secrets are configured.
 
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

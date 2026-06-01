@@ -8,26 +8,10 @@
 
 name: "nix build check"
 on:
+  # Manual-only: we don't use the Nix packaging path and the full nix build
+  # (~25 min) isn't worth running on every change. Trigger from the Actions tab
+  # if/when the Nix flake is maintained.
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - "flake.nix"
-      - "flake.lock"
-      - ".nix/**"
-      - "bun.lock"
-      - "src-tauri/**"
-      - "src/**"
-      - ".github/workflows/**"
-  pull_request:
-    paths:
-      - "flake.nix"
-      - "flake.lock"
-      - ".nix/**"
-      - "bun.lock"
-      - "src-tauri/**"
-      - "src/**"
-      - ".github/workflows/**"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}

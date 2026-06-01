@@ -385,6 +385,260 @@ pub async fn capture_system_audio_test(seconds: u32) -> Result<String, String> {
     }
 }
 
+/// Meeting mode (Step 2) test: capture `seconds` of BOTH the microphone and
+/// system audio, resample each to 16 kHz mono, mix them with clipping
+/// prevention, and write the mixed result to a 16 kHz mono f32 WAV in the temp
+/// dir. Returns the output path.
+///
+/// This is the transcription-ready target rate (`WHISPER_SAMPLE_RATE = 16000`),
+/// so the output is directly usable by `TranscriptionManager::transcribe`.
+///
+/// Design: resample-then-mix. The mic is captured on a dedicated cpal input
+/// stream (independent of the dictation `AudioRecordingManager` singleton),
+/// resampled to 16 kHz via `FrameResampler`, and forwarded over a channel. The
+/// system audio comes from Step 1's `SystemAudioStream` (~48 kHz), resampled to
+/// 16 kHz. Both feed a `MeetingMixer` that mixes in 100 ms windows.
+///
+/// On macOS this triggers BOTH the Audio-Capture (system) and Microphone
+/// permission dialogs. Must run inside the bundled app. Isolated from the
+/// existing dictation flow.
+#[tauri::command]
+#[specta::specta]
+pub async fn capture_mixed_audio_test(seconds: u32) -> Result<String, String> {
+    #[cfg(target_os = "macos")]
+    {
+        use crate::audio_toolkit::audio::{FrameResampler, MeetingMixer, MixSource, SystemAudioCapture};
+        use crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE;
+        use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+        use futures_util::StreamExt;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::{mpsc, Arc};
+        use std::time::{Duration, Instant};
+
+        let seconds = seconds.max(1);
+
+        // ---- Mic capture on a dedicated thread (independent cpal stream) ----
+        // Resamples to 16 kHz inside the worker and forwards mono frames over a
+        // channel. Never touches the dictation manager/state singletons.
+        let (mic_tx, mic_rx) = mpsc::channel::<Vec<f32>>();
+        let mic_stop = Arc::new(AtomicBool::new(false));
+        let mic_stop_worker = mic_stop.clone();
+        let (mic_init_tx, mic_init_rx) = mpsc::sync_channel::<Result<(), String>>(1);
+
+        let mic_handle = std::thread::spawn(move || {
+            let host = crate::audio_toolkit::get_cpal_host();
+            let device = match host.default_input_device() {
+                Some(d) => d,
+                None => {
+                    let _ = mic_init_tx.send(Err("No default input device".into()));
+                    return;
+                }
+            };
+            let config = match device.default_input_config() {
+                Ok(c) => c,
+                Err(e) => {
+                    let _ = mic_init_tx.send(Err(format!("No default input config: {e}")));
+                    return;
+                }
+            };
+            let in_rate = config.sample_rate().0;
+            let channels = config.channels() as usize;
+            let sample_format = config.sample_format();
+            log::info!(
+                "capture_mixed_audio_test: mic '{:?}' {} Hz {} ch {:?}",
+                device.name(),
+                in_rate,
+                channels,
+                sample_format
+            );
+
+            // Raw mono f32 frames from the cpal callback -> resampler.
+            let (raw_tx, raw_rx) = mpsc::channel::<Vec<f32>>();
+
+            // Build an f32 input stream (handle the common formats).
+            macro_rules! build {
+                ($t:ty) => {{
+                    let raw_tx = raw_tx.clone();
+                    device.build_input_stream(
+                        &config.clone().into(),
+                        move |data: &[$t], _: &cpal::InputCallbackInfo| {
+                            let mono: Vec<f32> = if channels <= 1 {
+                                data.iter().map(|&s| cpal::Sample::to_sample::<f32>(s)).collect()
+                            } else {
+                                data.chunks_exact(channels)
+                                    .map(|f| {
+                                        f.iter()
+                                            .map(|&s| cpal::Sample::to_sample::<f32>(s))
+                                            .sum::<f32>()
+                                            / channels as f32
+                                    })
+                                    .collect()
+                            };
+                            let _ = raw_tx.send(mono);
+                        },
+                        |err| log::error!("mic stream error: {err}"),
+                        None,
+                    )
+                }};
+            }
+
+            let stream = match sample_format {
+                cpal::SampleFormat::F32 => build!(f32),
+                cpal::SampleFormat::I16 => build!(i16),
+                cpal::SampleFormat::I32 => build!(i32),
+                cpal::SampleFormat::U8 => build!(u8),
+                other => {
+                    let _ = mic_init_tx.send(Err(format!("Unsupported mic format: {other:?}")));
+                    return;
+                }
+            };
+            let stream = match stream {
+                Ok(s) => s,
+                Err(e) => {
+                    let _ = mic_init_tx.send(Err(format!("Failed to build mic stream: {e}")));
+                    return;
+                }
+            };
+            if let Err(e) = stream.play() {
+                let _ = mic_init_tx.send(Err(format!("Failed to start mic stream: {e}")));
+                return;
+            }
+            let _ = mic_init_tx.send(Ok(()));
+
+            let mut resampler = FrameResampler::new(
+                in_rate as usize,
+                WHISPER_SAMPLE_RATE as usize,
+                Duration::from_millis(30),
+            );
+
+            // Drain raw frames, resample to 16 kHz, forward to the mixer loop.
+            loop {
+                if mic_stop_worker.load(Ordering::Relaxed) {
+                    break;
+                }
+                match raw_rx.recv_timeout(Duration::from_millis(100)) {
+                    Ok(raw) => {
+                        resampler.push(&raw, &mut |frame: &[f32]| {
+                            let _ = mic_tx.send(frame.to_vec());
+                        });
+                    }
+                    Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                }
+            }
+            resampler.finish(&mut |frame: &[f32]| {
+                let _ = mic_tx.send(frame.to_vec());
+            });
+            drop(stream);
+        });
+
+        // Wait for the mic stream to initialize (or fail).
+        match mic_init_rx.recv() {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                mic_stop.store(true, Ordering::Relaxed);
+                let _ = mic_handle.join();
+                return Err(format!("Mic init failed: {e}"));
+            }
+            Err(e) => {
+                mic_stop.store(true, Ordering::Relaxed);
+                let _ = mic_handle.join();
+                return Err(format!("Mic worker died: {e}"));
+            }
+        }
+
+        // ---- System audio capture (Step 1), resampled to 16 kHz ----
+        let mut sys_stream = match SystemAudioCapture::start() {
+            Ok(s) => s,
+            Err(e) => {
+                mic_stop.store(true, Ordering::Relaxed);
+                let _ = mic_handle.join();
+                return Err(format!("Failed to start system capture: {e}"));
+            }
+        };
+        let sys_rate = sys_stream.sample_rate();
+        let mut sys_resampler = FrameResampler::new(
+            sys_rate as usize,
+            WHISPER_SAMPLE_RATE as usize,
+            Duration::from_millis(30),
+        );
+
+        log::info!(
+            "capture_mixed_audio_test: mixing {}s at {} Hz (system in {} Hz)",
+            seconds,
+            WHISPER_SAMPLE_RATE,
+            sys_rate
+        );
+
+        // ---- Mix loop ----
+        let mut mixer = MeetingMixer::new();
+        let mut mixed: Vec<f32> = Vec::new();
+        let target = (WHISPER_SAMPLE_RATE as u64).saturating_mul(seconds as u64) as usize;
+        let deadline = Instant::now() + Duration::from_secs(seconds as u64 + 5);
+
+        while mixed.len() < target {
+            if Instant::now() >= deadline {
+                log::warn!(
+                    "capture_mixed_audio_test: hit deadline with {} mixed samples",
+                    mixed.len()
+                );
+                break;
+            }
+
+            // Drain any available mic frames (non-blocking).
+            while let Ok(frame) = mic_rx.try_recv() {
+                mixer.push(MixSource::Microphone, &frame);
+            }
+
+            // Pull one system sample (drives the loop cadence).
+            match sys_stream.next().await {
+                Some(s) => {
+                    sys_resampler.push(&[s], &mut |frame: &[f32]| {
+                        mixer.push(MixSource::System, frame);
+                    });
+                }
+                None => break,
+            }
+
+            mixer.drain_into(&mut mixed);
+        }
+
+        // ---- Teardown: stop mic, flush both resamplers and the mixer ----
+        mic_stop.store(true, Ordering::Relaxed);
+        let _ = mic_handle.join();
+        // Drain any mic frames produced during shutdown.
+        while let Ok(frame) = mic_rx.try_recv() {
+            mixer.push(MixSource::Microphone, &frame);
+        }
+        sys_resampler.finish(&mut |frame: &[f32]| {
+            mixer.push(MixSource::System, frame);
+        });
+        drop(sys_stream);
+        mixer.flush_into(&mut mixed);
+
+        let out_path = std::env::temp_dir()
+            .join(format!("handy_mixed_audio_test_{}.wav", std::process::id()));
+        write_f32_wav(&out_path, &mixed, WHISPER_SAMPLE_RATE)
+            .map_err(|e| format!("Failed to write WAV: {}", e))?;
+
+        let peak = mixed.iter().fold(0.0f32, |m, &s| m.max(s.abs()));
+        log::info!(
+            "capture_mixed_audio_test: wrote {} samples to {:?} (peak {:.4})",
+            mixed.len(),
+            out_path,
+            peak
+        );
+
+        Ok(out_path.to_string_lossy().to_string())
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = seconds;
+        Err("Mixed audio capture is only supported on macOS".to_string())
+    }
+}
+
 /// Write mono f32 samples as a 32-bit float PCM WAV (format tag 3) with a
 /// manually constructed 44-byte header. Avoids pulling extra crates.
 #[cfg(target_os = "macos")]

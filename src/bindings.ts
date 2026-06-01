@@ -720,6 +720,14 @@ async captureSystemAudioTest(seconds: number) : Promise<Result<string, string>> 
     else return { status: "error", error: e  as any };
 }
 },
+async captureMixedAudioTest(seconds: number) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("capture_mixed_audio_test", { seconds }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async setModelUnloadTimeout(timeout: ModelUnloadTimeout) : Promise<void> {
     await TAURI_INVOKE("set_model_unload_timeout", { timeout });
 },

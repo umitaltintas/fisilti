@@ -55,13 +55,15 @@ fn build_headers(provider: &PostProcessProvider, api_key: &str) -> Result<Header
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
     headers.insert(
         REFERER,
-        HeaderValue::from_static("https://github.com/cjpais/Handy"),
+        HeaderValue::from_static("https://github.com/umitaltintas/fisilti"),
     );
     headers.insert(
         USER_AGENT,
-        HeaderValue::from_static("Handy/1.0 (+https://github.com/cjpais/Handy)"),
+        HeaderValue::from_static("Fisilti/0.1.0 (+https://github.com/umitaltintas/fisilti)"),
     );
-    headers.insert("X-Title", HeaderValue::from_static("Handy"));
+    // X-Title is sent to OpenRouter as the app title; keep ASCII (header values
+    // must be ASCII — the "ı" in the display name "Fısıltı" would panic here).
+    headers.insert("X-Title", HeaderValue::from_static("Fisilti"));
 
     // Provider-specific auth headers
     if !api_key.is_empty() {

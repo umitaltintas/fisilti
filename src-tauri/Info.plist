@@ -5,8 +5,8 @@
   <key>NSMicrophoneUsageDescription</key>
   <string>Request microphone access to transcribe audio locally</string>
   <key>NSScreenCaptureUsageDescription</key>
-  <string>Handy needs screen &amp; system audio recording permission to capture system audio for meeting transcription.</string>
+  <string>Fısıltı needs screen &amp; system audio recording permission to capture system audio for meeting transcription.</string>
   <key>NSAudioCaptureUsageDescription</key>
-  <string>Handy captures system audio to transcribe meetings.</string>
+  <string>Fısıltı captures system audio to transcribe meetings.</string>
 </dict>
 </plist>

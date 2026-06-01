@@ -9,6 +9,9 @@ mod visualizer;
 // the dictation flow and only compiled on macOS.
 #[cfg(target_os = "macos")]
 mod core_audio;
+// Meeting mode (Step 2): macOS-only mic+system audio mixer.
+#[cfg(target_os = "macos")]
+mod mixer;
 #[cfg(target_os = "macos")]
 mod system_audio;
 
@@ -20,5 +23,7 @@ pub use visualizer::AudioVisualiser;
 
 #[cfg(target_os = "macos")]
 pub use core_audio::{CoreAudioCapture, CoreAudioStream};
+#[cfg(target_os = "macos")]
+pub use mixer::{AudioMixerRingBuffer, MeetingMixer, MixSource, ProfessionalAudioMixer};
 #[cfg(target_os = "macos")]
 pub use system_audio::{SystemAudioCapture, SystemAudioStream};

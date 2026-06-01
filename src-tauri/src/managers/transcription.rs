@@ -54,6 +54,30 @@ enum LoadedEngine {
 const MEETING_TURKISH_STYLE_PROMPT: &str =
     "Merhaba, toplantıya hoş geldiniz. Bugünkü gündem maddelerini gözden geçirelim ve kararları netleştirelim.";
 
+// --- Meeting-mode anti-hallucination inference knobs (macOS meeting path only) ---
+// These tune whisper's temperature-fallback decoding to suppress the runaway
+// repetition / hallucination that plagues silent or noisy meeting windows.
+// Values mirror whisper.cpp's documented defaults except where a stricter
+// setting helps meetings specifically. Dictation never sets these (stays None).
+//
+/// Initial decoding temperature. 0.0 = deterministic/greedy first pass; combined
+/// with `MEETING_TEMPERATURE_INC` this enables the temperature fallback loop,
+/// the single biggest lever against repetition loops.
+#[cfg(target_os = "macos")]
+const MEETING_TEMPERATURE: f32 = 0.0;
+/// Temperature increment for the fallback loop. When a decode fails the entropy
+/// or logprob gate, whisper retries at temperature += this step.
+#[cfg(target_os = "macos")]
+const MEETING_TEMPERATURE_INC: f32 = 0.2;
+/// Entropy (compression-ratio-like) threshold that triggers a temperature-fallback
+/// retry. whisper.cpp's documented default.
+#[cfg(target_os = "macos")]
+const MEETING_ENTROPY_THOLD: f32 = 2.4;
+/// Average-logprob threshold that triggers a temperature-fallback retry.
+/// whisper.cpp's documented default.
+#[cfg(target_os = "macos")]
+const MEETING_LOGPROB_THOLD: f32 = -1.0;
+
 /// Options that distinguish the meeting transcription path from dictation.
 /// Dictation always uses `dictation()`, which is a no-op (all `None`), so its
 /// behavior is byte-for-byte unchanged. Only meeting mode populates these.
@@ -68,6 +92,18 @@ struct MeetingTranscribeOpts {
     /// Optional style-exemplar prompt prepended to the whisper `initial_prompt`
     /// (before any custom words). `None` means custom-words-only (dictation).
     style_prompt: Option<&'static str>,
+    /// Anti-hallucination temperature-fallback knobs. `None` => transcribe-rs /
+    /// whisper.cpp defaults (dictation behavior, unchanged). Meeting mode sets
+    /// these so silent/noisy windows fall back instead of looping.
+    temperature: Option<f32>,
+    temperature_inc: Option<f32>,
+    entropy_thold: Option<f32>,
+    logprob_thold: Option<f32>,
+    /// When `Some(true)`, disable cross-call decoder context. Set only for the
+    /// finalize windows, which are chronologically independent slices: carrying
+    /// context across them risks propagating a hallucination into later windows.
+    /// `None` (live/dictation) preserves default context behavior.
+    no_context: Option<bool>,
 }
 
 impl MeetingTranscribeOpts {
@@ -77,12 +113,22 @@ impl MeetingTranscribeOpts {
     }
 
     /// Meeting-mode options derived from settings.
+    ///
+    /// `finalize` distinguishes the on-stop / recovery finalize windows (which
+    /// transcribe chronologically independent audio slices) from the live rough
+    /// pass. Finalize windows additionally set `no_context=true` so a
+    /// hallucination in one window can't bleed into the next.
     #[cfg(target_os = "macos")]
-    fn meeting(settings: &crate::settings::AppSettings) -> Self {
+    fn meeting(settings: &crate::settings::AppSettings, finalize: bool) -> Self {
         Self {
             language_override: Some(settings.meeting_language.clone()),
             no_speech_thold: Some(0.5),
             style_prompt: Some(MEETING_TURKISH_STYLE_PROMPT),
+            temperature: Some(MEETING_TEMPERATURE),
+            temperature_inc: Some(MEETING_TEMPERATURE_INC),
+            entropy_thold: Some(MEETING_ENTROPY_THOLD),
+            logprob_thold: Some(MEETING_LOGPROB_THOLD),
+            no_context: if finalize { Some(true) } else { None },
         }
     }
 
@@ -518,14 +564,21 @@ impl TranscriptionManager {
     #[cfg(target_os = "macos")]
     pub fn transcribe_meeting(&self, audio: Vec<f32>) -> Result<String> {
         let settings = get_settings(&self.app_handle);
-        self.transcribe_with_opts(audio, MeetingTranscribeOpts::meeting(&settings))
+        self.transcribe_with_opts(audio, MeetingTranscribeOpts::meeting(&settings, false))
     }
 
-    fn transcribe_with_opts(
-        &self,
-        audio: Vec<f32>,
-        opts: MeetingTranscribeOpts,
-    ) -> Result<String> {
+    /// Meeting-mode transcription for the on-stop / recovery FINALIZE windows.
+    /// Identical to [`transcribe_meeting`] but additionally disables cross-call
+    /// decoder context (`no_context`), because finalize windows are
+    /// chronologically independent slices and carrying context between them
+    /// risks propagating a hallucination forward. ADDITIVE; dictation unaffected.
+    #[cfg(target_os = "macos")]
+    pub fn transcribe_meeting_finalize(&self, audio: Vec<f32>) -> Result<String> {
+        let settings = get_settings(&self.app_handle);
+        self.transcribe_with_opts(audio, MeetingTranscribeOpts::meeting(&settings, true))
+    }
+
+    fn transcribe_with_opts(&self, audio: Vec<f32>, opts: MeetingTranscribeOpts) -> Result<String> {
         #[cfg(debug_assertions)]
         if std::env::var("HANDY_FORCE_TRANSCRIPTION_FAILURE").is_ok() {
             return Err(anyhow::anyhow!(
@@ -652,6 +705,14 @@ impl TranscriptionManager {
                                 no_speech_thold: opts
                                     .no_speech_thold
                                     .unwrap_or(WhisperInferenceParams::default().no_speech_thold),
+                                // Anti-hallucination knobs (meeting only). All
+                                // `None` for dictation, so its params are
+                                // byte-for-byte identical to before.
+                                temperature: opts.temperature,
+                                temperature_inc: opts.temperature_inc,
+                                entropy_thold: opts.entropy_thold,
+                                logprob_thold: opts.logprob_thold,
+                                no_context: opts.no_context,
                                 ..Default::default()
                             };
 

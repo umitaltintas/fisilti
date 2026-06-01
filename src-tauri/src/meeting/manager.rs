@@ -751,8 +751,10 @@ impl MeetingManager {
     }
 
     /// Transcribe each `[start, end)` window of `audio` into one timestamped,
-    /// labeled segment via the meeting path (`transcribe_meeting`: forced
-    /// meeting language + Turkish style prompt + higher no_speech_thold).
+    /// labeled segment via the meeting FINALIZE path
+    /// (`transcribe_meeting_finalize`: forced meeting language + Turkish style
+    /// prompt + higher no_speech_thold + temperature-fallback anti-hallucination
+    /// knobs + `no_context` so independent windows don't share decoder state).
     /// ~25-30 s windows give whisper plenty of context per call.
     #[cfg(target_os = "macos")]
     fn transcribe_windows(
@@ -770,7 +772,7 @@ impl MeetingManager {
             let slice = &audio[start..end];
             match self
                 .transcription_manager
-                .transcribe_meeting(slice.to_vec())
+                .transcribe_meeting_finalize(slice.to_vec())
             {
                 Ok(text) => {
                     let text = text.trim().to_string();

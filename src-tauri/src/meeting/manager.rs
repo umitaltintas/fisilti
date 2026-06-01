@@ -967,11 +967,17 @@ impl MeetingManager {
             }
         };
         let sys_rate = sys_stream.sample_rate();
+        // Live system sample-rate handle (Item 4): the CoreAudio IO-proc updates
+        // this when the device rate changes (e.g. AirPods switching profiles).
+        // We poll it in the loop and rebuild `sys_resampler` on change so the
+        // ratio stays correct (else pitch/speed corruption).
+        let sys_rate_handle = sys_stream.sample_rate_handle();
         let mut sys_resampler = FrameResampler::new(
             sys_rate as usize,
             WHISPER_SAMPLE_RATE as usize,
             Duration::from_millis(30),
         );
+        let mut sys_resampler_rate = sys_rate;
 
         let (sys_tx, sys_rx) = mpsc::channel::<Vec<f32>>();
         let sys_stop = Arc::new(AtomicBool::new(false));
@@ -1022,6 +1028,15 @@ impl MeetingManager {
             merge_gap_samples: SEGMENT_MERGE_GAP_SAMPLES,
         };
 
+        // --- Mic conditioning + echo mitigation (Items 3 & 5), mic frames only ---
+        // Echo duck: detect the output route once at start (built-in speakers vs
+        // headphones). A mid-meeting headphone plug/unplug isn't re-detected here
+        // to keep the hot loop allocation-free; the common case (fixed route for
+        // the session) is handled.
+        let mut echo_duck = EchoDuck::new(crate::audio_toolkit::audio::detect_output_route());
+        let mut mic_highpass = HighPass::new(MIC_HIGHPASS_HZ, WHISPER_SAMPLE_RATE as f32);
+        let mut mic_norm = MicLoudnessNorm::new(WHISPER_SAMPLE_RATE);
+
         loop {
             if self.stop_signal.load(Ordering::Relaxed) {
                 break;
@@ -1029,6 +1044,30 @@ impl MeetingManager {
 
             mic_frames.clear();
             sys_frames.clear();
+
+            // Item 4: rebuild the system resampler if the device rate changed
+            // (AirPods/Bluetooth profile switch). Without this the fixed initial
+            // ratio would pitch/speed-corrupt all subsequent system audio.
+            let live_sys_rate = sys_rate_handle.load(Ordering::Acquire);
+            if live_sys_rate != 0 && live_sys_rate != sys_resampler_rate {
+                log::info!(
+                    "meeting: system sample rate changed {} -> {} Hz; rebuilding resampler",
+                    sys_resampler_rate,
+                    live_sys_rate
+                );
+                // Flush any tail of the old resampler into the mixer so samples
+                // aren't lost across the rebuild.
+                sys_resampler.finish(&mut |frame: &[f32]| {
+                    mixer.push(MixSource::System, frame);
+                    sys_frames.extend_from_slice(frame);
+                });
+                sys_resampler = FrameResampler::new(
+                    live_sys_rate as usize,
+                    WHISPER_SAMPLE_RATE as usize,
+                    Duration::from_millis(30),
+                );
+                sys_resampler_rate = live_sys_rate;
+            }
 
             // Drain any available mic frames (already 16 kHz mono, non-blocking).
             while let Ok(frame) = mic_rx.try_recv() {
@@ -1050,10 +1089,29 @@ impl MeetingManager {
                 Err(mpsc::RecvTimeoutError::Disconnected) => break,
             }
 
-            // Buffer + segment each source independently (Features 1 & 2).
+            // --- Mic conditioning + echo mitigation (Items 3 & 5) ---
+            // Update the smoothed system loudness every tick (so the duck
+            // releases promptly when system audio stops), then condition the
+            // mic. Order: echo duck -> high-pass -> loudness normalize. Applied
+            // to mic_frames BEFORE the buffer write + VAD feed, so BOTH the live
+            // pass and the on-stop finalize benefit. System audio + the saved
+            // playback mix (already pushed with raw mic above) are untouched.
+            echo_duck.observe_system(&sys_frames);
             if !mic_frames.is_empty() {
+                let ducked = echo_duck.apply(&mut mic_frames);
+                mic_highpass.process(&mut mic_frames);
+                if let Some(norm) = mic_norm.as_mut() {
+                    norm.process(&mut mic_frames);
+                }
                 let _ = mic_buf_writer.write(&mic_frames);
-                mic_proc.feed(&mic_frames, &seg_cfg, self);
+                // While the mic is ducked (remote audio loud on speakers), skip
+                // feeding the mic VAD: the attenuated leakage shouldn't open a
+                // mic segment that duplicates what the system tap already has.
+                // Double-talk tradeoff: a quiet local interjection over loud
+                // playback may be missed — accepted to avoid duplicated text.
+                if !ducked {
+                    mic_proc.feed(&mic_frames, &seg_cfg, self);
+                }
             }
             if !sys_frames.is_empty() {
                 let _ = system_buf_writer.write(&sys_frames);
@@ -1092,6 +1150,12 @@ impl MeetingManager {
             tail_mic.extend_from_slice(&frame);
         }
         if !tail_mic.is_empty() {
+            // Apply the same mic conditioning to the trailing tail (no ducking
+            // here — the session is ending and there's no fresh system RMS).
+            mic_highpass.process(&mut tail_mic);
+            if let Some(norm) = mic_norm.as_mut() {
+                norm.process(&mut tail_mic);
+            }
             let _ = mic_buf_writer.write(&tail_mic);
             mic_proc.feed(&tail_mic, &seg_cfg, self);
         }
@@ -1286,6 +1350,187 @@ impl SourceProcessor {
         }
         if let Some((mut audio, start)) = self.pending.take() {
             manager.flush_segment(&mut audio, start, self.source);
+        }
+    }
+}
+
+// ---- Mic conditioning + echo mitigation (Items 3 & 5) ----------------------
+//
+// These run on the MIC frames ONLY (16 kHz mono), in this order each tick:
+//   1. Echo duck  (Item 3): when output = speakers AND system audio is loud,
+//      attenuate the mic so the remote party (already cleanly captured by the
+//      system tap) isn't re-captured + duplicated in the transcript.
+//   2. High-pass  (Item 5): ~80 Hz one-pole HPF to remove rumble/DC before
+//      loudness measurement.
+//   3. Loudness   (Item 5): EBU R128 shortterm normalization toward -23 LUFS.
+// System audio and the saved mix are NOT touched by any of these.
+
+/// Mic attenuation applied while ducking (echo-prone speaker output + loud
+/// system audio). -15 dB ≈ ×0.178 linear. Chosen to strongly suppress leakage
+/// without fully gating, so a person talking OVER the remote audio (double-talk)
+/// is still partially captured rather than dropped entirely.
+#[cfg(target_os = "macos")]
+const ECHO_DUCK_GAIN_DB: f32 = -15.0;
+/// System-audio running-RMS threshold above which we consider remote audio to
+/// be "actively playing" and enable ducking. ~0.02 RMS on the 16 kHz system
+/// stream — above ambient tap noise/silence, below normal speech level.
+#[cfg(target_os = "macos")]
+const ECHO_DUCK_SYS_RMS_THRESHOLD: f32 = 0.02;
+/// Smoothing factor for the system running RMS (per mic-frame batch). Closer to
+/// 1.0 = slower/steadier; 0.2 reacts within ~5 ticks (~0.5 s).
+#[cfg(target_os = "macos")]
+const ECHO_DUCK_RMS_SMOOTH: f32 = 0.2;
+/// Target integrated loudness for mic normalization (EBU R128). -23 LUFS is the
+/// EBU broadcast reference; Whisper was trained on roughly this level of speech.
+#[cfg(target_os = "macos")]
+const MIC_TARGET_LUFS: f64 = -23.0;
+/// Clamp the normalization gain so a near-silent block isn't amplified into
+/// noise (and a hot block isn't over-attenuated). ±12 dB.
+#[cfg(target_os = "macos")]
+const MIC_NORM_MAX_GAIN_DB: f64 = 12.0;
+/// High-pass cutoff applied to the mic before normalization (Hz).
+#[cfg(target_os = "macos")]
+const MIC_HIGHPASS_HZ: f32 = 80.0;
+
+/// One-pole high-pass filter (DC/rumble removal). Stateful across frames.
+#[cfg(target_os = "macos")]
+struct HighPass {
+    alpha: f32,
+    prev_in: f32,
+    prev_out: f32,
+}
+
+#[cfg(target_os = "macos")]
+impl HighPass {
+    fn new(cutoff_hz: f32, sample_rate: f32) -> Self {
+        // Standard one-pole HPF coefficient.
+        let rc = 1.0 / (2.0 * std::f32::consts::PI * cutoff_hz);
+        let dt = 1.0 / sample_rate;
+        let alpha = rc / (rc + dt);
+        Self {
+            alpha,
+            prev_in: 0.0,
+            prev_out: 0.0,
+        }
+    }
+
+    fn process(&mut self, samples: &mut [f32]) {
+        for s in samples.iter_mut() {
+            let x = *s;
+            let y = self.alpha * (self.prev_out + x - self.prev_in);
+            self.prev_in = x;
+            self.prev_out = y;
+            *s = y;
+        }
+    }
+}
+
+/// EBU R128 shortterm loudness normalization toward `MIC_TARGET_LUFS`. We feed
+/// every mic frame into the meter, read the shortterm (3 s) loudness, and apply
+/// a clamped gain. Using shortterm keeps it adaptive to a moving talker without
+/// pumping on every sample.
+#[cfg(target_os = "macos")]
+struct MicLoudnessNorm {
+    meter: ebur128::EbuR128,
+}
+
+#[cfg(target_os = "macos")]
+impl MicLoudnessNorm {
+    fn new(sample_rate: u32) -> Option<Self> {
+        match ebur128::EbuR128::new(1, sample_rate, ebur128::Mode::S) {
+            Ok(meter) => Some(Self { meter }),
+            Err(e) => {
+                log::warn!("meeting: failed to init EBU R128 meter: {}; mic norm disabled", e);
+                None
+            }
+        }
+    }
+
+    /// Feed + normalize a block of mic samples in place.
+    fn process(&mut self, samples: &mut [f32]) {
+        if samples.is_empty() {
+            return;
+        }
+        if self.meter.add_frames_f32(samples).is_err() {
+            return;
+        }
+        // shortterm loudness needs ~3 s of audio; returns -inf / error early on.
+        let loudness = match self.meter.loudness_shortterm() {
+            Ok(l) if l.is_finite() => l,
+            _ => return,
+        };
+        // Gain (dB) to reach target, clamped, then linearized.
+        let gain_db = (MIC_TARGET_LUFS - loudness).clamp(-MIC_NORM_MAX_GAIN_DB, MIC_NORM_MAX_GAIN_DB);
+        let gain = 10f64.powf(gain_db / 20.0) as f32;
+        for s in samples.iter_mut() {
+            *s = (*s * gain).clamp(-1.0, 1.0);
+        }
+    }
+}
+
+/// Echo / double-capture mitigation. On speaker output, the mic re-captures the
+/// remote party (already captured by the system tap) → duplicated transcript.
+/// We track a smoothed RMS of the SYSTEM frames; when output = speakers and the
+/// system is loud, we attenuate the mic by `ECHO_DUCK_GAIN_DB`.
+///
+/// Double-talk tradeoff: when both the local user and remote audio are loud at
+/// once, the local user's mic is also attenuated (~15 dB), so very quiet local
+/// interjections over loud playback may be missed. This is the accepted cost of
+/// preventing the (worse) duplicated/echoed transcript. Headphone output is
+/// detected separately and skips ducking entirely.
+#[cfg(target_os = "macos")]
+struct EchoDuck {
+    /// Whether the current output route is echo-prone (speakers/unknown).
+    enabled: bool,
+    /// Smoothed system RMS.
+    sys_rms: f32,
+    duck_gain: f32,
+}
+
+#[cfg(target_os = "macos")]
+impl EchoDuck {
+    fn new(route: crate::audio_toolkit::audio::OutputRoute) -> Self {
+        use crate::audio_toolkit::audio::OutputRoute;
+        let enabled = !matches!(route, OutputRoute::Headphones);
+        log::info!(
+            "meeting: echo duck {} (output route: {:?})",
+            if enabled { "ENABLED" } else { "disabled (headphones)" },
+            route
+        );
+        Self {
+            enabled,
+            sys_rms: 0.0,
+            duck_gain: 10f32.powf(ECHO_DUCK_GAIN_DB / 20.0),
+        }
+    }
+
+    /// Update the smoothed system RMS from this tick's system frames.
+    fn observe_system(&mut self, sys_frames: &[f32]) {
+        if sys_frames.is_empty() {
+            // Decay toward zero so a gap in system audio releases the duck.
+            self.sys_rms *= 1.0 - ECHO_DUCK_RMS_SMOOTH;
+            return;
+        }
+        let sum_sq: f32 = sys_frames.iter().map(|s| s * s).sum();
+        let rms = (sum_sq / sys_frames.len() as f32).sqrt();
+        self.sys_rms = ECHO_DUCK_RMS_SMOOTH * rms + (1.0 - ECHO_DUCK_RMS_SMOOTH) * self.sys_rms;
+    }
+
+    /// Whether the mic should currently be ducked.
+    fn is_ducking(&self) -> bool {
+        self.enabled && self.sys_rms > ECHO_DUCK_SYS_RMS_THRESHOLD
+    }
+
+    /// Attenuate mic samples in place if ducking is active. Returns whether the
+    /// mic was ducked this tick (caller may skip feeding the mic VAD).
+    fn apply(&self, mic_frames: &mut [f32]) -> bool {
+        if self.is_ducking() {
+            for s in mic_frames.iter_mut() {
+                *s *= self.duck_gain;
+            }
+            true
+        } else {
+            false
         }
     }
 }

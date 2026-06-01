@@ -402,6 +402,14 @@ impl CoreAudioStream {
     pub fn sample_rate(&self) -> u32 {
         self.current_sample_rate.load(Ordering::Acquire)
     }
+
+    /// Shared handle to the live device sample rate. The IO-proc callback
+    /// updates this atomically when the device rate changes (e.g. Bluetooth
+    /// profile switches), so a consumer that has moved the stream into a task
+    /// can still observe the current rate and rebuild its resampler (Item 4).
+    pub fn sample_rate_handle(&self) -> Arc<AtomicU32> {
+        self.current_sample_rate.clone()
+    }
 }
 
 impl Stream for CoreAudioStream {

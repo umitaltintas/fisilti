@@ -8,6 +8,8 @@
 // compiled on macOS (see the gated `mod` declaration in `audio/mod.rs`).
 
 use std::pin::Pin;
+use std::sync::atomic::AtomicU32;
+use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use anyhow::Result;
@@ -29,6 +31,9 @@ impl SystemAudioCapture {
         let core_audio = CoreAudioCapture::new()?;
         let core_audio_stream = core_audio.stream()?;
         let sample_rate = core_audio_stream.sample_rate();
+        // Live rate handle survives moving the stream into the forwarding task,
+        // so the meeting capture loop can detect rate changes (Item 4).
+        let sample_rate_handle = core_audio_stream.sample_rate_handle();
 
         // Forward CoreAudio samples through an unbounded channel so the consumer
         // can poll a plain `Stream<Item = f32>` without holding CoreAudio types.
@@ -72,6 +77,7 @@ impl SystemAudioCapture {
         Ok(SystemAudioStream {
             drop_tx,
             sample_rate,
+            sample_rate_handle,
             receiver: Box::pin(receiver),
         })
     }
@@ -81,6 +87,7 @@ impl SystemAudioCapture {
 pub struct SystemAudioStream {
     drop_tx: std::sync::mpsc::Sender<()>,
     sample_rate: u32,
+    sample_rate_handle: Arc<AtomicU32>,
     receiver: Pin<Box<dyn Stream<Item = f32> + Send + Sync>>,
 }
 
@@ -99,8 +106,15 @@ impl Stream for SystemAudioStream {
 }
 
 impl SystemAudioStream {
-    /// Native sample rate (Hz) reported by the CoreAudio tap.
+    /// Native sample rate (Hz) reported by the CoreAudio tap at start.
     pub fn sample_rate(&self) -> u32 {
         self.sample_rate
+    }
+
+    /// Shared handle to the LIVE device sample rate, updated by the CoreAudio
+    /// IO-proc when the device rate changes. Read this in the capture loop to
+    /// rebuild the resampler on rate changes (Item 4). Cheap atomic clone.
+    pub fn sample_rate_handle(&self) -> Arc<AtomicU32> {
+        self.sample_rate_handle.clone()
     }
 }

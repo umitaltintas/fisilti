@@ -107,6 +107,9 @@ transcribe-rs = { version = "0.3.2", features = ["whisper-metal"] }
 cidre = { git = "https://github.com/yury/cidre", rev = "a9587fa", features = ["av"] }
 objc = "0.2.7"
 futures-channel = "0.3.31"
+# Meeting mode: EBU R128 loudness measurement for mic normalization (Item 5).
+# macOS-only because it's only used in the macOS meeting capture loop.
+ebur128 = "0.1.10"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk-layer-shell = { version = "0.8", features = ["v0_6"] }

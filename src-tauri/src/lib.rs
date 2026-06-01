@@ -426,6 +426,7 @@ pub fn run(cli_args: CliArgs) {
             commands::meeting::stop_meeting,
             commands::meeting::get_meeting_transcript,
             commands::meeting::get_meeting_status,
+            commands::meeting::summarize_meeting,
             commands::transcription::set_model_unload_timeout,
             commands::transcription::get_model_load_status,
             commands::transcription::unload_model_manually,

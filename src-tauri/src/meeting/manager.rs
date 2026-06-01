@@ -43,6 +43,21 @@ pub struct MeetingTranscriptUpdate {
     pub full_transcript: String,
 }
 
+/// Event payload emitted on `"meeting-audio-level"` (~20 fps) for a live UI
+/// visualizer. This is SEPARATE from the dictation `"mic-level"` event so the
+/// two visualizers never interfere.
+#[derive(Clone, Debug, Serialize, Type)]
+pub struct MeetingAudioLevel {
+    /// ~16 normalized 0..1 frequency-bar levels (same shape as `mic-level`,
+    /// produced by the shared `AudioVisualiser`).
+    pub bars: Vec<f32>,
+    /// ~96 downsampled samples in -1..1 for an oscilloscope trace of the most
+    /// recent window. Flat (all zeros) when silent.
+    pub wave: Vec<f32>,
+    /// 0..1 peak absolute amplitude of the window.
+    pub peak: f32,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MeetingState {
     Idle,
@@ -215,8 +230,7 @@ impl MeetingManager {
     /// row id so a later summary can update the same record. Never panics or
     /// returns an error to the caller.
     fn persist_session(&self) {
-        let segments: Vec<TranscriptSegment> =
-            { self.transcript.lock().unwrap().clone() };
+        let segments: Vec<TranscriptSegment> = { self.transcript.lock().unwrap().clone() };
         let transcript = self.full_transcript();
         if transcript.trim().is_empty() {
             log::debug!("Meeting transcript empty; skipping persistence");
@@ -296,6 +310,17 @@ impl MeetingManager {
         );
     }
 
+    /// Emit a throttled `"meeting-audio-level"` event for the live visualizer.
+    /// Cheap: caller passes precomputed bars/wave/peak. Separate from the
+    /// dictation `mic-level` path.
+    fn emit_audio_level(&self, bars: Vec<f32>, wave: Vec<f32>, peak: f32) {
+        use tauri::Emitter;
+        let _ = self.app_handle.emit(
+            "meeting-audio-level",
+            MeetingAudioLevel { bars, wave, peak },
+        );
+    }
+
     /// The capture + mix + VAD + transcribe loop. macOS-only.
     ///
     /// Mirrors the capture/mix machinery of `capture_mixed_audio_test`: an
@@ -307,7 +332,7 @@ impl MeetingManager {
     #[cfg(target_os = "macos")]
     fn run_capture_loop(&self) -> Result<(), String> {
         use crate::audio_toolkit::audio::{
-            FrameResampler, MeetingMixer, MixSource, SystemAudioCapture,
+            AudioVisualiser, FrameResampler, MeetingMixer, MixSource, SystemAudioCapture,
         };
         use crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE;
         use crate::audio_toolkit::vad::{SmoothedVad, VadFrame, VoiceActivityDetector};
@@ -315,16 +340,40 @@ impl MeetingManager {
         use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
         use futures_util::StreamExt;
         use std::sync::mpsc;
-        use std::time::Duration;
+        use std::time::{Duration, Instant};
         use tauri::Manager;
 
         // --- VAD setup (dedicated instance, NOT shared with dictation) ---
         const VAD_FRAME_SAMPLES: usize = (WHISPER_SAMPLE_RATE as usize * 30) / 1000; // 480 samples / 30 ms
-                                                                                     // Max samples per segment before forced flush (~22 s) so a continuous
-                                                                                     // talker still gets periodic transcription.
+
+        // Max samples per segment before forced flush (~22 s) so a continuous
+        // talker still gets periodic transcription.
         const MAX_SEGMENT_SAMPLES: usize = WHISPER_SAMPLE_RATE as usize * 22;
         // Minimum segment length worth transcribing (~200 ms) to skip blips.
         const MIN_SEGMENT_SAMPLES: usize = WHISPER_SAMPLE_RATE as usize / 5;
+
+        // --- Live audio-level visualizer (SEPARATE from dictation mic-level) ---
+        // Reuse the same AudioVisualiser config dictation uses for `bars`.
+        const VIS_BUCKETS: usize = 16;
+        const VIS_WINDOW_SIZE: usize = 512;
+        // Oscilloscope trace length sent to the frontend.
+        const WAVE_POINTS: usize = 96;
+        // Throttle: emit at most one event every 50 ms (~20 fps), accumulating
+        // mixed samples across the faster 30 ms VAD frames.
+        const LEVEL_EMIT_INTERVAL: Duration = Duration::from_millis(50);
+        let mut visualizer = AudioVisualiser::new(
+            WHISPER_SAMPLE_RATE,
+            VIS_WINDOW_SIZE,
+            VIS_BUCKETS,
+            80.0,
+            6000.0,
+        );
+        // Most recent mixed samples awaiting the next emit (raw, for the wave +
+        // peak). Capped to roughly one emit window so it stays cheap.
+        let mut level_accum: Vec<f32> = Vec::with_capacity(WHISPER_SAMPLE_RATE as usize / 10);
+        // Latest bar levels from the visualiser; reused if no new bars this tick.
+        let mut last_bars: Vec<f32> = vec![0.0; VIS_BUCKETS];
+        let mut last_level_emit = Instant::now();
 
         let vad_path = self
             .app_handle
@@ -560,6 +609,19 @@ impl MeetingManager {
 
             // Feed mixed samples into the VAD frame-by-frame.
             if !mixed.is_empty() {
+                // --- Live audio level: accumulate raw mixed samples, feed the
+                // visualiser for bars, and emit a throttled event (~20 fps). ---
+                level_accum.extend_from_slice(&mixed);
+                if let Some(bars) = visualizer.feed(&mixed) {
+                    last_bars = bars;
+                }
+                if last_level_emit.elapsed() >= LEVEL_EMIT_INTERVAL {
+                    let (wave, peak) = downsample_wave(&level_accum, WAVE_POINTS);
+                    self.emit_audio_level(last_bars.clone(), wave, peak);
+                    level_accum.clear();
+                    last_level_emit = Instant::now();
+                }
+
                 frame_accum.append(&mut mixed);
                 while frame_accum.len() >= VAD_FRAME_SAMPLES {
                     let frame: Vec<f32> = frame_accum.drain(0..VAD_FRAME_SAMPLES).collect();
@@ -637,6 +699,9 @@ impl MeetingManager {
             self.flush_segment(&mut segment, segment_start_samples);
         }
 
+        // Emit one final flat level so the visualiser settles to a flat line.
+        self.emit_audio_level(vec![0.0; VIS_BUCKETS], vec![0.0; WAVE_POINTS], 0.0);
+
         Ok(())
     }
 
@@ -665,6 +730,35 @@ impl MeetingManager {
     }
 }
 
+/// Downsample a window of mixed samples into a fixed-length oscilloscope trace
+/// (averaging strided chunks, values in -1..1) and the peak absolute amplitude
+/// (0..1). Returns a flat zero trace when there are no samples.
+fn downsample_wave(samples: &[f32], points: usize) -> (Vec<f32>, f32) {
+    if samples.is_empty() || points == 0 {
+        return (vec![0.0; points], 0.0);
+    }
+    let mut wave = Vec::with_capacity(points);
+    let mut peak = 0.0f32;
+    let len = samples.len();
+    for p in 0..points {
+        let start = p * len / points;
+        let end = ((p + 1) * len / points).max(start + 1).min(len);
+        let mut sum = 0.0f32;
+        let mut count = 0u32;
+        for &s in &samples[start..end] {
+            sum += s;
+            let a = s.abs();
+            if a > peak {
+                peak = a;
+            }
+            count += 1;
+        }
+        let avg = if count > 0 { sum / count as f32 } else { 0.0 };
+        wave.push(avg.clamp(-1.0, 1.0));
+    }
+    (wave, peak.min(1.0))
+}
+
 /// Current time as epoch milliseconds.
 fn now_epoch_ms() -> i64 {
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -684,5 +778,49 @@ fn default_meeting_title(started_at_ms: i64) -> String {
             format!("Meeting {}", local.format("%B %e, %Y - %l:%M %p"))
         }
         None => "Meeting".to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::downsample_wave;
+
+    #[test]
+    fn downsample_wave_empty_is_flat() {
+        let (wave, peak) = downsample_wave(&[], 96);
+        assert_eq!(wave.len(), 96);
+        assert!(wave.iter().all(|&v| v == 0.0));
+        assert_eq!(peak, 0.0);
+    }
+
+    #[test]
+    fn downsample_wave_fixed_length_and_peak() {
+        // 480 samples -> 96 points, peak should be the max abs amplitude.
+        let samples: Vec<f32> = (0..480)
+            .map(|i| if i % 2 == 0 { 0.5 } else { -0.5 })
+            .collect();
+        let (wave, peak) = downsample_wave(&samples, 96);
+        assert_eq!(wave.len(), 96);
+        assert!((peak - 0.5).abs() < 1e-6);
+        // Averaging alternating +/-0.5 over each chunk -> near zero.
+        assert!(wave.iter().all(|&v| v.abs() <= 0.5));
+    }
+
+    #[test]
+    fn downsample_wave_clamps_and_bounds_peak() {
+        let samples = vec![5.0f32, -5.0, 2.0, -2.0];
+        let (wave, peak) = downsample_wave(&samples, 4);
+        assert_eq!(wave.len(), 4);
+        assert!(wave.iter().all(|&v| (-1.0..=1.0).contains(&v)));
+        assert_eq!(peak, 1.0); // clamped to 1.0
+    }
+
+    #[test]
+    fn downsample_wave_more_points_than_samples() {
+        // Should not panic when points > samples.
+        let samples = vec![0.1f32, 0.2, 0.3];
+        let (wave, peak) = downsample_wave(&samples, 96);
+        assert_eq!(wave.len(), 96);
+        assert!(peak > 0.0);
     }
 }

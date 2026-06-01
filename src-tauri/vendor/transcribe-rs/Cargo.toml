@@ -1,0 +1,88 @@
+# Vendored copy of transcribe-rs 0.3.2 (https://github.com/cjpais/transcribe-rs),
+# MIT licensed. See LICENSE.
+#
+# WHY VENDORED: Handy's meeting transcription path needs Whisper anti-hallucination
+# inference knobs (no_context / temperature / temperature_inc / entropy_thold /
+# logprob_thold) that the published `WhisperInferenceParams` does not expose (verified
+# up to and including the latest 0.3.11). The only local change vs. upstream 0.3.2 is in
+# `src/whisper_cpp/mod.rs`: five additional Option<> fields on `WhisperInferenceParams`
+# plumbed to the matching `whisper_rs::FullParams` setters. Everything else is byte-for-byte
+# upstream 0.3.2. whisper-rs is pinned to the SAME 0.16.0 version + features Handy already
+# used, so there is no duplicate / incompatible whisper.cpp build.
+#
+# Examples/tests/samples from upstream are intentionally omitted (Handy never builds them);
+# autodiscovery of those targets is disabled below so Cargo doesn't look for the missing files.
+
+[package]
+name = "transcribe-rs"
+version = "0.3.2"
+edition = "2021"
+description = "A simple library to help you transcribe audio"
+license = "MIT"
+repository = "https://github.com/cjpais/transcribe-rs"
+autoexamples = false
+autotests = false
+autobenches = false
+
+[features]
+default = []
+
+# Shared audio feature extraction (mel spectrogram, CTC decode, etc.)
+audio-features = ["dep:ndarray", "dep:rustfft"]
+
+# ONNX-based models (SenseVoice, GigaAM, Parakeet, Moonshine, Canary)
+onnx = ["audio-features", "dep:ort", "dep:base64", "dep:regex", "dep:once_cell"]
+
+# Whisper via whisper.cpp (CPU-only by default; add whisper-metal or whisper-vulkan for GPU)
+whisper-cpp = ["dep:whisper-rs"]
+
+# --- Whisper Accelerators ---
+whisper-metal  = ["whisper-cpp", "whisper-rs/metal"]
+whisper-vulkan = ["whisper-cpp", "whisper-rs/vulkan"]
+
+# Whisperfile server
+whisperfile = ["dep:ureq"]
+
+# Remote engines
+openai = ["dep:async-openai", "dep:tokio", "dep:async-trait"]
+
+# --- ORT Accelerators ---
+ort-cuda     = ["onnx", "ort/cuda"]
+ort-directml = ["onnx", "ort/directml"]
+ort-rocm     = ["onnx", "ort/rocm"]
+ort-accel    = ["ort-cuda", "ort-directml", "ort-rocm"]
+
+# Convenience
+all = ["onnx", "whisper-cpp", "whisperfile", "openai"]
+
+[dependencies]
+# Always required
+thiserror = "2"
+hound = "3.5.1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+log = "0.4.28"
+env_logger = "0.10.0"
+derive_builder = { version = "0.20.2" }
+
+# ONNX runtime
+ort = { version = "=2.0.0-rc.12", optional = true }
+ndarray = { version = "0.17", optional = true }
+regex = { version = "1.11.2", optional = true }
+once_cell = { version = "1.21.3", optional = true }
+rustfft = { version = "6", optional = true }
+base64 = { version = "0.22", optional = true }
+
+# Whisperfile
+ureq = { version = "3", optional = true }
+
+# OpenAI
+tokio = { version = "1.47.1", features = ["rt-multi-thread"], optional = true }
+async-openai = { version = "0.29.3", optional = true }
+async-trait = { version = "0.1.89", optional = true }
+
+# Whisper (GPU features controlled by whisper-metal / whisper-vulkan feature flags)
+whisper-rs = { version = "0.16.0", optional = true }
+
+[dev-dependencies]
+once_cell = "1.21.3"

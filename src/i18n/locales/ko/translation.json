@@ -15,7 +15,8 @@
     "postProcessing": "후처리",
     "history": "히스토리",
     "debug": "디버그",
-    "about": "정보"
+    "about": "정보",
+    "meeting": "Meeting"
   },
   "onboarding": {
     "subtitle": "시작하려면 음성 인식 모델을 선택하세요",
@@ -592,5 +593,20 @@
   "overlay": {
     "transcribing": "텍스트로 변환 중...",
     "processing": "처리 중..."
+  },
+  "meeting": {
+    "title": "Meeting",
+    "recording": "Recording",
+    "startMeeting": "Start Meeting",
+    "stopMeeting": "Stop Meeting",
+    "transcript": "Transcript",
+    "transcriptEmpty": "No transcript yet. Start a meeting to capture live audio.",
+    "listening": "Listening...",
+    "notes": "Notes",
+    "summarize": "Summarize",
+    "summarizing": "Summarizing...",
+    "copyTranscript": "Copy transcript",
+    "copyNotes": "Copy notes",
+    "copied": "Copied!"
   }
 }

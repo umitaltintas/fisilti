@@ -15,7 +15,8 @@
     "postProcessing": "Post Proceso",
     "history": "Historial",
     "debug": "Depuración",
-    "about": "Acerca de"
+    "about": "Acerca de",
+    "meeting": "Meeting"
   },
   "onboarding": {
     "subtitle": "Para comenzar, elige un modelo de transcripción",
@@ -592,5 +593,20 @@
   "overlay": {
     "transcribing": "Transcribiendo...",
     "processing": "Procesando..."
+  },
+  "meeting": {
+    "title": "Meeting",
+    "recording": "Recording",
+    "startMeeting": "Start Meeting",
+    "stopMeeting": "Stop Meeting",
+    "transcript": "Transcript",
+    "transcriptEmpty": "No transcript yet. Start a meeting to capture live audio.",
+    "listening": "Listening...",
+    "notes": "Notes",
+    "summarize": "Summarize",
+    "summarizing": "Summarizing...",
+    "copyTranscript": "Copy transcript",
+    "copyNotes": "Copy notes",
+    "copied": "Copied!"
   }
 }

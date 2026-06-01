@@ -15,7 +15,8 @@
     "postProcessing": "後処理",
     "history": "履歴",
     "debug": "デバッグ",
-    "about": "概要"
+    "about": "概要",
+    "meeting": "Meeting"
   },
   "onboarding": {
     "subtitle": "開始するには、文字起こしモデルを選択してください",
@@ -592,5 +593,20 @@
   "overlay": {
     "transcribing": "文字起こし中...",
     "processing": "処理中..."
+  },
+  "meeting": {
+    "title": "Meeting",
+    "recording": "Recording",
+    "startMeeting": "Start Meeting",
+    "stopMeeting": "Stop Meeting",
+    "transcript": "Transcript",
+    "transcriptEmpty": "No transcript yet. Start a meeting to capture live audio.",
+    "listening": "Listening...",
+    "notes": "Notes",
+    "summarize": "Summarize",
+    "summarizing": "Summarizing...",
+    "copyTranscript": "Copy transcript",
+    "copyNotes": "Copy notes",
+    "copied": "Copied!"
   }
 }

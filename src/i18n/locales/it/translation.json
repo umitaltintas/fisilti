@@ -15,7 +15,8 @@
     "postProcessing": "Post-Elaborazione",
     "history": "Cronologia",
     "debug": "Debug",
-    "about": "Informazioni"
+    "about": "Informazioni",
+    "meeting": "Meeting"
   },
   "onboarding": {
     "subtitle": "Per cominciare, scegli un modello di riconoscimento vocale",
@@ -592,5 +593,20 @@
   "overlay": {
     "transcribing": "Trascrizione...",
     "processing": "Elaborazione..."
+  },
+  "meeting": {
+    "title": "Meeting",
+    "recording": "Recording",
+    "startMeeting": "Start Meeting",
+    "stopMeeting": "Stop Meeting",
+    "transcript": "Transcript",
+    "transcriptEmpty": "No transcript yet. Start a meeting to capture live audio.",
+    "listening": "Listening...",
+    "notes": "Notes",
+    "summarize": "Summarize",
+    "summarizing": "Summarizing...",
+    "copyTranscript": "Copy transcript",
+    "copyNotes": "Copy notes",
+    "copied": "Copied!"
   }
 }

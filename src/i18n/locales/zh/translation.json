@@ -15,7 +15,8 @@
     "postProcessing": "后处理",
     "history": "历史记录",
     "debug": "调试",
-    "about": "关于"
+    "about": "关于",
+    "meeting": "Meeting"
   },
   "onboarding": {
     "subtitle": "请选择一个转录模型以开始使用",
@@ -592,5 +593,20 @@
   "overlay": {
     "transcribing": "正在转录...",
     "processing": "处理中..."
+  },
+  "meeting": {
+    "title": "Meeting",
+    "recording": "Recording",
+    "startMeeting": "Start Meeting",
+    "stopMeeting": "Stop Meeting",
+    "transcript": "Transcript",
+    "transcriptEmpty": "No transcript yet. Start a meeting to capture live audio.",
+    "listening": "Listening...",
+    "notes": "Notes",
+    "summarize": "Summarize",
+    "summarizing": "Summarizing...",
+    "copyTranscript": "Copy transcript",
+    "copyNotes": "Copy notes",
+    "copied": "Copied!"
   }
 }

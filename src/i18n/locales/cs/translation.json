@@ -15,7 +15,8 @@
     "postProcessing": "Následné zpracování",
     "history": "Historie",
     "debug": "Ladění",
-    "about": "O aplikaci"
+    "about": "O aplikaci",
+    "meeting": "Meeting"
   },
   "onboarding": {
     "subtitle": "Pro začátek vyberte model pro přepis",
@@ -592,5 +593,20 @@
   "overlay": {
     "transcribing": "Přepisuji...",
     "processing": "Zpracovávám..."
+  },
+  "meeting": {
+    "title": "Meeting",
+    "recording": "Recording",
+    "startMeeting": "Start Meeting",
+    "stopMeeting": "Stop Meeting",
+    "transcript": "Transcript",
+    "transcriptEmpty": "No transcript yet. Start a meeting to capture live audio.",
+    "listening": "Listening...",
+    "notes": "Notes",
+    "summarize": "Summarize",
+    "summarizing": "Summarizing...",
+    "copyTranscript": "Copy transcript",
+    "copyNotes": "Copy notes",
+    "copied": "Copied!"
   }
 }

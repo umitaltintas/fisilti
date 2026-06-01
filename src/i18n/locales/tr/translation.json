@@ -15,7 +15,8 @@
     "postProcessing": "Son İşlem",
     "history": "Geçmiş",
     "debug": "Hata Ayıklama",
-    "about": "Hakkında"
+    "about": "Hakkında",
+    "meeting": "Meeting"
   },
   "onboarding": {
     "subtitle": "Başlamak için bir transkripsiyon modeli seçin",
@@ -592,5 +593,20 @@
   "overlay": {
     "transcribing": "Transkribe ediliyor...",
     "processing": "İşleniyor..."
+  },
+  "meeting": {
+    "title": "Meeting",
+    "recording": "Recording",
+    "startMeeting": "Start Meeting",
+    "stopMeeting": "Stop Meeting",
+    "transcript": "Transcript",
+    "transcriptEmpty": "No transcript yet. Start a meeting to capture live audio.",
+    "listening": "Listening...",
+    "notes": "Notes",
+    "summarize": "Summarize",
+    "summarizing": "Summarizing...",
+    "copyTranscript": "Copy transcript",
+    "copyNotes": "Copy notes",
+    "copied": "Copied!"
   }
 }

@@ -15,7 +15,8 @@
     "postProcessing": "Постобработка",
     "history": "История",
     "debug": "Отладка",
-    "about": "О программе"
+    "about": "О программе",
+    "meeting": "Meeting"
   },
   "onboarding": {
     "subtitle": "Для начала выберите модель транскрипции",
@@ -592,5 +593,20 @@
   "overlay": {
     "transcribing": "Расшифровка...",
     "processing": "Обработка..."
+  },
+  "meeting": {
+    "title": "Meeting",
+    "recording": "Recording",
+    "startMeeting": "Start Meeting",
+    "stopMeeting": "Stop Meeting",
+    "transcript": "Transcript",
+    "transcriptEmpty": "No transcript yet. Start a meeting to capture live audio.",
+    "listening": "Listening...",
+    "notes": "Notes",
+    "summarize": "Summarize",
+    "summarizing": "Summarizing...",
+    "copyTranscript": "Copy transcript",
+    "copyNotes": "Copy notes",
+    "copied": "Copied!"
   }
 }

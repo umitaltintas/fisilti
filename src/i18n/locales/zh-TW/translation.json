@@ -15,7 +15,8 @@
     "postProcessing": "後處理",
     "history": "歷史紀錄",
     "debug": "偵錯",
-    "about": "關於"
+    "about": "關於",
+    "meeting": "Meeting"
   },
   "onboarding": {
     "subtitle": "首先，請選擇一種模型",
@@ -592,5 +593,20 @@
   "overlay": {
     "transcribing": "正在轉錄...",
     "processing": "處理中..."
+  },
+  "meeting": {
+    "title": "Meeting",
+    "recording": "Recording",
+    "startMeeting": "Start Meeting",
+    "stopMeeting": "Stop Meeting",
+    "transcript": "Transcript",
+    "transcriptEmpty": "No transcript yet. Start a meeting to capture live audio.",
+    "listening": "Listening...",
+    "notes": "Notes",
+    "summarize": "Summarize",
+    "summarizing": "Summarizing...",
+    "copyTranscript": "Copy transcript",
+    "copyNotes": "Copy notes",
+    "copied": "Copied!"
   }
 }

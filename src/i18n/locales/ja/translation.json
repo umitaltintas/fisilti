@@ -194,6 +194,10 @@
           "transcribe_with_post_process": {
             "name": "後処理ホットキー",
             "description": "オプション：文字起こしに常にAI後処理を適用する専用ホットキー。"
+          },
+          "toggle_meeting": {
+            "name": "Meeting Shortcut",
+            "description": "Optional: A global hotkey to start or stop a meeting recording without opening the window."
           }
         },
         "errors": {

@@ -194,6 +194,10 @@
           "transcribe_with_post_process": {
             "name": "后处理快捷键",
             "description": "可选：一个专用快捷键，始终对您的转录应用 AI 后处理。"
+          },
+          "toggle_meeting": {
+            "name": "Meeting Shortcut",
+            "description": "Optional: A global hotkey to start or stop a meeting recording without opening the window."
           }
         },
         "errors": {

@@ -194,6 +194,10 @@
           "transcribe_with_post_process": {
             "name": "Tecla de Post Procesamiento",
             "description": "Opcional: Una tecla de acceso rápido dedicada que siempre aplica post procesamiento con IA a tu transcripción."
+          },
+          "toggle_meeting": {
+            "name": "Meeting Shortcut",
+            "description": "Optional: A global hotkey to start or stop a meeting recording without opening the window."
           }
         },
         "errors": {

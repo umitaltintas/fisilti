@@ -176,6 +176,10 @@
           "transcribe_with_post_process": {
             "name": "後處理快捷鍵",
             "description": "可選：專用快捷鍵，使用時一律對轉錄結果套用 AI 後處理"
+          },
+          "toggle_meeting": {
+            "name": "Meeting Shortcut",
+            "description": "Optional: A global hotkey to start or stop a meeting recording without opening the window."
           }
         },
         "errors": {

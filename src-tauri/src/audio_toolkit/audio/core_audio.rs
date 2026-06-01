@@ -25,6 +25,59 @@ use ringbuf::{
     HeapCons, HeapProd, HeapRb,
 };
 
+/// Classification of the default OUTPUT device for echo-mitigation purposes
+/// (meeting mode). On SPEAKERS the mic re-captures the remote party that the
+/// system tap already captured cleanly (echo / duplicated transcript); on
+/// HEADPHONES there's no acoustic leakage so no mitigation is needed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OutputRoute {
+    /// Built-in / external speakers, HDMI, DisplayPort, AirPlay — echo-prone.
+    Speakers,
+    /// Headphones / earbuds (USB / Bluetooth / BluetoothLE headset) — no
+    /// acoustic leakage into the mic.
+    Headphones,
+    /// Couldn't determine the transport type; treat conservatively as speakers
+    /// (apply mitigation) since false-ducking is safer than duplicated text.
+    Unknown,
+}
+
+/// Detect the current default OUTPUT device's transport type and classify it as
+/// speakers vs headphones for echo mitigation. macOS-only (CoreAudio).
+///
+/// NOTE: Transport type is a coarse signal. BUILT_IN is the MacBook's internal
+/// speakers (echo-prone). BLUETOOTH / BLUETOOTH_LE / USB are most often headsets
+/// or earbuds (no leakage), so we treat them as headphones. This can be wrong
+/// for a USB/Bluetooth *speaker*, but the only downside there is occasional mic
+/// ducking while remote audio plays — acceptable vs. duplicated transcript.
+pub fn detect_output_route() -> OutputRoute {
+    use cidre::core_audio::DeviceTransportType as T;
+
+    let device = match ca::System::default_output_device() {
+        Ok(d) => d,
+        Err(e) => {
+            warn!("CoreAudio: failed to get default output device for route detection: {e:?}");
+            return OutputRoute::Unknown;
+        }
+    };
+    let transport = match device.transport_type() {
+        Ok(t) => t,
+        Err(e) => {
+            warn!("CoreAudio: failed to read output transport type: {e:?}");
+            return OutputRoute::Unknown;
+        }
+    };
+
+    match transport {
+        // Internal + wired desktop/TV outputs: acoustic leakage into the mic.
+        T::BUILT_IN | T::HDMI | T::DISPLAY_PORT | T::AIR_PLAY => OutputRoute::Speakers,
+        // Personal listening devices: no leakage.
+        T::USB | T::BLUETOOTH | T::BLUETOOTH_LE => OutputRoute::Headphones,
+        // Anything else (PCI, FireWire, Thunderbolt, Virtual, Aggregate, …) is
+        // ambiguous; be conservative and mitigate.
+        _ => OutputRoute::Unknown,
+    }
+}
+
 /// Waker state for async polling.
 struct WakerState {
     waker: Option<Waker>,
@@ -297,8 +350,29 @@ fn process_audio_data(ctx: &mut AudioContext, data: &[f32]) {
     let pushed = ctx.producer.push_slice(data);
 
     if pushed < buffer_size {
+        // Ring-buffer back-pressure: the consumer fell behind and we couldn't
+        // push every sample this callback, so the unpushed (newest) samples are
+        // dropped. Previously we hard-terminated system capture after 10
+        // consecutive drops, which killed the tap for the rest of a
+        // (potentially hours-long) meeting on a transient stall. Instead we
+        // log-and-continue, only giving up on a truly persistent failure.
+        // Losing a few ms of audio on a momentary stall is far better than
+        // losing the remainder of the meeting.
         let consecutive = ctx.consecutive_drops.fetch_add(1, Ordering::AcqRel) + 1;
-        if consecutive > 10 {
+        let overflow = buffer_size - pushed;
+        // Log sparingly so a steady-but-tolerable overrun doesn't spam the log.
+        if consecutive == 1 || consecutive % 100 == 0 {
+            warn!(
+                "CoreAudio: ring buffer overflow (dropped {} samples, {} consecutive)",
+                overflow, consecutive
+            );
+        }
+        // Only terminate on a truly persistent, unrecoverable backlog (the
+        // consumer has been stalled for a very long time). 10_000 consecutive
+        // overflowing callbacks is on the order of minutes of continuous
+        // failure, not a transient hiccup.
+        if consecutive > 10_000 {
+            error!("CoreAudio: persistent ring buffer overflow; terminating system capture");
             ctx.should_terminate.store(true, Ordering::Release);
             return;
         }

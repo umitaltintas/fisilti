@@ -22,7 +22,7 @@ pub use utils::{read_wav_samples, save_wav_file, verify_wav_file};
 pub use visualizer::AudioVisualiser;
 
 #[cfg(target_os = "macos")]
-pub use core_audio::{CoreAudioCapture, CoreAudioStream};
+pub use core_audio::{detect_output_route, CoreAudioCapture, CoreAudioStream, OutputRoute};
 #[cfg(target_os = "macos")]
 pub use mixer::{AudioMixerRingBuffer, MeetingMixer, MixSource, ProfessionalAudioMixer};
 #[cfg(target_os = "macos")]

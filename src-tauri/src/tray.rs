@@ -86,8 +86,10 @@ pub fn change_tray_icon(app: &AppHandle, icon: TrayIconState) {
         .expect("failed to set icon"),
     ));
 
-    // Update menu based on state
-    update_tray_menu(app, &icon, None);
+    // Update menu based on the EFFECTIVE state (not the requested `icon`): when a
+    // meeting overrides a dictation-driven Idle back to Recording, the menu must
+    // build the Recording layout too, or the icon and menu disagree.
+    update_tray_menu(app, &effective, None);
 }
 
 /// Reflect the current meeting recording state in the tray: swap the icon to a
@@ -117,20 +119,26 @@ pub fn update_meeting_indicator(app: &AppHandle) {
 
     // Tooltip/title indicator. The title is hidden on most platforms but the
     // tooltip is widely shown on hover; set both for good measure.
+    //
+    // IMPORTANT: clear with an EMPTY string, not `None`. On macOS `set_title(None)`
+    // / `set_tooltip(None)` does NOT remove an existing value (the previous
+    // "Recording…" text persists in the menu bar even after the icon reverts to
+    // idle); passing `Some("")` actually clears the displayed text.
     let strings = get_tray_translations(Some(settings::get_settings(app).app_language));
     let tooltip = if active {
-        Some(strings.recording_indicator.clone())
+        strings.recording_indicator.clone()
     } else {
-        None
+        String::new()
     };
-    let _ = tray.set_tooltip(tooltip.as_deref());
+    let _ = tray.set_tooltip(Some(tooltip.as_str()));
     #[cfg(target_os = "macos")]
     {
-        let _ = tray.set_title(if active {
-            Some(strings.recording_indicator.as_str())
+        let title = if active {
+            strings.recording_indicator.as_str()
         } else {
-            None
-        });
+            ""
+        };
+        let _ = tray.set_title(Some(title));
     }
 
     // Refresh the menu so the Start/Stop Meeting label reflects the new state.

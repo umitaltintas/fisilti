@@ -75,11 +75,20 @@ pub fn toggle_meeting_session(
 pub fn toggle_meeting_from_app(app: &AppHandle) {
     let manager = app.state::<Arc<MeetingManager>>();
     let manager = (*manager).clone();
-    match toggle_meeting_session(app, &manager) {
-        Ok(Some(_)) => log::info!("Meeting stopped via tray/shortcut"),
-        Ok(None) => log::info!("Meeting started via tray/shortcut"),
-        Err(e) => log::warn!("Toggle meeting via tray/shortcut failed: {}", e),
-    }
+    let app = app.clone();
+    // The tray menu item and global shortcut both fire on the MAIN event-loop
+    // thread. stop() runs a long, blocking finalize pass; if we ran it inline
+    // here it would block the main thread and the tray's `meeting-state-changed`
+    // listener could not run, leaving the tray stuck on "Recording…". Dispatch
+    // to a blocking thread instead (the result is only logged, so we don't await
+    // it). stop() emits the idle state early so the tray clears promptly.
+    tauri::async_runtime::spawn_blocking(move || {
+        match toggle_meeting_session(&app, &manager) {
+            Ok(Some(_)) => log::info!("Meeting stopped via tray/shortcut"),
+            Ok(None) => log::info!("Meeting started via tray/shortcut"),
+            Err(e) => log::warn!("Toggle meeting via tray/shortcut failed: {}", e),
+        }
+    });
 }
 
 /// Default system prompt for summarizing a meeting transcript into notes.
@@ -114,11 +123,20 @@ pub fn start_meeting(
 /// Stop the meeting session and return the final accumulated transcript text.
 #[tauri::command]
 #[specta::specta]
-pub fn stop_meeting(
+pub async fn stop_meeting(
     app: AppHandle,
-    meeting_manager: State<Arc<MeetingManager>>,
+    meeting_manager: State<'_, Arc<MeetingManager>>,
 ) -> Result<String, String> {
-    stop_meeting_session(&app, &meeting_manager)
+    // Run the stop (which includes the long, blocking finalize/persist/LLM pass)
+    // on a blocking thread instead of the command's caller thread. The tray's
+    // `meeting-state-changed` listener must run on the main event loop; if stop()
+    // hogged the main thread the tray would stay stuck on "Recording…" for the
+    // whole finalize. Mirrors `recover_meeting`. stop() emits the idle state
+    // early (before finalize), so the tray clears the moment finalize begins.
+    let manager = (*meeting_manager).clone();
+    tauri::async_runtime::spawn_blocking(move || stop_meeting_session(&app, &manager))
+        .await
+        .map_err(|e| format!("Stop task failed: {}", e))?
 }
 
 /// Return the transcript accumulated so far (for polling during a session).

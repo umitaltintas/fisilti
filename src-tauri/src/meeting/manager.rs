@@ -302,6 +302,20 @@ impl MeetingManager {
         // status reads).
         drop(state);
 
+        // Refresh the tray indicator NOW that the session is logically stopped,
+        // BEFORE the (potentially minutes-long, blocking) finalize/persist/LLM
+        // work below. Without this the tray's "recording" icon + title/tooltip
+        // stay stuck for the entire finalize pass — and permanently if any step
+        // panics. The state is already Idle, so the listener re-reading status()
+        // sees the stop and reverts to idle. The caller (`stop_meeting_session`)
+        // emits again after stop() returns; that's harmless (idempotent).
+        {
+            use tauri::Emitter;
+            let _ = self
+                .app_handle
+                .emit(crate::commands::meeting::MEETING_STATE_CHANGED_EVENT, "idle");
+        }
+
         // Hybrid transcription: re-transcribe the FULL per-source audio for a
         // higher-quality, labeled transcript that REPLACES the live preview.
         // macOS-only; on other platforms this is a no-op (no buffers written).

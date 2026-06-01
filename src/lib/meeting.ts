@@ -26,6 +26,38 @@ export interface MeetingTranscriptUpdate {
 
 export type MeetingStatus = "idle" | "running";
 
+/** Lightweight row for the past-meetings list. Mirrors Rust `MeetingListItem`
+ * (`src-tauri/src/meeting/store.rs`). */
+export interface MeetingListItem {
+  id: number;
+  /** Epoch milliseconds. */
+  started_at: number;
+  /** Epoch milliseconds. */
+  ended_at: number;
+  duration_ms: number;
+  title: string;
+  has_summary: boolean;
+  /** Short preview of the transcript (first ~200 chars). */
+  transcript_preview: string;
+}
+
+/** Full meeting record. Mirrors Rust `MeetingRecord`
+ * (`src-tauri/src/meeting/store.rs`). */
+export interface MeetingRecord {
+  id: number;
+  /** Epoch milliseconds. */
+  started_at: number;
+  /** Epoch milliseconds. */
+  ended_at: number;
+  duration_ms: number;
+  title: string;
+  transcript: string;
+  segments: TranscriptSegment[];
+  summary: string | null;
+  /** Epoch milliseconds. */
+  created_at: number;
+}
+
 const MEETING_TRANSCRIPT_UPDATE = "meeting-transcript-update";
 
 /** Begin a capture + mix + VAD + transcribe meeting session (macOS). */
@@ -53,6 +85,21 @@ export function getMeetingStatus(): Promise<MeetingStatus> {
 /** Produce an LLM summary of the accumulated transcript (markdown-ish notes). */
 export function summarizeMeeting(): Promise<string> {
   return invoke<string>("summarize_meeting");
+}
+
+/** List all persisted meetings, newest-first. */
+export function listMeetings(): Promise<MeetingListItem[]> {
+  return invoke<MeetingListItem[]>("list_meetings");
+}
+
+/** Fetch a single full meeting record by id. */
+export function getMeeting(id: number): Promise<MeetingRecord> {
+  return invoke<MeetingRecord>("get_meeting", { id });
+}
+
+/** Delete a persisted meeting by id. */
+export function deleteMeeting(id: number): Promise<void> {
+  return invoke<void>("delete_meeting", { id });
 }
 
 /** Subscribe to live transcript updates. Returns a promise resolving to the

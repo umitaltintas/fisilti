@@ -110,7 +110,10 @@ impl CoreAudioCapture {
                 );
             }
             Err(e) => {
-                warn!("CoreAudio: tap created but couldn't get format info: {:?}", e);
+                warn!(
+                    "CoreAudio: tap created but couldn't get format info: {:?}",
+                    e
+                );
             }
         }
 
@@ -179,7 +182,8 @@ impl CoreAudioCapture {
             }
 
             // Try to get audio data from the buffer list.
-            if let Some(view) = av::AudioPcmBuf::with_buf_list_no_copy(&ctx.format, input_data, None)
+            if let Some(view) =
+                av::AudioPcmBuf::with_buf_list_no_copy(&ctx.format, input_data, None)
             {
                 if let Some(data) = view.data_f32_at(0) {
                     process_audio_data(ctx, data);

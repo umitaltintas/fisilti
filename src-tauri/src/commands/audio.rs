@@ -407,7 +407,9 @@ pub async fn capture_system_audio_test(seconds: u32) -> Result<String, String> {
 pub async fn capture_mixed_audio_test(seconds: u32) -> Result<String, String> {
     #[cfg(target_os = "macos")]
     {
-        use crate::audio_toolkit::audio::{FrameResampler, MeetingMixer, MixSource, SystemAudioCapture};
+        use crate::audio_toolkit::audio::{
+            FrameResampler, MeetingMixer, MixSource, SystemAudioCapture,
+        };
         use crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE;
         use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
         use futures_util::StreamExt;
@@ -463,7 +465,9 @@ pub async fn capture_mixed_audio_test(seconds: u32) -> Result<String, String> {
                         &config.clone().into(),
                         move |data: &[$t], _: &cpal::InputCallbackInfo| {
                             let mono: Vec<f32> = if channels <= 1 {
-                                data.iter().map(|&s| cpal::Sample::to_sample::<f32>(s)).collect()
+                                data.iter()
+                                    .map(|&s| cpal::Sample::to_sample::<f32>(s))
+                                    .collect()
                             } else {
                                 data.chunks_exact(channels)
                                     .map(|f| {
@@ -616,8 +620,8 @@ pub async fn capture_mixed_audio_test(seconds: u32) -> Result<String, String> {
         drop(sys_stream);
         mixer.flush_into(&mut mixed);
 
-        let out_path = std::env::temp_dir()
-            .join(format!("handy_mixed_audio_test_{}.wav", std::process::id()));
+        let out_path =
+            std::env::temp_dir().join(format!("handy_mixed_audio_test_{}.wav", std::process::id()));
         write_f32_wav(&out_path, &mixed, WHISPER_SAMPLE_RATE)
             .map_err(|e| format!("Failed to write WAV: {}", e))?;
 
@@ -642,11 +646,7 @@ pub async fn capture_mixed_audio_test(seconds: u32) -> Result<String, String> {
 /// Write mono f32 samples as a 32-bit float PCM WAV (format tag 3) with a
 /// manually constructed 44-byte header. Avoids pulling extra crates.
 #[cfg(target_os = "macos")]
-fn write_f32_wav(
-    path: &std::path::Path,
-    samples: &[f32],
-    sample_rate: u32,
-) -> std::io::Result<()> {
+fn write_f32_wav(path: &std::path::Path, samples: &[f32], sample_rate: u32) -> std::io::Result<()> {
     use std::io::Write;
 
     let channels: u16 = 1;

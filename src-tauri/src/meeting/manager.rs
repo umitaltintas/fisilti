@@ -392,6 +392,14 @@ impl MeetingManager {
 
         self.emit_finalizing(true);
 
+        // Swap in the stronger FINAL model (default "turbo") for the duration of
+        // the finalize pass, then restore the user's normal selected model. The
+        // LIVE path already used whatever model was loaded; we never hold two
+        // models resident. If the final model isn't downloaded / fails to load,
+        // we fall back gracefully to the currently-loaded model. This is
+        // invisible to the user (the "finalizing" spinner is already showing).
+        let restore_model = self.swap_in_final_model();
+
         // Resolve the VAD model once for the silence-boundary chunker.
         let vad_path = {
             use tauri::Manager;
@@ -437,12 +445,78 @@ impl MeetingManager {
             );
         }
 
+        // Restore the user's normal model so dictation / subsequent meetings use
+        // the expected model again.
+        self.restore_model(restore_model);
+
         self.emit_finalizing(false);
     }
 
+    /// Load the configured `meeting_final_model` (default "turbo") for the
+    /// finalize pass, returning the model id that should be restored afterwards
+    /// (the model that was loaded before, or the user's `selected_model`).
+    /// Returns `None` if no swap happened (already on the final model, or the
+    /// final model couldn't be loaded — in which case the loaded model is kept).
+    #[cfg(target_os = "macos")]
+    fn swap_in_final_model(&self) -> Option<String> {
+        let settings = crate::settings::get_settings(&self.app_handle);
+        let final_model = settings.meeting_final_model.trim().to_string();
+        if final_model.is_empty() {
+            return None;
+        }
+
+        // What is loaded right now (used by the LIVE pass). Fall back to the
+        // user's configured selected_model if nothing is loaded.
+        let current = self
+            .transcription_manager
+            .get_current_model()
+            .unwrap_or_else(|| settings.selected_model.clone());
+
+        if current == final_model {
+            // Already on the final model; nothing to swap or restore.
+            return None;
+        }
+
+        match self.transcription_manager.load_model(&final_model) {
+            Ok(()) => {
+                log::info!(
+                    "meeting finalize: swapped model {} -> {} for final pass",
+                    current,
+                    final_model
+                );
+                Some(current)
+            }
+            Err(e) => {
+                // Graceful fallback: keep using whatever is loaded (the live
+                // model). Don't crash the finalize pass.
+                log::warn!(
+                    "meeting finalize: could not load final model '{}' ({}); using loaded model",
+                    final_model,
+                    e
+                );
+                None
+            }
+        }
+    }
+
+    /// Restore the model recorded by `swap_in_final_model`. No-op when `None`.
+    #[cfg(target_os = "macos")]
+    fn restore_model(&self, restore: Option<String>) {
+        if let Some(model_id) = restore {
+            if let Err(e) = self.transcription_manager.load_model(&model_id) {
+                log::warn!(
+                    "meeting finalize: failed to restore model '{}': {}",
+                    model_id,
+                    e
+                );
+            }
+        }
+    }
+
     /// Transcribe each `[start, end)` window of `audio` into one timestamped,
-    /// labeled segment. `transcribe()` honors the selected language; ~25-30 s
-    /// windows give whisper plenty of context per call.
+    /// labeled segment via the meeting path (`transcribe_meeting`: forced
+    /// meeting language + Turkish style prompt + higher no_speech_thold).
+    /// ~25-30 s windows give whisper plenty of context per call.
     #[cfg(target_os = "macos")]
     fn transcribe_windows(
         &self,
@@ -454,7 +528,7 @@ impl MeetingManager {
         use crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE;
         for &(start, end) in windows {
             let slice = &audio[start..end];
-            match self.transcription_manager.transcribe(slice.to_vec()) {
+            match self.transcription_manager.transcribe_meeting(slice.to_vec()) {
                 Ok(text) => {
                     let text = text.trim().to_string();
                     if !text.is_empty() {
@@ -1073,7 +1147,7 @@ impl MeetingManager {
         let audio = std::mem::take(segment);
         let timestamp_ms = start_samples.saturating_mul(1000) / WHISPER_SAMPLE_RATE as u64;
 
-        match self.transcription_manager.transcribe(audio) {
+        match self.transcription_manager.transcribe_meeting(audio) {
             Ok(text) => {
                 if !text.trim().is_empty() {
                     log::info!(

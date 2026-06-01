@@ -1,10 +1,7 @@
 import React, { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 
-import {
-  listenMeetingAudioLevel,
-  type MeetingAudioLevel,
-} from "@/lib/meeting";
+import { listenMeetingAudioLevel, type MeetingAudioLevel } from "@/lib/meeting";
 
 const BAR_COUNT = 16;
 const WAVE_BUFFER = 480; // rolling oscilloscope sample buffer (~5 ticks of 96)

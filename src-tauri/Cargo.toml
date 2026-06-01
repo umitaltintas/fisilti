@@ -73,6 +73,7 @@ transcribe-rs = { version = "0.3.2", features = ["whisper-cpp", "onnx"] }
 handy-keys = "0.2.4"
 ferrous-opencc = "0.2.3"
 clap = { version = "4", features = ["derive"] }
+ringbuf = "0.4.8"
 specta = "=2.0.0-rc.22"
 specta-typescript = "0.0.9"
 tauri-specta = { version = "=2.0.0-rc.21", features = ["derive", "typescript"] }
@@ -101,6 +102,10 @@ winreg = "0.55"
 [target.'cfg(target_os = "macos")'.dependencies]
 tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", branch = "v2.1" }
 transcribe-rs = { version = "0.3.2", features = ["whisper-metal"] }
+# Meeting mode: CoreAudio system-audio tap (Step 1). Isolated from dictation flow.
+cidre = { git = "https://github.com/yury/cidre", rev = "a9587fa", features = ["av"] }
+objc = "0.2.7"
+futures-channel = "0.3.31"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk-layer-shell = { version = "0.8", features = ["v0_6"] }

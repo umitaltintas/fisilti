@@ -526,19 +526,33 @@ impl MeetingManager {
         out: &mut Vec<TranscriptSegment>,
     ) {
         use crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE;
+        // Tail text of the previous window for this source, used to de-dup the
+        // overlapping region (Item 6).
+        let mut prev_tail: Option<String> = None;
         for &(start, end) in windows {
             let slice = &audio[start..end];
             match self.transcription_manager.transcribe_meeting(slice.to_vec()) {
                 Ok(text) => {
                     let text = text.trim().to_string();
                     if !text.is_empty() {
-                        let timestamp_ms =
-                            (start as u64).saturating_mul(1000) / WHISPER_SAMPLE_RATE as u64;
-                        out.push(TranscriptSegment {
-                            text,
-                            timestamp_ms,
-                            source,
-                        });
+                        // De-dup the overlap: drop a leading sentence of this
+                        // window that repeats the trailing sentence of the
+                        // previous (overlapping) window.
+                        let deduped = match &prev_tail {
+                            Some(prev) => dedup_overlap(prev, &text),
+                            None => text.clone(),
+                        };
+                        prev_tail = Some(text);
+                        let deduped = deduped.trim().to_string();
+                        if !deduped.is_empty() {
+                            let timestamp_ms =
+                                (start as u64).saturating_mul(1000) / WHISPER_SAMPLE_RATE as u64;
+                            out.push(TranscriptSegment {
+                                text: deduped,
+                                timestamp_ms,
+                                source,
+                            });
+                        }
                     }
                 }
                 Err(e) => log::warn!(
@@ -1631,6 +1645,14 @@ const FINALIZE_FRAME_SAMPLES: usize =
 // (~150 ms). Long enough to be an inter-word/sentence gap, not a glottal stop.
 #[cfg(target_os = "macos")]
 const FINALIZE_SILENCE_SPLIT_FRAMES: usize = 5;
+// Overlap (Item 6) between consecutive finalize windows (~4 s). The next window
+// starts `FINALIZE_OVERLAP_SAMPLES` before the previous window's end so words
+// cut at a `FINALIZE_MAX_SAMPLES` force-split aren't lost. The overlapping text
+// is de-duplicated at merge time (see `dedup_overlap`). Kept comfortably under
+// FINALIZE_TARGET_SAMPLES so windows still advance.
+#[cfg(target_os = "macos")]
+const FINALIZE_OVERLAP_SAMPLES: usize =
+    crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE as usize * 4;
 
 /// Split `audio` into time-ordered `[start, end)` windows for the finalize
 /// re-transcription. Uses the raw SileroVad to classify 30 ms frames as
@@ -1683,9 +1705,15 @@ fn chunk_for_finalize(audio: &[f32], vad_path: &std::path::Path) -> Vec<(usize, 
             if win_has_speech {
                 windows.push((win_start, end));
             }
-            win_start = end;
+            // Overlap (Item 6): start the next window before this one's end so a
+            // word cut at a force-split is recovered. Guarded so win_start only
+            // advances (overlap < target keeps progress monotonic).
+            let next_start = end.saturating_sub(FINALIZE_OVERLAP_SAMPLES);
+            win_start = next_start.max(win_start + 1).min(end);
             win_has_speech = false;
             silence_run = 0;
+            // Note: `pos` continues from `end`; the overlap region [win_start,end)
+            // is re-transcribed but not re-scanned for splits (cheap, fine).
         }
         pos = end;
     }
@@ -1697,7 +1725,8 @@ fn chunk_for_finalize(audio: &[f32], vad_path: &std::path::Path) -> Vec<(usize, 
     windows
 }
 
-/// Fallback chunker: fixed `FINALIZE_MAX_SAMPLES`-sized windows, no VAD.
+/// Fallback chunker: fixed `FINALIZE_MAX_SAMPLES`-sized windows with
+/// `FINALIZE_OVERLAP_SAMPLES` overlap (Item 6), no VAD.
 #[cfg(target_os = "macos")]
 fn chunk_fixed(audio: &[f32]) -> Vec<(usize, usize)> {
     let n = audio.len();
@@ -1706,9 +1735,148 @@ fn chunk_fixed(audio: &[f32]) -> Vec<(usize, usize)> {
     while start < n {
         let end = (start + FINALIZE_MAX_SAMPLES).min(n);
         windows.push((start, end));
-        start = end;
+        if end >= n {
+            break;
+        }
+        // Advance with overlap; ensure forward progress.
+        start = end
+            .saturating_sub(FINALIZE_OVERLAP_SAMPLES)
+            .max(start + 1)
+            .min(end);
     }
     windows
+}
+
+/// Normalize a string for fuzzy text comparison: lowercase, strip punctuation,
+/// collapse whitespace. Used by `dedup_overlap` so casing/punctuation drift
+/// between two whisper passes over the same audio doesn't defeat the match.
+#[cfg(target_os = "macos")]
+fn normalize_for_match(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut last_space = true;
+    for c in s.chars() {
+        if c.is_alphanumeric() {
+            for lc in c.to_lowercase() {
+                out.push(lc);
+            }
+            last_space = false;
+        } else if c.is_whitespace() || !c.is_alphanumeric() {
+            if !last_space {
+                out.push(' ');
+                last_space = true;
+            }
+        }
+    }
+    out.trim().to_string()
+}
+
+/// Split text into sentences on `. ! ? …` boundaries, keeping the delimiter with
+/// the sentence. Trailing fragment (no terminal punctuation) is its own piece.
+#[cfg(target_os = "macos")]
+fn split_sentences(s: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut cur = String::new();
+    for c in s.chars() {
+        cur.push(c);
+        if matches!(c, '.' | '!' | '?' | '…') {
+            let trimmed = cur.trim();
+            if !trimmed.is_empty() {
+                out.push(trimmed.to_string());
+            }
+            cur.clear();
+        }
+    }
+    let trimmed = cur.trim();
+    if !trimmed.is_empty() {
+        out.push(trimmed.to_string());
+    }
+    out
+}
+
+/// De-duplicate the overlapping region between two consecutive finalize windows
+/// (Item 6). `prev` is the previous window's full text, `curr` the current
+/// window's full text; the windows overlap by ~`FINALIZE_OVERLAP_SAMPLES`, so
+/// `curr`'s leading sentence(s) often repeat `prev`'s trailing sentence(s).
+///
+/// Strategy: take the last few sentences of `prev` as a "tail set" (normalized)
+/// and drop leading sentences of `curr` while they match something in that set.
+/// Falls back to a word-level longest-common-prefix trim when sentence matching
+/// finds nothing (e.g. one long unpunctuated window). Conservative: when in
+/// doubt it keeps text (a rare duplicate is less bad than dropping real words).
+#[cfg(target_os = "macos")]
+fn dedup_overlap(prev: &str, curr: &str) -> String {
+    let prev_sentences = split_sentences(prev);
+    let curr_sentences = split_sentences(curr);
+    if prev_sentences.is_empty() || curr_sentences.is_empty() {
+        return curr.to_string();
+    }
+
+    // Normalized trailing sentences of `prev` (look back a handful).
+    let tail_n = prev_sentences.len().min(4);
+    let prev_tail_norm: Vec<String> = prev_sentences[prev_sentences.len() - tail_n..]
+        .iter()
+        .map(|s| normalize_for_match(s))
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    // Drop leading `curr` sentences that match any normalized prev-tail sentence.
+    let mut start_idx = 0;
+    for (i, sent) in curr_sentences.iter().enumerate() {
+        let norm = normalize_for_match(sent);
+        if norm.is_empty() {
+            start_idx = i + 1;
+            continue;
+        }
+        let is_dup = prev_tail_norm
+            .iter()
+            .any(|p| p == &norm || (norm.len() > 8 && p.contains(&norm)));
+        if is_dup {
+            start_idx = i + 1;
+        } else {
+            break;
+        }
+    }
+
+    if start_idx > 0 {
+        return curr_sentences[start_idx..].join(" ");
+    }
+
+    // No sentence-level match: try a word-level common-prefix trim against the
+    // prev tail (handles long unpunctuated windows). Only trims when a
+    // reasonably long run matches, to avoid eating distinct repeated words.
+    let prev_norm_words: Vec<&str> = prev
+        .split_whitespace()
+        .collect::<Vec<_>>();
+    let prev_tail_words: Vec<String> = prev_norm_words
+        .iter()
+        .rev()
+        .take(40)
+        .rev()
+        .map(|w| normalize_for_match(w))
+        .filter(|w| !w.is_empty())
+        .collect();
+    let curr_words: Vec<&str> = curr.split_whitespace().collect();
+    let curr_norm: Vec<String> = curr_words
+        .iter()
+        .map(|w| normalize_for_match(w))
+        .collect();
+
+    // Find the longest k such that curr's first k words appear as a contiguous
+    // run at the end of prev's tail.
+    let mut best_k = 0;
+    let max_k = curr_norm.len().min(prev_tail_words.len());
+    for k in (4..=max_k).rev() {
+        let head = &curr_norm[..k];
+        if prev_tail_words.len() >= k && &prev_tail_words[prev_tail_words.len() - k..] == head {
+            best_k = k;
+            break;
+        }
+    }
+    if best_k > 0 {
+        return curr_words[best_k..].join(" ");
+    }
+
+    curr.to_string()
 }
 
 /// Downsample a window of mixed samples into a fixed-length oscilloscope trace
@@ -1793,22 +1961,67 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
-    fn chunk_fixed_splits_into_max_windows_covering_all_samples() {
-        use super::FINALIZE_MAX_SAMPLES;
-        // 2.5 windows worth of audio.
+    fn chunk_fixed_splits_into_overlapping_max_windows_covering_all_samples() {
+        use super::{FINALIZE_MAX_SAMPLES, FINALIZE_OVERLAP_SAMPLES};
+        // ~2.5 windows worth of audio.
         let n = FINALIZE_MAX_SAMPLES * 2 + FINALIZE_MAX_SAMPLES / 2;
         let audio = vec![0.1f32; n];
         let windows = super::chunk_fixed(&audio);
-        assert_eq!(windows.len(), 3);
-        // Contiguous, non-overlapping, fully covering.
+        // First window starts at 0; last window ends at n; fully covering.
         assert_eq!(windows[0].0, 0);
         assert_eq!(windows[0].1, FINALIZE_MAX_SAMPLES);
-        assert_eq!(windows[1].0, FINALIZE_MAX_SAMPLES);
-        assert_eq!(windows[2].1, n);
+        assert_eq!(windows.last().unwrap().1, n);
         for w in &windows {
             assert!(w.1 > w.0);
             assert!(w.1 - w.0 <= FINALIZE_MAX_SAMPLES);
         }
+        // Consecutive windows overlap by FINALIZE_OVERLAP_SAMPLES (except the
+        // final partial window which is clamped to n).
+        for pair in windows.windows(2) {
+            let (prev, next) = (pair[0], pair[1]);
+            // next starts before prev ends => overlap.
+            assert!(next.0 < prev.1, "windows should overlap: {prev:?} {next:?}");
+            if next.1 - next.0 == FINALIZE_MAX_SAMPLES {
+                assert_eq!(prev.1 - next.0, FINALIZE_OVERLAP_SAMPLES);
+            }
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn dedup_overlap_drops_repeated_leading_sentence() {
+        use super::dedup_overlap;
+        let prev = "Bugün hava çok güzel. Toplantıya başlayalım.";
+        // curr repeats the trailing sentence of prev (with casing drift), then
+        // adds new content.
+        let curr = "toplantıya başlayalım. Gündem maddesi bir.";
+        let out = dedup_overlap(prev, curr);
+        assert!(
+            !out.to_lowercase().contains("başlayalım"),
+            "repeated sentence should be dropped, got: {out}"
+        );
+        assert!(out.contains("Gündem maddesi bir."), "new content kept: {out}");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn dedup_overlap_keeps_distinct_text() {
+        use super::dedup_overlap;
+        let prev = "Birinci konu tamamlandı.";
+        let curr = "İkinci konuya geçiyoruz.";
+        let out = dedup_overlap(prev, curr);
+        assert_eq!(out, curr, "distinct text must be preserved");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn dedup_overlap_word_level_prefix_trim() {
+        use super::dedup_overlap;
+        // No sentence punctuation; word-level common run at boundary.
+        let prev = "alpha beta gamma delta epsilon zeta eta theta";
+        let curr = "epsilon zeta eta theta iota kappa lambda mu";
+        let out = dedup_overlap(prev, curr);
+        assert!(out.starts_with("iota"), "overlap words trimmed, got: {out}");
     }
 
     #[test]

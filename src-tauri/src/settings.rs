@@ -399,6 +399,10 @@ pub struct AppSettings {
     pub ort_accelerator: OrtAcceleratorSetting,
     #[serde(default)]
     pub extra_recording_buffer_ms: u64,
+    /// Meeting mode: automatically summarize the meeting transcript on stop
+    /// (using the active post-process provider). Additive; defaults to false.
+    #[serde(default)]
+    pub meeting_auto_summarize: bool,
 }
 
 fn default_model() -> String {
@@ -768,6 +772,7 @@ pub fn get_default_settings() -> AppSettings {
         whisper_accelerator: WhisperAcceleratorSetting::default(),
         ort_accelerator: OrtAcceleratorSetting::default(),
         extra_recording_buffer_ms: 0,
+        meeting_auto_summarize: false,
     }
 }
 

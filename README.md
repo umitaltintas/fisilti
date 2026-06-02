@@ -80,6 +80,54 @@ bun run tauri build
 For day-to-day development use `bun run tauri dev` (same `CMAKE_POLICY_VERSION_MINIMUM`
 tip applies).
 
+## Install (macOS)
+
+There is no notarized release yet, so you install the app you build yourself
+(see [Build from source](#build-from-source) above). A successful
+`bun run tauri build` produces the app bundle at:
+
+```
+src-tauri/target/release/bundle/macos/Fısıltı.app
+```
+
+**1. Move it to your Applications folder** so it behaves like a normal app
+(launchable from Spotlight, Launchpad, and the Dock):
+
+```bash
+# from the repo root, after building
+ditto "src-tauri/target/release/bundle/macos/Fısıltı.app" "/Applications/Fısıltı.app"
+```
+
+(`ditto` preserves the code signature; a plain Finder drag-and-drop into
+`Applications` works too.)
+
+**2. First launch — Gatekeeper.** The build is ad-hoc signed (not notarized by
+Apple), so macOS may refuse to open it the first time ("Fısıltı can't be opened
+because Apple cannot check it for malicious software"). Either:
+
+- **Right-click** the app in `Applications` → **Open** → **Open** in the dialog
+  (only needed once), or
+- clear the quarantine flag from the terminal:
+
+  ```bash
+  xattr -dr com.apple.quarantine "/Applications/Fısıltı.app"
+  ```
+
+**3. Grant permissions on first run.** macOS will prompt for these the first
+time each is needed — approve them in **System Settings → Privacy & Security**:
+
+- **Accessibility** — required to paste dictated text and use the global
+  shortcut.
+- **Microphone** — required for dictation and meeting mode.
+- **Screen & System Audio Recording** — required for meeting mode's
+  system-audio capture (the CoreAudio process tap). Without it, the "others"
+  side of a meeting records silence.
+
+> **Note:** because the build is ad-hoc signed, its signature changes every time
+> you rebuild, so macOS treats a freshly rebuilt copy as a new app and the
+> permissions above must be re-granted. Once installed and granted, the app
+> keeps its permissions until you replace it with a new build.
+
 ## Built on Handy
 
 Fisilti is a fork / derivative work of

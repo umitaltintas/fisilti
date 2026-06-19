@@ -621,6 +621,7 @@
     "transcript": "Transcript",
     "transcriptEmpty": "No transcript yet. Start a meeting to capture live audio.",
     "listening": "Listening...",
+    "cloudLivePreviewOff": "Recording… cloud model: the transcript is generated when you stop the meeting.",
     "notes": "Notes",
     "summarize": "Summarize",
     "summarizing": "Summarizing...",

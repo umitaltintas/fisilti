@@ -58,6 +58,7 @@ import {
   type SummaryProviderInfo,
   type TranscriptSegment,
 } from "@/lib/meeting";
+import { useModelStore } from "@/stores/modelStore";
 
 const NOTES_AUTOSAVE_MS = 800;
 const SEARCH_DEBOUNCE_MS = 300;
@@ -212,6 +213,15 @@ function exportFilename(title: string): string {
 
 export const MeetingSettings: React.FC = () => {
   const { t, i18n } = useTranslation();
+
+  // Cloud models skip the live per-segment pass (it would be one request each),
+  // so the live transcript stays empty until the on-stop finalize. Detect that
+  // to show an accurate hint instead of "listening…".
+  const { currentModel, models } = useModelStore();
+  const selectedIsCloud = (() => {
+    const engine = models.find((m) => m.id === currentModel)?.engine_type;
+    return engine === "OpenRouter" || engine === "OpenRouterAsr";
+  })();
 
   const [status, setStatus] = useState<MeetingStatus>("idle");
   const [transcript, setTranscript] = useState("");
@@ -812,7 +822,9 @@ export const MeetingSettings: React.FC = () => {
                 ) : (
                   <p className="text-sm text-text/40">
                     {isRunning
-                      ? t("meeting.listening")
+                      ? selectedIsCloud
+                        ? t("meeting.cloudLivePreviewOff")
+                        : t("meeting.listening")
                       : t("meeting.transcriptEmpty")}
                   </p>
                 )}

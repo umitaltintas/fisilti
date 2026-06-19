@@ -681,6 +681,7 @@
     "onDeviceBadge": "100% on-device transcription",
     "summaryLocal": "Summary runs locally",
     "summaryCloud": "Summary uses {{provider}} — leaves your device",
-    "summaryNoProvider": "No summary provider configured"
+    "summaryNoProvider": "No summary provider configured",
+    "cloudLivePreviewOff": "録音中… クラウドモデル: 文字起こしは会議を停止したときに生成されます。"
   }
 }

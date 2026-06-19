@@ -681,6 +681,7 @@
     "onDeviceBadge": "100% on-device transcription",
     "summaryLocal": "Summary runs locally",
     "summaryCloud": "Summary uses {{provider}} — leaves your device",
-    "summaryNoProvider": "No summary provider configured"
+    "summaryNoProvider": "No summary provider configured",
+    "cloudLivePreviewOff": "Триває запис… хмарна модель: транскрипцію буде створено після зупинки зустрічі."
   }
 }

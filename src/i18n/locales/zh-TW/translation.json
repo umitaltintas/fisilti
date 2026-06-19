@@ -681,6 +681,7 @@
     "onDeviceBadge": "100% on-device transcription",
     "summaryLocal": "Summary runs locally",
     "summaryCloud": "Summary uses {{provider}} — leaves your device",
-    "summaryNoProvider": "No summary provider configured"
+    "summaryNoProvider": "No summary provider configured",
+    "cloudLivePreviewOff": "錄製中…雲端模型：轉錄會在您停止會議時產生。"
   }
 }

@@ -681,6 +681,7 @@
     "onDeviceBadge": "100% on-device transcription",
     "summaryLocal": "Summary runs locally",
     "summaryCloud": "Summary uses {{provider}} — leaves your device",
-    "summaryNoProvider": "No summary provider configured"
+    "summaryNoProvider": "No summary provider configured",
+    "cloudLivePreviewOff": "Enregistrement… modèle cloud : la transcription est générée à l'arrêt de la réunion."
   }
 }

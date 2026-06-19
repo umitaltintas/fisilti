@@ -148,7 +148,8 @@
       "languageOnly": "{{language}} 전용",
       "translation": "영어로 번역 가능",
       "translate": "영어로 번역"
-    }
+    },
+    "cloud": "클라우드"
   },
   "settings": {
     "modelSettings": {
@@ -240,7 +241,18 @@
         "translation": "번역",
         "allLanguages": "모든 언어"
       },
-      "noModelsMatch": "이 필터에 맞는 모델이 없습니다."
+      "noModelsMatch": "이 필터에 맞는 모델이 없습니다.",
+      "cloud": {
+        "title": "클라우드 전사 (OpenRouter)",
+        "description": "이 모델은 OpenRouter를 통해 클라우드에서 전사합니다. 오디오가 OpenRouter로 전송되며 사용량은 분당 과금됩니다. 클라우드 전사와 후처리에 동일한 OpenRouter API 키가 사용됩니다.",
+        "apiKeyPlaceholder": "OpenRouter API 키 (sk-or-...)",
+        "getKey": "API 키 받기 →",
+        "keyRequired": "클라우드 전사를 사용하려면 OpenRouter API 키를 입력하세요.",
+        "modelLabel": "모델",
+        "modelPlaceholder": "예: openai/gpt-4o-mini-transcribe",
+        "browseModels": "모델 둘러보기 →",
+        "modelRequired": "OpenRouter 모델 슬러그를 입력하세요 (예: google/gemini-2.5-flash)."
+      }
     },
     "advanced": {
       "title": "고급",

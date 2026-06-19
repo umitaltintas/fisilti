@@ -121,6 +121,7 @@
   },
   "modelSelector": {
     "custom": "Custom",
+    "cloud": "Cloud",
     "active": "Active",
     "switching": "Switching...",
     "noModelsAvailable": "No models available",
@@ -217,7 +218,18 @@
         "translation": "Translation",
         "allLanguages": "All Languages"
       },
-      "noModelsMatch": "No models match this filter."
+      "noModelsMatch": "No models match this filter.",
+      "cloud": {
+        "title": "Cloud transcription (OpenRouter)",
+        "description": "This model transcribes in the cloud via OpenRouter. Your audio is sent to OpenRouter; usage is billed per minute. The same OpenRouter API key is used for cloud transcription and post-processing.",
+        "apiKeyPlaceholder": "OpenRouter API key (sk-or-...)",
+        "getKey": "Get an API key →",
+        "keyRequired": "Enter your OpenRouter API key to use cloud transcription.",
+        "modelLabel": "Model",
+        "modelPlaceholder": "e.g. openai/gpt-4o-mini-transcribe",
+        "browseModels": "Browse models →",
+        "modelRequired": "Enter an OpenRouter model slug (e.g. google/gemini-2.5-flash)."
+      }
     },
     "sound": {
       "title": "Sound",

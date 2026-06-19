@@ -50,6 +50,12 @@ const ModelDropdown: React.FC<ModelDropdownProps> = ({
                 <div>
                   <div className="text-sm text-text/80">
                     {getTranslatedModelName(model, t)}
+                    {(model.engine_type === "OpenRouter" ||
+                      model.engine_type === "OpenRouterAsr") && (
+                      <span className="ms-1.5 text-[10px] font-medium text-text/40 uppercase">
+                        {t("modelSelector.cloud")}
+                      </span>
+                    )}
                     {model.is_custom && (
                       <span className="ms-1.5 text-[10px] font-medium text-text/40 uppercase">
                         {t("modelSelector.custom")}

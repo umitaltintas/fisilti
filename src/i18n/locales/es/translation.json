@@ -148,7 +148,8 @@
       "languageOnly": "Solo {{language}}"
     },
     "cancel": "Cancelar",
-    "cancelDownload": "Cancelar descarga"
+    "cancelDownload": "Cancelar descarga",
+    "cloud": "Nube"
   },
   "settings": {
     "modelSettings": {
@@ -171,7 +172,18 @@
       },
       "noModelsMatch": "Ningún modelo coincide con este filtro.",
       "yourModels": "Modelos descargados",
-      "availableModels": "Disponibles para descargar"
+      "availableModels": "Disponibles para descargar",
+      "cloud": {
+        "title": "Transcripción en la nube (OpenRouter)",
+        "description": "Este modelo transcribe en la nube mediante OpenRouter. Tu audio se envía a OpenRouter; el uso se cobra por minuto. La misma clave de API de OpenRouter se usa para la transcripción en la nube y el posprocesamiento.",
+        "apiKeyPlaceholder": "Clave de API de OpenRouter (sk-or-...)",
+        "getKey": "Obtener una clave de API →",
+        "keyRequired": "Introduce tu clave de API de OpenRouter para usar la transcripción en la nube.",
+        "modelLabel": "Modelo",
+        "modelPlaceholder": "p. ej. openai/gpt-4o-mini-transcribe",
+        "browseModels": "Explorar modelos →",
+        "modelRequired": "Introduce un identificador de modelo de OpenRouter (p. ej. google/gemini-2.5-flash)."
+      }
     },
     "general": {
       "title": "General",

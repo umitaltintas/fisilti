@@ -148,7 +148,8 @@
       "languageOnly": "Chỉ {{language}}"
     },
     "cancel": "Hủy",
-    "cancelDownload": "Hủy tải xuống"
+    "cancelDownload": "Hủy tải xuống",
+    "cloud": "Đám mây"
   },
   "settings": {
     "modelSettings": {
@@ -171,7 +172,18 @@
       },
       "noModelsMatch": "Không có mô hình nào khớp với bộ lọc này.",
       "yourModels": "Mô hình đã tải",
-      "availableModels": "Có sẵn để tải xuống"
+      "availableModels": "Có sẵn để tải xuống",
+      "cloud": {
+        "title": "Phiên âm trên đám mây (OpenRouter)",
+        "description": "Mô hình này phiên âm trên đám mây thông qua OpenRouter. Âm thanh của bạn được gửi tới OpenRouter; mức sử dụng được tính phí theo phút. Cùng một khóa API OpenRouter được dùng cho phiên âm trên đám mây và xử lý hậu kỳ.",
+        "apiKeyPlaceholder": "Khóa API OpenRouter (sk-or-...)",
+        "getKey": "Lấy khóa API →",
+        "keyRequired": "Nhập khóa API OpenRouter của bạn để sử dụng phiên âm trên đám mây.",
+        "modelLabel": "Mô hình",
+        "modelPlaceholder": "ví dụ openai/gpt-4o-mini-transcribe",
+        "browseModels": "Duyệt mô hình →",
+        "modelRequired": "Nhập slug mô hình OpenRouter (ví dụ google/gemini-2.5-flash)."
+      }
     },
     "general": {
       "title": "Chung",

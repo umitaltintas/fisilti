@@ -148,7 +148,8 @@
       "languageOnly": "仅 {{language}}"
     },
     "cancel": "取消",
-    "cancelDownload": "取消下载"
+    "cancelDownload": "取消下载",
+    "cloud": "云端"
   },
   "settings": {
     "modelSettings": {
@@ -171,7 +172,18 @@
       },
       "noModelsMatch": "没有符合此筛选条件的模型。",
       "yourModels": "已下载的模型",
-      "availableModels": "可供下载"
+      "availableModels": "可供下载",
+      "cloud": {
+        "title": "云端转录（OpenRouter）",
+        "description": "此模型通过 OpenRouter 在云端进行转录。您的音频会发送到 OpenRouter；按分钟计费。云端转录和后处理使用同一个 OpenRouter API 密钥。",
+        "apiKeyPlaceholder": "OpenRouter API 密钥 (sk-or-...)",
+        "getKey": "获取 API 密钥 →",
+        "keyRequired": "请输入您的 OpenRouter API 密钥以使用云端转录。",
+        "modelLabel": "模型",
+        "modelPlaceholder": "例如 openai/gpt-4o-mini-transcribe",
+        "browseModels": "浏览模型 →",
+        "modelRequired": "请输入 OpenRouter 模型标识（例如 google/gemini-2.5-flash）。"
+      }
     },
     "general": {
       "title": "通用",

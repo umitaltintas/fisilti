@@ -26,6 +26,26 @@ pub enum EngineType {
     SenseVoice,
     GigaAM,
     Canary,
+    /// Cloud transcription via OpenRouter using an audio-capable **chat** model
+    /// (e.g. `google/gemini-2.5-flash-lite`) and the chat-completions endpoint.
+    /// Not downloaded: `url`/`sha256` are `None`, `is_downloaded` is always
+    /// `true`, and `filename` carries the OpenRouter model slug instead of a
+    /// path. The OpenRouter API key is reused from the post-processing settings.
+    OpenRouter,
+    /// Cloud transcription via OpenRouter using a dedicated **ASR** model (e.g.
+    /// `openai/whisper-1`, `openai/gpt-4o-transcribe`) and the
+    /// `/audio/transcriptions` endpoint — verbatim speech-to-text. Same
+    /// not-downloaded/`filename`-as-slug conventions as [`EngineType::OpenRouter`].
+    OpenRouterAsr,
+}
+
+impl EngineType {
+    /// Whether this engine runs in the cloud via OpenRouter (chat or dedicated
+    /// ASR). Cloud engines share the "not downloaded, slug-in-filename, reuse
+    /// the OpenRouter key, skip idle-unload" handling.
+    pub fn is_cloud(&self) -> bool {
+        matches!(self, EngineType::OpenRouter | EngineType::OpenRouterAsr)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -120,6 +140,185 @@ impl ModelManager {
         .into_iter()
         .map(String::from)
         .collect();
+
+        // --- Cloud models (OpenRouter) -------------------------------------
+        // These require an internet connection and the user's OpenRouter API
+        // key (reused from the post-processing provider settings). They are
+        // never downloaded: `filename` holds the OpenRouter model slug and
+        // `is_downloaded` is forced to `true` so they are always selectable.
+        // Gemini handles a very wide range of languages (incl. Turkish), so we
+        // advertise the full Whisper language set for language selection.
+        available_models.insert(
+            "openrouter-gemini-2.5-flash-lite".to_string(),
+            ModelInfo {
+                id: "openrouter-gemini-2.5-flash-lite".to_string(),
+                name: "Gemini 2.5 Flash-Lite (Cloud)".to_string(),
+                description:
+                    "Cloud transcription via OpenRouter. Needs an API key. Cheapest, great for Turkish."
+                        .to_string(),
+                filename: "google/gemini-2.5-flash-lite".to_string(),
+                url: None,
+                sha256: None,
+                size_mb: 0,
+                is_downloaded: true,
+                is_downloading: false,
+                partial_size: 0,
+                is_directory: false,
+                engine_type: EngineType::OpenRouter,
+                accuracy_score: 0.90,
+                speed_score: 0.55,
+                supports_translation: true,
+                is_recommended: false,
+                supported_languages: whisper_languages.clone(),
+                supports_language_selection: true,
+                is_custom: false,
+            },
+        );
+
+        available_models.insert(
+            "openrouter-gemini-2.5-flash".to_string(),
+            ModelInfo {
+                id: "openrouter-gemini-2.5-flash".to_string(),
+                name: "Gemini 2.5 Flash (Cloud)".to_string(),
+                description:
+                    "Cloud transcription via OpenRouter. Needs an API key. Higher accuracy, costs more."
+                        .to_string(),
+                filename: "google/gemini-2.5-flash".to_string(),
+                url: None,
+                sha256: None,
+                size_mb: 0,
+                is_downloaded: true,
+                is_downloading: false,
+                partial_size: 0,
+                is_directory: false,
+                engine_type: EngineType::OpenRouter,
+                accuracy_score: 0.95,
+                speed_score: 0.45,
+                supports_translation: true,
+                is_recommended: false,
+                supported_languages: whisper_languages.clone(),
+                supports_language_selection: true,
+                is_custom: false,
+            },
+        );
+
+        // Custom cloud entry: the user types any OpenRouter model slug in
+        // Settings → Models. The slug is read from `openrouter_custom_model` at
+        // transcription time, so `filename` is intentionally empty here.
+        available_models.insert(
+            "openrouter-custom".to_string(),
+            ModelInfo {
+                id: "openrouter-custom".to_string(),
+                name: "Custom OpenRouter model".to_string(),
+                description:
+                    "Use any OpenRouter model. Enter its slug in Settings → Models. Needs an API key."
+                        .to_string(),
+                filename: String::new(),
+                url: None,
+                sha256: None,
+                size_mb: 0,
+                is_downloaded: true,
+                is_downloading: false,
+                partial_size: 0,
+                is_directory: false,
+                engine_type: EngineType::OpenRouter,
+                accuracy_score: 0.0,
+                speed_score: 0.0,
+                supports_translation: true,
+                is_recommended: false,
+                supported_languages: whisper_languages.clone(),
+                supports_language_selection: true,
+                is_custom: false,
+            },
+        );
+
+        // --- Cloud ASR models (OpenRouter /audio/transcriptions) -----------
+        // Dedicated speech-to-text models (verbatim), as opposed to the chat
+        // models above. Same not-downloaded / slug-in-filename conventions.
+        available_models.insert(
+            "openrouter-asr-gpt-4o-mini-transcribe".to_string(),
+            ModelInfo {
+                id: "openrouter-asr-gpt-4o-mini-transcribe".to_string(),
+                name: "GPT-4o Mini Transcribe (Cloud)".to_string(),
+                description:
+                    "Dedicated cloud ASR via OpenRouter. Verbatim, cheap. Needs an API key."
+                        .to_string(),
+                filename: "openai/gpt-4o-mini-transcribe".to_string(),
+                url: None,
+                sha256: None,
+                size_mb: 0,
+                is_downloaded: true,
+                is_downloading: false,
+                partial_size: 0,
+                is_directory: false,
+                engine_type: EngineType::OpenRouterAsr,
+                accuracy_score: 0.90,
+                speed_score: 0.6,
+                supports_translation: false,
+                is_recommended: false,
+                supported_languages: whisper_languages.clone(),
+                supports_language_selection: true,
+                is_custom: false,
+            },
+        );
+
+        available_models.insert(
+            "openrouter-asr-whisper".to_string(),
+            ModelInfo {
+                id: "openrouter-asr-whisper".to_string(),
+                name: "Whisper (Cloud)".to_string(),
+                description:
+                    "Dedicated cloud ASR via OpenRouter (whisper-1). Verbatim. Needs an API key."
+                        .to_string(),
+                filename: "openai/whisper-1".to_string(),
+                url: None,
+                sha256: None,
+                size_mb: 0,
+                is_downloaded: true,
+                is_downloading: false,
+                partial_size: 0,
+                is_directory: false,
+                engine_type: EngineType::OpenRouterAsr,
+                accuracy_score: 0.85,
+                speed_score: 0.6,
+                supports_translation: false,
+                is_recommended: false,
+                supported_languages: whisper_languages.clone(),
+                supports_language_selection: true,
+                is_custom: false,
+            },
+        );
+
+        // Custom ASR entry: user types any OpenRouter ASR slug. Shares the
+        // `openrouter_custom_model` setting with the chat custom entry (only one
+        // model is active at a time), and `filename` is empty so the slug is read
+        // from settings at transcription time.
+        available_models.insert(
+            "openrouter-asr-custom".to_string(),
+            ModelInfo {
+                id: "openrouter-asr-custom".to_string(),
+                name: "Custom OpenRouter ASR model".to_string(),
+                description:
+                    "Use any OpenRouter ASR model. Enter its slug in Settings → Models. Needs an API key."
+                        .to_string(),
+                filename: String::new(),
+                url: None,
+                sha256: None,
+                size_mb: 0,
+                is_downloaded: true,
+                is_downloading: false,
+                partial_size: 0,
+                is_directory: false,
+                engine_type: EngineType::OpenRouterAsr,
+                accuracy_score: 0.0,
+                speed_score: 0.0,
+                supports_translation: false,
+                is_recommended: false,
+                supported_languages: whisper_languages.clone(),
+                supports_language_selection: true,
+                is_custom: false,
+            },
+        );
 
         // TODO this should be read from a JSON file or something..
         available_models.insert(
@@ -687,6 +886,13 @@ impl ModelManager {
         let mut models = self.available_models.lock().unwrap();
 
         for model in models.values_mut() {
+            // Cloud models have nothing on disk; they're always "downloaded".
+            if model.engine_type.is_cloud() {
+                model.is_downloaded = true;
+                model.is_downloading = false;
+                model.partial_size = 0;
+                continue;
+            }
             if model.is_directory {
                 // For directory-based models, check if the directory exists
                 let model_path = self.models_dir.join(&model.filename);
@@ -759,7 +965,12 @@ impl ModelManager {
         if settings.selected_model.is_empty() {
             // Find the first available (downloaded) model
             let models = self.available_models.lock().unwrap();
-            if let Some(available_model) = models.values().find(|model| model.is_downloaded) {
+            // Prefer a real local model; never auto-select a cloud model (it
+            // needs an API key and a network connection to work).
+            if let Some(available_model) = models
+                .values()
+                .find(|model| model.is_downloaded && !model.engine_type.is_cloud())
+            {
                 info!(
                     "Auto-selecting model: {} ({})",
                     available_model.id, available_model.name
@@ -1301,6 +1512,11 @@ impl ModelManager {
 
         debug!("ModelManager: Found model info: {:?}", model_info);
 
+        // Cloud models have no files on disk and cannot be deleted.
+        if model_info.engine_type.is_cloud() {
+            return Err(anyhow::anyhow!("Cloud models cannot be deleted"));
+        }
+
         let model_path = self.models_dir.join(&model_info.filename);
         let partial_path = self
             .models_dir
@@ -1362,6 +1578,14 @@ impl ModelManager {
         let model_info = self
             .get_model_info(model_id)
             .ok_or_else(|| anyhow::anyhow!("Model not found: {}", model_id))?;
+
+        // Cloud models are not backed by a path on disk.
+        if model_info.engine_type.is_cloud() {
+            return Err(anyhow::anyhow!(
+                "Cloud models have no local path: {}",
+                model_id
+            ));
+        }
 
         if !model_info.is_downloaded {
             return Err(anyhow::anyhow!("Model not available: {}", model_id));

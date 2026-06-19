@@ -148,7 +148,8 @@
       "languageOnly": "Yalnızca {{language}}"
     },
     "cancel": "İptal",
-    "cancelDownload": "İndirmeyi iptal et"
+    "cancelDownload": "İndirmeyi iptal et",
+    "cloud": "Bulut"
   },
   "settings": {
     "modelSettings": {
@@ -171,7 +172,18 @@
       },
       "noModelsMatch": "Bu filtreyle eşleşen model yok.",
       "yourModels": "İndirilen modeller",
-      "availableModels": "İndirilebilir"
+      "availableModels": "İndirilebilir",
+      "cloud": {
+        "title": "Bulut transkripsiyon (OpenRouter)",
+        "description": "Bu model, OpenRouter üzerinden bulutta transkripsiyon yapar. Sesiniz OpenRouter'a gönderilir; kullanım dakika başına ücretlendirilir. Aynı OpenRouter API anahtarı hem bulut transkripsiyon hem de son işleme için kullanılır.",
+        "apiKeyPlaceholder": "OpenRouter API anahtarı (sk-or-...)",
+        "getKey": "API anahtarı al →",
+        "keyRequired": "Bulut transkripsiyonu kullanmak için OpenRouter API anahtarınızı girin.",
+        "modelLabel": "Model",
+        "modelPlaceholder": "örn. openai/gpt-4o-mini-transcribe",
+        "browseModels": "Modellere göz at →",
+        "modelRequired": "Bir OpenRouter model adı girin (örn. google/gemini-2.5-flash)."
+      }
     },
     "general": {
       "title": "Genel",

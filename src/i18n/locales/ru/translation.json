@@ -148,7 +148,8 @@
       "languageOnly": "Только {{language}}"
     },
     "cancel": "Отмена",
-    "cancelDownload": "Отменить загрузку"
+    "cancelDownload": "Отменить загрузку",
+    "cloud": "Облако"
   },
   "settings": {
     "modelSettings": {
@@ -171,7 +172,18 @@
       },
       "noModelsMatch": "Нет моделей, соответствующих этому фильтру.",
       "yourModels": "Загруженные модели",
-      "availableModels": "Доступны для загрузки"
+      "availableModels": "Доступны для загрузки",
+      "cloud": {
+        "title": "Облачная транскрипция (OpenRouter)",
+        "description": "Эта модель выполняет транскрипцию в облаке через OpenRouter. Ваше аудио отправляется в OpenRouter; использование оплачивается поминутно. Один и тот же ключ API OpenRouter используется для облачной транскрипции и постобработки.",
+        "apiKeyPlaceholder": "Ключ API OpenRouter (sk-or-...)",
+        "getKey": "Получить ключ API →",
+        "keyRequired": "Введите ключ API OpenRouter, чтобы использовать облачную транскрипцию.",
+        "modelLabel": "Модель",
+        "modelPlaceholder": "напр. openai/gpt-4o-mini-transcribe",
+        "browseModels": "Просмотреть модели →",
+        "modelRequired": "Введите идентификатор модели OpenRouter (напр. google/gemini-2.5-flash)."
+      }
     },
     "general": {
       "title": "Общие",

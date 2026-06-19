@@ -148,7 +148,8 @@
       "languageOnly": "Лише {{language}}"
     },
     "cancel": "Скасувати",
-    "cancelDownload": "Скасувати завантаження"
+    "cancelDownload": "Скасувати завантаження",
+    "cloud": "Хмара"
   },
   "settings": {
     "modelSettings": {
@@ -217,7 +218,18 @@
       },
       "noModelsMatch": "Жодна модель не відповідає цьому фільтру.",
       "yourModels": "Завантажені моделі",
-      "availableModels": "Доступні для завантаження"
+      "availableModels": "Доступні для завантаження",
+      "cloud": {
+        "title": "Хмарна транскрипція (OpenRouter)",
+        "description": "Ця модель виконує транскрипцію у хмарі через OpenRouter. Ваше аудіо надсилається до OpenRouter; використання оплачується похвилинно. Той самий ключ API OpenRouter використовується для хмарної транскрипції та постобробки.",
+        "apiKeyPlaceholder": "Ключ API OpenRouter (sk-or-...)",
+        "getKey": "Отримати ключ API →",
+        "keyRequired": "Введіть ваш ключ API OpenRouter, щоб використовувати хмарну транскрипцію.",
+        "modelLabel": "Модель",
+        "modelPlaceholder": "напр. openai/gpt-4o-mini-transcribe",
+        "browseModels": "Переглянути моделі →",
+        "modelRequired": "Введіть ідентифікатор моделі OpenRouter (напр. google/gemini-2.5-flash)."
+      }
     },
     "sound": {
       "title": "Звук",

@@ -2,6 +2,7 @@ import React from "react";
 import { useTranslation } from "react-i18next";
 import {
   Check,
+  Cloud,
   Download,
   Globe,
   Languages,
@@ -72,6 +73,8 @@ const ModelCard: React.FC<ModelCardProps> = ({
 }) => {
   const { t } = useTranslation();
   const isFeatured = variant === "featured";
+  const isCloud =
+    model.engine_type === "OpenRouter" || model.engine_type === "OpenRouterAsr";
   const isClickable =
     status === "available" || status === "active" || status === "downloadable";
 
@@ -145,6 +148,12 @@ const ModelCard: React.FC<ModelCardProps> = ({
               <Badge variant="primary">
                 <Check className="w-3 h-3 mr-1" />
                 {t("modelSelector.active")}
+              </Badge>
+            )}
+            {isCloud && (
+              <Badge variant="secondary">
+                <Cloud className="w-3 h-3 mr-1" />
+                {t("modelSelector.cloud")}
               </Badge>
             )}
             {model.is_custom && (
@@ -223,18 +232,20 @@ const ModelCard: React.FC<ModelCardProps> = ({
             <span>{formatModelSize(Number(model.size_mb))}</span>
           </span>
         )}
-        {onDelete && (status === "available" || status === "active") && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleDelete}
-            title={t("modelSelector.deleteModel", { modelName: displayName })}
-            className="flex items-center gap-1.5 ml-auto text-logo-primary/85 hover:text-logo-primary hover:bg-logo-primary/10"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-            <span>{t("common.delete")}</span>
-          </Button>
-        )}
+        {onDelete &&
+          !isCloud &&
+          (status === "available" || status === "active") && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleDelete}
+              title={t("modelSelector.deleteModel", { modelName: displayName })}
+              className="flex items-center gap-1.5 ml-auto text-logo-primary/85 hover:text-logo-primary hover:bg-logo-primary/10"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>{t("common.delete")}</span>
+            </Button>
+          )}
       </div>
 
       {/* Download/extract progress */}

@@ -148,7 +148,8 @@
       "languageOnly": "{{language}}のみ"
     },
     "cancel": "キャンセル",
-    "cancelDownload": "ダウンロードをキャンセル"
+    "cancelDownload": "ダウンロードをキャンセル",
+    "cloud": "クラウド"
   },
   "settings": {
     "modelSettings": {
@@ -171,7 +172,18 @@
       },
       "noModelsMatch": "このフィルターに一致するモデルがありません。",
       "yourModels": "ダウンロード済みモデル",
-      "availableModels": "ダウンロード可能"
+      "availableModels": "ダウンロード可能",
+      "cloud": {
+        "title": "クラウド文字起こし（OpenRouter）",
+        "description": "このモデルは OpenRouter を介してクラウドで文字起こしを行います。音声は OpenRouter に送信され、利用は分単位で課金されます。クラウド文字起こしと後処理には同じ OpenRouter API キーが使用されます。",
+        "apiKeyPlaceholder": "OpenRouter API キー (sk-or-...)",
+        "getKey": "API キーを取得 →",
+        "keyRequired": "クラウド文字起こしを使用するには OpenRouter API キーを入力してください。",
+        "modelLabel": "モデル",
+        "modelPlaceholder": "例: openai/gpt-4o-mini-transcribe",
+        "browseModels": "モデルを見る →",
+        "modelRequired": "OpenRouter のモデル名を入力してください（例: google/gemini-2.5-flash）。"
+      }
     },
     "general": {
       "title": "一般",
@@ -669,6 +681,7 @@
     "onDeviceBadge": "100% on-device transcription",
     "summaryLocal": "Summary runs locally",
     "summaryCloud": "Summary uses {{provider}} — leaves your device",
-    "summaryNoProvider": "No summary provider configured"
+    "summaryNoProvider": "No summary provider configured",
+    "cloudLivePreviewOff": "録音中… クラウドモデル: 文字起こしは会議を停止したときに生成されます。"
   }
 }

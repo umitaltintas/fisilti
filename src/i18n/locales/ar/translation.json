@@ -148,7 +148,8 @@
       "languageOnly": "{{language}} فقط",
       "translation": "يدعم الترجمة",
       "translate": "ترجمة"
-    }
+    },
+    "cloud": "السحابة"
   },
   "settings": {
     "general": {
@@ -535,7 +536,18 @@
         "translation": "ترجمة",
         "allLanguages": "جميع اللغات"
       },
-      "noModelsMatch": "لا توجد نماذج مطابقة لهذا الفلتر."
+      "noModelsMatch": "لا توجد نماذج مطابقة لهذا الفلتر.",
+      "cloud": {
+        "title": "النسخ عبر السحابة (OpenRouter)",
+        "description": "يقوم هذا النموذج بالنسخ في السحابة عبر OpenRouter. يتم إرسال الصوت الخاص بك إلى OpenRouter؛ وتُحتسب التكلفة بالدقيقة. يُستخدم مفتاح OpenRouter API نفسه للنسخ السحابي والمعالجة اللاحقة.",
+        "apiKeyPlaceholder": "مفتاح OpenRouter API (sk-or-...)",
+        "getKey": "احصل على مفتاح API",
+        "keyRequired": "أدخل مفتاح OpenRouter API لاستخدام النسخ السحابي.",
+        "modelLabel": "النموذج",
+        "modelPlaceholder": "مثال: openai/gpt-4o-mini-transcribe",
+        "browseModels": "تصفح النماذج",
+        "modelRequired": "أدخل معرف نموذج OpenRouter (مثال: google/gemini-2.5-flash)."
+      }
     }
   },
   "footer": {
@@ -669,6 +681,7 @@
     "onDeviceBadge": "100% on-device transcription",
     "summaryLocal": "Summary runs locally",
     "summaryCloud": "Summary uses {{provider}} — leaves your device",
-    "summaryNoProvider": "No summary provider configured"
+    "summaryNoProvider": "No summary provider configured",
+    "cloudLivePreviewOff": "جارٍ التسجيل… نموذج سحابي: يتم إنشاء النص عند إيقاف الاجتماع."
   }
 }

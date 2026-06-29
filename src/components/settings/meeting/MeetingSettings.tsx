@@ -57,8 +57,8 @@ import {
   type MeetingSummaryTemplate,
   type SummaryProviderInfo,
   type TranscriptSegment,
-  type TranscriptSource,
 } from "@/lib/meeting";
+import { useModelStore } from "@/stores/modelStore";
 
 const NOTES_AUTOSAVE_MS = 800;
 const SEARCH_DEBOUNCE_MS = 300;
@@ -93,79 +93,36 @@ const CopyButton: React.FC<{
   );
 };
 
-// A speaker "chip" + body for a single labeled transcript segment. "You"
-// (mic / local speaker) is accented and aligned right; "others" (system /
-// remote) is neutral and aligned left, so the two sides read like a chat.
-const SpeakerSegment: React.FC<{
-  source: TranscriptSource;
-  text: string;
-  t: (key: string) => string;
-}> = ({ source, text, t }) => {
-  const isYou = source === "you";
-  const label = isYou ? t("meeting.speakerYou") : t("meeting.speakerOthers");
-  return (
-    <div className={`flex ${isYou ? "justify-end" : "justify-start"}`}>
-      <div
-        className={`max-w-[85%] min-w-0 flex flex-col gap-1 ${
-          isYou ? "items-end" : "items-start"
-        }`}
-      >
-        <span
-          className={`text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded ${
-            isYou
-              ? "bg-logo-primary/15 text-logo-primary"
-              : "bg-mid-gray/15 text-mid-gray"
-          }`}
-        >
-          {label}
-        </span>
-        <p
-          className={`text-sm whitespace-pre-wrap break-words select-text rounded-lg px-3 py-2 ${
-            isYou
-              ? "bg-logo-primary/10 text-text/90"
-              : "bg-mid-gray/10 text-text/90"
-          }`}
-        >
-          {text}
-        </p>
-      </div>
-    </div>
-  );
-};
-
-// Render a list of labeled segments as a chat-like transcript. Falls back to
-// nothing when there are no segments (callers handle the empty/plain case).
-const SpeakerTranscript: React.FC<{
+// Render a transcript as a clean, chronological flow of plain text lines.
+//
+// Speaker attribution ("You" / "Others") was removed: it was source-based
+// (mic vs system audio), not real diarization, and broke down on speaker
+// output where the mic re-captures the remote voice and mislabels it. The
+// backend still de-duplicates echoed segments, so this stays a single clean
+// transcript without doubled lines.
+const PlainTranscript: React.FC<{
   segments: TranscriptSegment[];
-  t: (key: string) => string;
-}> = ({ segments, t }) => (
-  <div className="space-y-3">
+}> = ({ segments }) => (
+  <div className="space-y-2">
     {segments.map((seg, i) => (
-      <SpeakerSegment key={i} source={seg.source} text={seg.text} t={t} />
+      <p
+        key={i}
+        className="text-sm whitespace-pre-wrap break-words select-text text-text/90"
+      >
+        {seg.text}
+      </p>
     ))}
   </div>
 );
 
-// Build a copy-friendly transcript string that keeps the speaker label on each
-// line (e.g. "You: …" / "Others: …"), so a pasted transcript reads like the
-// on-screen chat instead of an unattributed wall of text. Falls back to the
-// plain joined transcript when no labeled segments are available (e.g. an old
-// record saved before per-source segments existed).
-const labeledTranscriptText = (
+// Build a copy-friendly transcript: one line per segment, no speaker labels.
+// Falls back to the plain joined transcript when no segments are available.
+const plainTranscriptText = (
   segments: TranscriptSegment[],
   fallback: string,
-  t: (key: string) => string,
 ): string => {
   if (segments.length === 0) return fallback;
-  return segments
-    .map((seg) => {
-      const label =
-        seg.source === "you"
-          ? t("meeting.speakerYou")
-          : t("meeting.speakerOthers");
-      return `${label}: ${seg.text}`;
-    })
-    .join("\n");
+  return segments.map((seg) => seg.text).join("\n");
 };
 
 // Persistent "100% on-device transcription" trust badge.
@@ -257,11 +214,20 @@ function exportFilename(title: string): string {
 export const MeetingSettings: React.FC = () => {
   const { t, i18n } = useTranslation();
 
+  // Cloud models skip the live per-segment pass (it would be one request each),
+  // so the live transcript stays empty until the on-stop finalize. Detect that
+  // to show an accurate hint instead of "listening…".
+  const { currentModel, models } = useModelStore();
+  const selectedIsCloud = (() => {
+    const engine = models.find((m) => m.id === currentModel)?.engine_type;
+    return engine === "OpenRouter" || engine === "OpenRouterAsr";
+  })();
+
   const [status, setStatus] = useState<MeetingStatus>("idle");
   const [transcript, setTranscript] = useState("");
-  // Accumulated labeled segments for the live (and final) transcript so we can
-  // render per-source speaker labels. Replaced wholesale by the polished list
-  // when the finalize pass completes.
+  // Accumulated transcript segments for the live (and final) transcript,
+  // rendered as a plain chronological flow. Replaced wholesale by the polished
+  // list when the finalize pass completes.
   const [liveSegments, setLiveSegments] = useState<TranscriptSegment[]>([]);
   const [finalizing, setFinalizing] = useState(false);
   const [elapsed, setElapsed] = useState(0);
@@ -626,7 +592,7 @@ export const MeetingSettings: React.FC = () => {
   };
 
   const copyTranscript = () =>
-    copyText(labeledTranscriptText(liveSegments, transcript, t));
+    copyText(plainTranscriptText(liveSegments, transcript));
   const copyNotes = () => copyText(summary);
   const copyUserNotes = () => copyText(userNotes);
 
@@ -848,7 +814,7 @@ export const MeetingSettings: React.FC = () => {
                 className="bg-background border border-mid-gray/20 rounded-lg p-4 h-64 overflow-y-auto"
               >
                 {liveSegments.length > 0 ? (
-                  <SpeakerTranscript segments={liveSegments} t={t} />
+                  <PlainTranscript segments={liveSegments} />
                 ) : hasTranscript ? (
                   <p className="text-sm text-text/90 whitespace-pre-wrap break-words select-text">
                     {transcript}
@@ -856,7 +822,9 @@ export const MeetingSettings: React.FC = () => {
                 ) : (
                   <p className="text-sm text-text/40">
                     {isRunning
-                      ? t("meeting.listening")
+                      ? selectedIsCloud
+                        ? t("meeting.cloudLivePreviewOff")
+                        : t("meeting.listening")
                       : t("meeting.transcriptEmpty")}
                   </p>
                 )}
@@ -1399,11 +1367,7 @@ const MeetingDetailView: React.FC<MeetingDetailViewProps> = ({
                 <CopyButton
                   onCopy={() =>
                     onCopy(
-                      labeledTranscriptText(
-                        labeledSegments,
-                        detail.transcript,
-                        t,
-                      ),
+                      plainTranscriptText(labeledSegments, detail.transcript),
                     )
                   }
                   disabled={!hasTranscript}
@@ -1412,7 +1376,7 @@ const MeetingDetailView: React.FC<MeetingDetailViewProps> = ({
                 />
               </div>
               {hasLabeledSegments ? (
-                <SpeakerTranscript segments={labeledSegments} t={t} />
+                <PlainTranscript segments={labeledSegments} />
               ) : hasTranscript ? (
                 <p className="text-sm text-text/90 whitespace-pre-wrap break-words select-text">
                   {detail.transcript}

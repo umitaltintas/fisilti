@@ -148,7 +148,8 @@
       "languageOnly": "僅 {{language}}",
       "translation": "可翻譯為英語",
       "translate": "翻譯為英語"
-    }
+    },
+    "cloud": "雲端"
   },
   "settings": {
     "modelSettings": {
@@ -217,7 +218,18 @@
         "translation": "翻譯",
         "allLanguages": "所有語言"
       },
-      "noModelsMatch": "沒有符合此篩選條件的模型"
+      "noModelsMatch": "沒有符合此篩選條件的模型",
+      "cloud": {
+        "title": "雲端轉錄（OpenRouter）",
+        "description": "此模型透過 OpenRouter 在雲端進行轉錄。您的音訊會傳送至 OpenRouter；依分鐘計費。雲端轉錄與後處理使用同一個 OpenRouter API 金鑰。",
+        "apiKeyPlaceholder": "OpenRouter API 金鑰 (sk-or-...)",
+        "getKey": "取得 API 金鑰 →",
+        "keyRequired": "請輸入您的 OpenRouter API 金鑰以使用雲端轉錄。",
+        "modelLabel": "模型",
+        "modelPlaceholder": "例如 openai/gpt-4o-mini-transcribe",
+        "browseModels": "瀏覽模型 →",
+        "modelRequired": "請輸入 OpenRouter 模型識別碼（例如 google/gemini-2.5-flash）。"
+      }
     },
     "sound": {
       "title": "聲音",
@@ -669,6 +681,7 @@
     "onDeviceBadge": "100% on-device transcription",
     "summaryLocal": "Summary runs locally",
     "summaryCloud": "Summary uses {{provider}} — leaves your device",
-    "summaryNoProvider": "No summary provider configured"
+    "summaryNoProvider": "No summary provider configured",
+    "cloudLivePreviewOff": "錄製中…雲端模型：轉錄會在您停止會議時產生。"
   }
 }

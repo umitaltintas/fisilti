@@ -148,7 +148,8 @@
       "languageOnly": "Pouze {{language}}"
     },
     "cancel": "Zrušit",
-    "cancelDownload": "Zrušit stahování"
+    "cancelDownload": "Zrušit stahování",
+    "cloud": "Cloud"
   },
   "settings": {
     "modelSettings": {
@@ -171,7 +172,18 @@
       },
       "noModelsMatch": "Tomuto filtru neodpovídají žádné modely.",
       "yourModels": "Stažené modely",
-      "availableModels": "Dostupné ke stažení"
+      "availableModels": "Dostupné ke stažení",
+      "cloud": {
+        "title": "Cloudový přepis (OpenRouter)",
+        "description": "Tento model přepisuje v cloudu přes OpenRouter. Vaše audio se odesílá do OpenRouter; používání se účtuje za minutu. Stejný klíč API OpenRouter se používá pro cloudový přepis i následné zpracování.",
+        "apiKeyPlaceholder": "Klíč API OpenRouter (sk-or-...)",
+        "getKey": "Získat klíč API →",
+        "keyRequired": "Zadejte svůj klíč API OpenRouter pro použití cloudového přepisu.",
+        "modelLabel": "Model",
+        "modelPlaceholder": "např. openai/gpt-4o-mini-transcribe",
+        "browseModels": "Procházet modely →",
+        "modelRequired": "Zadejte identifikátor modelu OpenRouter (např. google/gemini-2.5-flash)."
+      }
     },
     "general": {
       "title": "Obecné",
@@ -669,6 +681,7 @@
     "onDeviceBadge": "100% on-device transcription",
     "summaryLocal": "Summary runs locally",
     "summaryCloud": "Summary uses {{provider}} — leaves your device",
-    "summaryNoProvider": "No summary provider configured"
+    "summaryNoProvider": "No summary provider configured",
+    "cloudLivePreviewOff": "Nahrávání… cloudový model: přepis se vytvoří po zastavení schůzky."
   }
 }

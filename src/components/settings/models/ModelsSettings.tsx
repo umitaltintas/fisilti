@@ -1,10 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ask } from "@tauri-apps/plugin-dialog";
-import { ChevronDown, Globe } from "lucide-react";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { ChevronDown, Cloud, Globe } from "lucide-react";
 import type { ModelCardStatus } from "@/components/onboarding";
 import { ModelCard } from "@/components/onboarding";
 import { useModelStore } from "@/stores/modelStore";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { ApiKeyField } from "@/components/settings/PostProcessingSettingsApi/ApiKeyField";
+import { Input } from "@/components/ui/Input";
 import { LANGUAGES } from "@/lib/constants/languages.ts";
 import type { ModelInfo } from "@/bindings";
 
@@ -35,6 +39,24 @@ export const ModelsSettings: React.FC = () => {
     selectModel,
     deleteModel,
   } = useModelStore();
+  const { settings, updatePostProcessApiKey, updateSetting } =
+    useSettingsStore();
+
+  // Cloud (OpenRouter) transcription reuses the OpenRouter post-processing key,
+  // so there is a single key to manage for both features.
+  const currentModelInfo = models.find((m: ModelInfo) => m.id === currentModel);
+  const isCloudSelected =
+    currentModelInfo?.engine_type === "OpenRouter" ||
+    currentModelInfo?.engine_type === "OpenRouterAsr";
+  const isCustomCloud =
+    currentModel === "openrouter-custom" ||
+    currentModel === "openrouter-asr-custom";
+  const openrouterKey = settings?.post_process_api_keys?.["openrouter"] ?? "";
+  const customModel = settings?.openrouter_custom_model ?? "";
+  const [customModelLocal, setCustomModelLocal] = useState(customModel);
+  useEffect(() => {
+    setCustomModelLocal(customModel);
+  }, [customModel]);
 
   // click outside handler for language dropdown
   useEffect(() => {
@@ -215,6 +237,77 @@ export const ModelsSettings: React.FC = () => {
           {t("settings.models.description")}
         </p>
       </div>
+
+      {/* Cloud transcription (OpenRouter) — API key panel, shown when a cloud
+          model is the active model. */}
+      {isCloudSelected && (
+        <div className="rounded-xl border-2 border-logo-primary/25 bg-logo-primary/5 px-4 py-3 space-y-2">
+          <div className="flex items-center gap-2">
+            <Cloud className="w-4 h-4 text-logo-primary" />
+            <h2 className="text-sm font-medium">
+              {t("settings.models.cloud.title")}
+            </h2>
+          </div>
+          <p className="text-xs text-text/60">
+            {t("settings.models.cloud.description")}
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <ApiKeyField
+              value={openrouterKey}
+              onBlur={(value) => updatePostProcessApiKey("openrouter", value)}
+              disabled={false}
+              placeholder={t("settings.models.cloud.apiKeyPlaceholder")}
+            />
+            <button
+              type="button"
+              onClick={() => openUrl("https://openrouter.ai/keys")}
+              className="text-xs text-logo-primary hover:underline"
+            >
+              {t("settings.models.cloud.getKey")}
+            </button>
+          </div>
+          {!openrouterKey.trim() && (
+            <p className="text-xs text-amber-500">
+              {t("settings.models.cloud.keyRequired")}
+            </p>
+          )}
+
+          {/* Free-text model slug, only for the "Custom OpenRouter model" entry. */}
+          {isCustomCloud && (
+            <div className="pt-1 space-y-1">
+              <label className="text-xs font-medium text-text/70">
+                {t("settings.models.cloud.modelLabel")}
+              </label>
+              <div className="flex flex-wrap items-center gap-2">
+                <Input
+                  type="text"
+                  value={customModelLocal}
+                  onChange={(event) => setCustomModelLocal(event.target.value)}
+                  onBlur={() =>
+                    updateSetting("openrouter_custom_model", customModelLocal)
+                  }
+                  placeholder={t("settings.models.cloud.modelPlaceholder")}
+                  variant="compact"
+                  className="flex-1 min-w-[320px]"
+                />
+                <button
+                  type="button"
+                  onClick={() => openUrl("https://openrouter.ai/models")}
+                  className="text-xs text-logo-primary hover:underline"
+                >
+                  {t("settings.models.cloud.browseModels")}
+                </button>
+              </div>
+              {!customModel.trim() && (
+                <p className="text-xs text-amber-500">
+                  {t("settings.models.cloud.modelRequired")}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {filteredModels.length > 0 ? (
         <div className="space-y-6">
           {/* Downloaded Models Section — header always visible so filter stays accessible */}

@@ -311,9 +311,10 @@ impl MeetingManager {
         // emits again after stop() returns; that's harmless (idempotent).
         {
             use tauri::Emitter;
-            let _ = self
-                .app_handle
-                .emit(crate::commands::meeting::MEETING_STATE_CHANGED_EVENT, "idle");
+            let _ = self.app_handle.emit(
+                crate::commands::meeting::MEETING_STATE_CHANGED_EVENT,
+                "idle",
+            );
         }
 
         // Hybrid transcription: re-transcribe the FULL per-source audio for a
@@ -709,6 +710,22 @@ impl MeetingManager {
         self.emit_finalizing(false);
     }
 
+    /// Whether the user's selected transcription model is a cloud (OpenRouter)
+    /// model. Cloud models are unsuitable for the per-segment LIVE pass — each
+    /// VAD segment would be a separate network request — so meetings skip the
+    /// live pass for them and let the finalize pass do the work in bounded
+    /// windows. (The finalize transcription is already keyed off the selected
+    /// model, so a cloud selection routes there automatically.)
+    #[cfg(target_os = "macos")]
+    fn selected_model_is_cloud(&self) -> bool {
+        use tauri::Manager;
+        let settings = crate::settings::get_settings(&self.app_handle);
+        self.app_handle
+            .try_state::<std::sync::Arc<crate::managers::model::ModelManager>>()
+            .and_then(|mm| mm.get_model_info(&settings.selected_model))
+            .map_or(false, |m| m.engine_type.is_cloud())
+    }
+
     /// Load the configured `meeting_final_model` (default "turbo") for the
     /// finalize pass, returning the model id that should be restored afterwards
     /// (the model that was loaded before, or the user's `selected_model`).
@@ -716,6 +733,14 @@ impl MeetingManager {
     /// final model couldn't be loaded — in which case the loaded model is kept).
     #[cfg(target_os = "macos")]
     fn swap_in_final_model(&self) -> Option<String> {
+        // Cloud selection: don't swap in the local final model. The finalize
+        // transcription routes to the cloud model (keyed off the selected
+        // model), so loading the local final model here would just load a model
+        // the cloud path ignores.
+        if self.selected_model_is_cloud() {
+            return None;
+        }
+
         let settings = crate::settings::get_settings(&self.app_handle);
         let final_model = settings.meeting_final_model.trim().to_string();
         if final_model.is_empty() {
@@ -1568,6 +1593,15 @@ impl MeetingManager {
         }
         let audio = std::mem::take(segment);
         let timestamp_ms = start_samples.saturating_mul(1000) / WHISPER_SAMPLE_RATE as u64;
+
+        // Cloud models would send one OpenRouter request per VAD segment (and
+        // per source). Skip the live pass for them; the audio is still buffered
+        // to disk, and the on-stop finalize re-transcribes it with the cloud
+        // model in bounded windows. `audio` was already taken above, so the
+        // segment buffer is cleared either way.
+        if self.selected_model_is_cloud() {
+            return;
+        }
 
         match self.transcription_manager.transcribe_meeting(audio) {
             Ok(text) => {
@@ -2493,7 +2527,8 @@ mod tests {
     #[test]
     fn cross_channel_echo_drops_mic_copy_of_nearby_system_segment() {
         use super::{drop_cross_channel_echo, TranscriptSegment, TranscriptSource};
-        let system_text = "bu çeyrekte gelirimiz beklentilerin üzerinde gerçekleşti ve büyümeye devam ediyoruz";
+        let system_text =
+            "bu çeyrekte gelirimiz beklentilerin üzerinde gerçekleşti ve büyümeye devam ediyoruz";
         let segs = vec![
             TranscriptSegment {
                 text: system_text.to_string(),
@@ -2558,7 +2593,8 @@ mod tests {
     #[test]
     fn cross_channel_echo_keeps_distant_match() {
         use super::{drop_cross_channel_echo, TranscriptSegment, TranscriptSource};
-        let text = "bu çeyrekte gelirimiz beklentilerin üzerinde gerçekleşti ve büyümeye devam ediyoruz";
+        let text =
+            "bu çeyrekte gelirimiz beklentilerin üzerinde gerçekleşti ve büyümeye devam ediyoruz";
         let segs = vec![
             TranscriptSegment {
                 text: text.to_string(),
@@ -2574,7 +2610,11 @@ mod tests {
             },
         ];
         let out = drop_cross_channel_echo(segs);
-        assert_eq!(out.len(), 2, "matches outside the echo time window are kept");
+        assert_eq!(
+            out.len(),
+            2,
+            "matches outside the echo time window are kept"
+        );
     }
 
     #[test]

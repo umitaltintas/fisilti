@@ -372,6 +372,11 @@ pub struct AppSettings {
     pub post_process_prompts: Vec<LLMPrompt>,
     #[serde(default)]
     pub post_process_selected_prompt_id: Option<String>,
+    /// Custom OpenRouter model slug used by the "Custom OpenRouter model" cloud
+    /// transcription entry (e.g. `openai/gpt-4o-mini-transcribe`). Empty unless
+    /// the user enters one in Settings → Models.
+    #[serde(default)]
+    pub openrouter_custom_model: String,
     #[serde(default)]
     pub mute_while_recording: bool,
     #[serde(default)]
@@ -884,6 +889,7 @@ pub fn get_default_settings() -> AppSettings {
         post_process_models: default_post_process_models(),
         post_process_prompts: default_post_process_prompts(),
         post_process_selected_prompt_id: None,
+        openrouter_custom_model: String::new(),
         mute_while_recording: false,
         append_trailing_space: false,
         app_language: default_app_language(),

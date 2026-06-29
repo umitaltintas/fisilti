@@ -148,7 +148,8 @@
       "languageOnly": "Endast {{language}}",
       "translation": "Kan översätta till engelska",
       "translate": "Översätt till engelska"
-    }
+    },
+    "cloud": "Moln"
   },
   "settings": {
     "modelSettings": {
@@ -217,7 +218,18 @@
         "translation": "Översättning",
         "allLanguages": "Alla språk"
       },
-      "noModelsMatch": "Inga modeller matchar detta filter."
+      "noModelsMatch": "Inga modeller matchar detta filter.",
+      "cloud": {
+        "title": "Molntranskription (OpenRouter)",
+        "description": "Den här modellen transkriberar i molnet via OpenRouter. Ditt ljud skickas till OpenRouter; användningen debiteras per minut. Samma OpenRouter-API-nyckel används för molntranskription och efterbearbetning.",
+        "apiKeyPlaceholder": "OpenRouter-API-nyckel (sk-or-...)",
+        "getKey": "Hämta en API-nyckel →",
+        "keyRequired": "Ange din OpenRouter-API-nyckel för att använda molntranskription.",
+        "modelLabel": "Modell",
+        "modelPlaceholder": "t.ex. openai/gpt-4o-mini-transcribe",
+        "browseModels": "Bläddra bland modeller →",
+        "modelRequired": "Ange en OpenRouter-modellslug (t.ex. google/gemini-2.5-flash)."
+      }
     },
     "sound": {
       "title": "Ljud",
@@ -669,6 +681,7 @@
     "onDeviceBadge": "100% on-device transcription",
     "summaryLocal": "Summary runs locally",
     "summaryCloud": "Summary uses {{provider}} — leaves your device",
-    "summaryNoProvider": "No summary provider configured"
+    "summaryNoProvider": "No summary provider configured",
+    "cloudLivePreviewOff": "Spelar in… molnmodell: transkriptionen skapas när du stoppar mötet."
   }
 }

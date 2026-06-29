@@ -148,7 +148,8 @@
       "languageOnly": "Nur {{language}}"
     },
     "cancel": "Abbrechen",
-    "cancelDownload": "Download abbrechen"
+    "cancelDownload": "Download abbrechen",
+    "cloud": "Cloud"
   },
   "settings": {
     "modelSettings": {
@@ -171,7 +172,18 @@
       },
       "noModelsMatch": "Keine Modelle entsprechen diesem Filter.",
       "yourModels": "Heruntergeladene Modelle",
-      "availableModels": "Zum Download verfügbar"
+      "availableModels": "Zum Download verfügbar",
+      "cloud": {
+        "title": "Cloud-Transkription (OpenRouter)",
+        "description": "Dieses Modell transkribiert in der Cloud über OpenRouter. Deine Audiodaten werden an OpenRouter gesendet; die Nutzung wird pro Minute abgerechnet. Derselbe OpenRouter-API-Schlüssel wird für Cloud-Transkription und Nachbearbeitung verwendet.",
+        "apiKeyPlaceholder": "OpenRouter-API-Schlüssel (sk-or-...)",
+        "getKey": "API-Schlüssel erhalten →",
+        "keyRequired": "Gib deinen OpenRouter-API-Schlüssel ein, um die Cloud-Transkription zu nutzen.",
+        "modelLabel": "Modell",
+        "modelPlaceholder": "z. B. openai/gpt-4o-mini-transcribe",
+        "browseModels": "Modelle durchsuchen →",
+        "modelRequired": "Gib einen OpenRouter-Modell-Slug ein (z. B. google/gemini-2.5-flash)."
+      }
     },
     "general": {
       "title": "Allgemein",
@@ -669,6 +681,7 @@
     "onDeviceBadge": "100% on-device transcription",
     "summaryLocal": "Summary runs locally",
     "summaryCloud": "Summary uses {{provider}} — leaves your device",
-    "summaryNoProvider": "No summary provider configured"
+    "summaryNoProvider": "No summary provider configured",
+    "cloudLivePreviewOff": "Aufnahme läuft… Cloud-Modell: Das Transkript wird erstellt, wenn du das Meeting beendest."
   }
 }

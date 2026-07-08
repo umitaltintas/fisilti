@@ -682,6 +682,29 @@
     "summaryLocal": "Summary runs locally",
     "summaryCloud": "Summary uses {{provider}} — leaves your device",
     "summaryNoProvider": "No summary provider configured",
-    "cloudLivePreviewOff": "Kayıt sürüyor… bulut model: metin, toplantıyı durdurduğunuzda oluşturulur."
+    "cloudLivePreviewOff": "Kayıt sürüyor… bulut model: metin, toplantıyı durdurduğunuzda oluşturulur.",
+    "autoDetectSection": "Otomatik toplantı algılama",
+    "autoDetectToggle": "Toplantıları algıla ve transkripsiyon başlatmayı öner",
+    "autoDetectDescription": "Bir toplantı uygulaması (Zoom, Teams, Meet…) mikrofonu kullanmaya başladığında transkripsiyonu başlatmak için bir istem gösterilir.",
+    "autoEndToggle": "Uzun süreli sessizlikte bitirmeyi öner",
+    "autoEndDescription": "Seçilen süre boyunca konuşma algılanmazsa toplantıyı bitirmek isteyip istemediğiniz sorulur; yanıt vermezseniz toplantı otomatik olarak bitirilir.",
+    "silenceTimeoutLabel": "Sormadan önceki sessizlik süresi",
+    "autoEndGraceLabel": "Yanıtsız kalırsa otomatik bitir",
+    "durationMinutes": "{{count}} dk",
+    "durationSeconds": "{{count}} sn"
+  },
+  "meetingPrompt": {
+    "startTitle": "Toplantı algılandı",
+    "startBody": "{{app}} bir toplantıda görünüyor. Transkripsiyon başlatılsın mı?",
+    "startBodyGeneric": "Bir toplantı başlamış görünüyor. Transkripsiyon başlatılsın mı?",
+    "start": "Başlat",
+    "dismiss": "Yoksay",
+    "endTitleSilence": "Sessizlik algılandı",
+    "endTitleAppClosed": "Toplantı bitti mi?",
+    "endBodySilence": "Bir süredir konuşma algılanmıyor. Toplantı bitirilsin mi?",
+    "endBodyAppClosed": "Toplantı uygulaması artık mikrofonu kullanmıyor. Toplantı bitirilsin mi?",
+    "end": "Toplantıyı bitir",
+    "continue": "Kayda devam et",
+    "autoEndIn": "{{seconds}} sn içinde otomatik bitirilecek"
   }
 }

@@ -682,6 +682,29 @@
     "summaryLocal": "Summary runs locally",
     "summaryCloud": "Summary uses {{provider}} — leaves your device",
     "summaryNoProvider": "No summary provider configured",
-    "cloudLivePreviewOff": "Grabando… modelo en la nube: la transcripción se genera cuando detienes la reunión."
+    "cloudLivePreviewOff": "Grabando… modelo en la nube: la transcripción se genera cuando detienes la reunión.",
+    "autoDetectSection": "Detección automática de reuniones",
+    "autoDetectToggle": "Detectar reuniones y ofrecer iniciar la transcripción",
+    "autoDetectDescription": "Cuando una aplicación de reuniones (Zoom, Teams, Meet…) empieza a usar el micrófono, se ofrece iniciar la transcripción.",
+    "autoEndToggle": "Ofrecer finalizar tras un silencio prolongado",
+    "autoEndDescription": "Si no se detecta voz durante el tiempo seleccionado, se pregunta si finalizar la reunión, y se finaliza automáticamente si no respondes.",
+    "silenceTimeoutLabel": "Silencio antes de preguntar",
+    "autoEndGraceLabel": "Finalizar automáticamente tras",
+    "durationMinutes": "{{count}} min",
+    "durationSeconds": "{{count}} s"
+  },
+  "meetingPrompt": {
+    "startTitle": "Reunión detectada",
+    "startBody": "{{app}} parece estar en una reunión. ¿Iniciar la transcripción?",
+    "startBodyGeneric": "Parece que ha empezado una reunión. ¿Iniciar la transcripción?",
+    "start": "Iniciar",
+    "dismiss": "Ignorar",
+    "endTitleSilence": "Silencio detectado",
+    "endTitleAppClosed": "¿Reunión finalizada?",
+    "endBodySilence": "No se detecta voz desde hace un rato. ¿Finalizar la reunión?",
+    "endBodyAppClosed": "La aplicación de reuniones ya no usa el micrófono. ¿Finalizar la reunión?",
+    "end": "Finalizar reunión",
+    "continue": "Seguir grabando",
+    "autoEndIn": "Finalización automática en {{seconds}} s"
   }
 }

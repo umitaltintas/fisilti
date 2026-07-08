@@ -682,6 +682,29 @@
     "summaryLocal": "Summary runs locally",
     "summaryCloud": "Summary uses {{provider}} — leaves your device",
     "summaryNoProvider": "No summary provider configured",
-    "cloudLivePreviewOff": "녹음 중… 클라우드 모델: 회의를 중지하면 전사가 생성됩니다."
+    "cloudLivePreviewOff": "녹음 중… 클라우드 모델: 회의를 중지하면 전사가 생성됩니다.",
+    "autoDetectSection": "회의 자동 감지",
+    "autoDetectToggle": "회의를 감지하고 전사 시작 제안",
+    "autoDetectDescription": "회의 앱(Zoom, Teams, Meet 등)이 마이크를 사용하기 시작하면 전사 시작을 제안합니다.",
+    "autoEndToggle": "긴 침묵 후 종료 제안",
+    "autoEndDescription": "선택한 시간 동안 음성이 감지되지 않으면 회의 종료 여부를 묻고, 응답이 없으면 자동으로 종료합니다.",
+    "silenceTimeoutLabel": "묻기 전 침묵 시간",
+    "autoEndGraceLabel": "무응답 시 자동 종료까지",
+    "durationMinutes": "{{count}}분",
+    "durationSeconds": "{{count}}초"
+  },
+  "meetingPrompt": {
+    "startTitle": "회의 감지됨",
+    "startBody": "{{app}}이(가) 회의 중인 것 같습니다. 전사를 시작할까요?",
+    "startBodyGeneric": "회의가 시작된 것 같습니다. 전사를 시작할까요?",
+    "start": "시작",
+    "dismiss": "무시",
+    "endTitleSilence": "침묵 감지됨",
+    "endTitleAppClosed": "회의가 끝났나요?",
+    "endBodySilence": "한동안 음성이 감지되지 않았습니다. 회의를 종료할까요?",
+    "endBodyAppClosed": "회의 앱이 더 이상 마이크를 사용하지 않습니다. 회의를 종료할까요?",
+    "end": "회의 종료",
+    "continue": "계속 녹음",
+    "autoEndIn": "{{seconds}}초 후 자동 종료"
   }
 }

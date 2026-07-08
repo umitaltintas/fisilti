@@ -426,6 +426,36 @@ pub struct AppSettings {
     /// Items / Q&A). The picker UI is Phase 4; the backend exposes them now.
     #[serde(default = "default_meeting_summary_templates")]
     pub meeting_summary_templates: Vec<MeetingSummaryTemplate>,
+    /// Meeting mode: automatically detect when a meeting app (Zoom, Teams, a
+    /// browser running Meet, …) starts using the microphone and show a prompt
+    /// offering to start a transcription session. macOS only. Opt-in.
+    #[serde(default)]
+    pub meeting_auto_detect: bool,
+    /// Meeting mode: while a session is running, offer to end it after
+    /// `meeting_silence_timeout_secs` of continuous silence (or when the
+    /// detected meeting app releases the microphone), and end it automatically
+    /// if the prompt goes unanswered for `meeting_auto_end_grace_secs`.
+    #[serde(default = "default_meeting_auto_end")]
+    pub meeting_auto_end: bool,
+    /// Seconds of continuous silence before the "end meeting?" prompt appears.
+    #[serde(default = "default_meeting_silence_timeout_secs")]
+    pub meeting_silence_timeout_secs: u32,
+    /// Seconds the "end meeting?" prompt waits for a response before the
+    /// session is ended automatically.
+    #[serde(default = "default_meeting_auto_end_grace_secs")]
+    pub meeting_auto_end_grace_secs: u32,
+}
+
+fn default_meeting_auto_end() -> bool {
+    true
+}
+
+fn default_meeting_silence_timeout_secs() -> u32 {
+    180
+}
+
+fn default_meeting_auto_end_grace_secs() -> u32 {
+    60
 }
 
 /// A preset summary prompt template for meeting mode. `id` is a stable key the
@@ -908,6 +938,10 @@ pub fn get_default_settings() -> AppSettings {
         meeting_final_model: default_meeting_final_model(),
         meeting_language: default_meeting_language(),
         meeting_summary_templates: default_meeting_summary_templates(),
+        meeting_auto_detect: false,
+        meeting_auto_end: default_meeting_auto_end(),
+        meeting_silence_timeout_secs: default_meeting_silence_timeout_secs(),
+        meeting_auto_end_grace_secs: default_meeting_auto_end_grace_secs(),
     }
 }
 

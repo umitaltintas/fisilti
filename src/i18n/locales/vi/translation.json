@@ -682,6 +682,29 @@
     "summaryLocal": "Summary runs locally",
     "summaryCloud": "Summary uses {{provider}} — leaves your device",
     "summaryNoProvider": "No summary provider configured",
-    "cloudLivePreviewOff": "Đang ghi… mô hình đám mây: bản chép lời được tạo khi bạn dừng cuộc họp."
+    "cloudLivePreviewOff": "Đang ghi… mô hình đám mây: bản chép lời được tạo khi bạn dừng cuộc họp.",
+    "autoDetectSection": "Tự động phát hiện cuộc họp",
+    "autoDetectToggle": "Phát hiện cuộc họp và đề xuất bắt đầu phiên âm",
+    "autoDetectDescription": "Khi ứng dụng họp (Zoom, Teams, Meet…) bắt đầu sử dụng micrô, một lời nhắc sẽ đề xuất bắt đầu phiên âm.",
+    "autoEndToggle": "Đề xuất kết thúc sau khoảng im lặng dài",
+    "autoEndDescription": "Nếu không phát hiện giọng nói trong khoảng thời gian đã chọn, bạn sẽ được hỏi có kết thúc cuộc họp không — và cuộc họp sẽ tự động kết thúc nếu bạn không trả lời.",
+    "silenceTimeoutLabel": "Thời gian im lặng trước khi hỏi",
+    "autoEndGraceLabel": "Tự động kết thúc sau",
+    "durationMinutes": "{{count}} phút",
+    "durationSeconds": "{{count}} giây"
+  },
+  "meetingPrompt": {
+    "startTitle": "Đã phát hiện cuộc họp",
+    "startBody": "{{app}} có vẻ đang trong một cuộc họp. Bắt đầu phiên âm?",
+    "startBodyGeneric": "Có vẻ một cuộc họp vừa bắt đầu. Bắt đầu phiên âm?",
+    "start": "Bắt đầu",
+    "dismiss": "Bỏ qua",
+    "endTitleSilence": "Đã phát hiện im lặng",
+    "endTitleAppClosed": "Cuộc họp đã kết thúc?",
+    "endBodySilence": "Đã một lúc không phát hiện giọng nói. Kết thúc cuộc họp?",
+    "endBodyAppClosed": "Ứng dụng họp không còn sử dụng micrô. Kết thúc cuộc họp?",
+    "end": "Kết thúc cuộc họp",
+    "continue": "Tiếp tục ghi",
+    "autoEndIn": "Tự động kết thúc sau {{seconds}} giây"
   }
 }

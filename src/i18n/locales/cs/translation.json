@@ -682,6 +682,29 @@
     "summaryLocal": "Summary runs locally",
     "summaryCloud": "Summary uses {{provider}} — leaves your device",
     "summaryNoProvider": "No summary provider configured",
-    "cloudLivePreviewOff": "Nahrávání… cloudový model: přepis se vytvoří po zastavení schůzky."
+    "cloudLivePreviewOff": "Nahrávání… cloudový model: přepis se vytvoří po zastavení schůzky.",
+    "autoDetectSection": "Automatická detekce schůzek",
+    "autoDetectToggle": "Detekovat schůzky a nabídnout spuštění přepisu",
+    "autoDetectDescription": "Když aplikace pro schůzky (Zoom, Teams, Meet…) začne používat mikrofon, zobrazí se nabídka spustit přepis.",
+    "autoEndToggle": "Nabídnout ukončení po delším tichu",
+    "autoEndDescription": "Pokud po zvolenou dobu není rozpoznána řeč, zobrazí se dotaz na ukončení schůzky — bez odpovědi bude ukončena automaticky.",
+    "silenceTimeoutLabel": "Ticho před dotazem",
+    "autoEndGraceLabel": "Automaticky ukončit po",
+    "durationMinutes": "{{count}} min",
+    "durationSeconds": "{{count}} s"
+  },
+  "meetingPrompt": {
+    "startTitle": "Zjištěna schůzka",
+    "startBody": "{{app}} je zřejmě na schůzce. Spustit přepis?",
+    "startBodyGeneric": "Zdá se, že začala schůzka. Spustit přepis?",
+    "start": "Spustit",
+    "dismiss": "Ignorovat",
+    "endTitleSilence": "Zjištěno ticho",
+    "endTitleAppClosed": "Schůzka skončila?",
+    "endBodySilence": "Už nějakou dobu není rozpoznána řeč. Ukončit schůzku?",
+    "endBodyAppClosed": "Aplikace pro schůzky již nepoužívá mikrofon. Ukončit schůzku?",
+    "end": "Ukončit schůzku",
+    "continue": "Pokračovat v nahrávání",
+    "autoEndIn": "Automatické ukončení za {{seconds}} s"
   }
 }

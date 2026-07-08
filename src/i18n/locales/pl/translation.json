@@ -682,6 +682,29 @@
     "summaryLocal": "Summary runs locally",
     "summaryCloud": "Summary uses {{provider}} — leaves your device",
     "summaryNoProvider": "No summary provider configured",
-    "cloudLivePreviewOff": "Nagrywanie… model w chmurze: transkrypcja powstaje po zatrzymaniu spotkania."
+    "cloudLivePreviewOff": "Nagrywanie… model w chmurze: transkrypcja powstaje po zatrzymaniu spotkania.",
+    "autoDetectSection": "Automatyczne wykrywanie spotkań",
+    "autoDetectToggle": "Wykrywaj spotkania i proponuj rozpoczęcie transkrypcji",
+    "autoDetectDescription": "Gdy aplikacja do spotkań (Zoom, Teams, Meet…) zacznie używać mikrofonu, pojawi się propozycja rozpoczęcia transkrypcji.",
+    "autoEndToggle": "Proponuj zakończenie po dłuższej ciszy",
+    "autoEndDescription": "Jeśli przez wybrany czas nie zostanie wykryta mowa, pojawi się pytanie o zakończenie spotkania — bez odpowiedzi zostanie ono zakończone automatycznie.",
+    "silenceTimeoutLabel": "Cisza przed pytaniem",
+    "autoEndGraceLabel": "Automatyczne zakończenie po",
+    "durationMinutes": "{{count}} min",
+    "durationSeconds": "{{count}} s"
+  },
+  "meetingPrompt": {
+    "startTitle": "Wykryto spotkanie",
+    "startBody": "{{app}} wydaje się być na spotkaniu. Rozpocząć transkrypcję?",
+    "startBodyGeneric": "Wygląda na to, że rozpoczęło się spotkanie. Rozpocząć transkrypcję?",
+    "start": "Rozpocznij",
+    "dismiss": "Ignoruj",
+    "endTitleSilence": "Wykryto ciszę",
+    "endTitleAppClosed": "Spotkanie zakończone?",
+    "endBodySilence": "Od pewnego czasu nie wykryto mowy. Zakończyć spotkanie?",
+    "endBodyAppClosed": "Aplikacja do spotkań nie używa już mikrofonu. Zakończyć spotkanie?",
+    "end": "Zakończ spotkanie",
+    "continue": "Nagrywaj dalej",
+    "autoEndIn": "Automatyczne zakończenie za {{seconds}} s"
   }
 }

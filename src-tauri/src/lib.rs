@@ -11,6 +11,8 @@ mod input;
 mod llm_client;
 mod managers;
 mod meeting;
+mod meeting_detector;
+mod meeting_prompt;
 mod overlay;
 pub mod portable;
 mod settings;
@@ -173,6 +175,11 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(transcription_manager.clone());
     app_handle.manage(history_manager.clone());
     app_handle.manage(meeting_manager.clone());
+
+    // Meeting auto-detection: background poll thread that watches for meeting
+    // apps using the microphone and drives the start/end prompt windows.
+    // Registers Arc<MeetingDetector> in Tauri state itself. No-op off macOS.
+    meeting_detector::spawn_meeting_detector(app_handle.clone());
 
     // Note: Shortcuts are NOT initialized here.
     // The frontend is responsible for calling the `initialize_shortcuts` command
@@ -367,6 +374,10 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_word_correction_threshold_setting,
             shortcut::change_extra_recording_buffer_setting,
             shortcut::change_meeting_auto_summarize_setting,
+            shortcut::change_meeting_auto_detect_setting,
+            shortcut::change_meeting_auto_end_setting,
+            shortcut::change_meeting_silence_timeout_setting,
+            shortcut::change_meeting_auto_end_grace_setting,
             shortcut::change_paste_method_setting,
             shortcut::get_available_typing_tools,
             shortcut::change_typing_tool_setting,
@@ -459,6 +470,10 @@ pub fn run(cli_args: CliArgs) {
             commands::meeting::export_meeting_markdown,
             commands::meeting::list_interrupted_meetings,
             commands::meeting::recover_meeting,
+            commands::meeting::accept_meeting_prompt,
+            commands::meeting::dismiss_meeting_prompt,
+            commands::meeting::respond_meeting_auto_end,
+            commands::meeting::get_meeting_detection_status,
             commands::transcription::set_model_unload_timeout,
             commands::transcription::get_model_load_status,
             commands::transcription::unload_model_manually,

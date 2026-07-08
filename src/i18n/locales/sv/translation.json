@@ -682,6 +682,29 @@
     "summaryLocal": "Summary runs locally",
     "summaryCloud": "Summary uses {{provider}} — leaves your device",
     "summaryNoProvider": "No summary provider configured",
-    "cloudLivePreviewOff": "Spelar in… molnmodell: transkriptionen skapas när du stoppar mötet."
+    "cloudLivePreviewOff": "Spelar in… molnmodell: transkriptionen skapas när du stoppar mötet.",
+    "autoDetectSection": "Automatisk mötesdetektering",
+    "autoDetectToggle": "Upptäck möten och erbjud att starta transkribering",
+    "autoDetectDescription": "När en mötesapp (Zoom, Teams, Meet…) börjar använda mikrofonen visas en fråga om att starta transkriberingen.",
+    "autoEndToggle": "Erbjud att avsluta efter längre tystnad",
+    "autoEndDescription": "Om inget tal upptäcks under den valda tiden får du frågan om mötet ska avslutas — utan svar avslutas det automatiskt.",
+    "silenceTimeoutLabel": "Tystnad innan frågan",
+    "autoEndGraceLabel": "Avsluta automatiskt efter",
+    "durationMinutes": "{{count}} min",
+    "durationSeconds": "{{count}} s"
+  },
+  "meetingPrompt": {
+    "startTitle": "Möte upptäckt",
+    "startBody": "{{app}} verkar vara i ett möte. Starta transkribering?",
+    "startBodyGeneric": "Ett möte verkar ha startat. Starta transkribering?",
+    "start": "Starta",
+    "dismiss": "Ignorera",
+    "endTitleSilence": "Tystnad upptäckt",
+    "endTitleAppClosed": "Möte avslutat?",
+    "endBodySilence": "Inget tal har upptäckts på ett tag. Avsluta mötet?",
+    "endBodyAppClosed": "Mötesappen använder inte längre mikrofonen. Avsluta mötet?",
+    "end": "Avsluta mötet",
+    "continue": "Fortsätt spela in",
+    "autoEndIn": "Avslutas automatiskt om {{seconds}} s"
   }
 }

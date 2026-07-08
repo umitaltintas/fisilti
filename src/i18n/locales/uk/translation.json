@@ -682,6 +682,29 @@
     "summaryLocal": "Summary runs locally",
     "summaryCloud": "Summary uses {{provider}} — leaves your device",
     "summaryNoProvider": "No summary provider configured",
-    "cloudLivePreviewOff": "Триває запис… хмарна модель: транскрипцію буде створено після зупинки зустрічі."
+    "cloudLivePreviewOff": "Триває запис… хмарна модель: транскрипцію буде створено після зупинки зустрічі.",
+    "autoDetectSection": "Автоматичне виявлення зустрічей",
+    "autoDetectToggle": "Виявляти зустрічі та пропонувати почати транскрипцію",
+    "autoDetectDescription": "Коли застосунок для зустрічей (Zoom, Teams, Meet…) починає використовувати мікрофон, з'являється пропозиція почати транскрипцію.",
+    "autoEndToggle": "Пропонувати завершити після тривалої тиші",
+    "autoEndDescription": "Якщо мовлення не виявляється протягом вибраного часу, з'явиться запитання про завершення зустрічі — без відповіді її буде завершено автоматично.",
+    "silenceTimeoutLabel": "Тиша перед запитанням",
+    "autoEndGraceLabel": "Автозавершення без відповіді через",
+    "durationMinutes": "{{count}} хв",
+    "durationSeconds": "{{count}} с"
+  },
+  "meetingPrompt": {
+    "startTitle": "Виявлено зустріч",
+    "startBody": "{{app}}, схоже, бере участь у зустрічі. Почати транскрипцію?",
+    "startBodyGeneric": "Схоже, розпочалася зустріч. Почати транскрипцію?",
+    "start": "Почати",
+    "dismiss": "Ігнорувати",
+    "endTitleSilence": "Виявлено тишу",
+    "endTitleAppClosed": "Зустріч завершено?",
+    "endBodySilence": "Мовлення не виявляється вже деякий час. Завершити зустріч?",
+    "endBodyAppClosed": "Застосунок для зустрічей більше не використовує мікрофон. Завершити зустріч?",
+    "end": "Завершити зустріч",
+    "continue": "Продовжити запис",
+    "autoEndIn": "Автоматичне завершення через {{seconds}} с"
   }
 }

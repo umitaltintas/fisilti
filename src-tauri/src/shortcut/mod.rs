@@ -698,6 +698,44 @@ pub fn change_meeting_auto_summarize_setting(app: AppHandle, enabled: bool) -> R
 
 #[tauri::command]
 #[specta::specta]
+pub fn change_meeting_auto_detect_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.meeting_auto_detect = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_meeting_auto_end_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.meeting_auto_end = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_meeting_silence_timeout_setting(app: AppHandle, secs: u32) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    // Clamp to a sane range: below ~30s normal conversation pauses would
+    // trigger the prompt constantly.
+    settings.meeting_silence_timeout_secs = secs.clamp(30, 3600);
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_meeting_auto_end_grace_setting(app: AppHandle, secs: u32) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.meeting_auto_end_grace_secs = secs.clamp(10, 600);
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
 pub fn change_paste_method_setting(app: AppHandle, method: String) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
     let parsed = match method.as_str() {

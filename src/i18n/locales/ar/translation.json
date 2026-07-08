@@ -682,6 +682,29 @@
     "summaryLocal": "Summary runs locally",
     "summaryCloud": "Summary uses {{provider}} — leaves your device",
     "summaryNoProvider": "No summary provider configured",
-    "cloudLivePreviewOff": "جارٍ التسجيل… نموذج سحابي: يتم إنشاء النص عند إيقاف الاجتماع."
+    "cloudLivePreviewOff": "جارٍ التسجيل… نموذج سحابي: يتم إنشاء النص عند إيقاف الاجتماع.",
+    "autoDetectSection": "الكشف التلقائي عن الاجتماعات",
+    "autoDetectToggle": "اكتشاف الاجتماعات وعرض بدء النسخ",
+    "autoDetectDescription": "عندما يبدأ تطبيق اجتماعات (Zoom أو Teams أو Meet…) باستخدام الميكروفون، يظهر عرض لبدء النسخ.",
+    "autoEndToggle": "عرض الإنهاء بعد صمت طويل",
+    "autoEndDescription": "إذا لم يُكتشف أي كلام خلال المدة المحددة، سيُسأل عن إنهاء الاجتماع — وسيُنهى تلقائيًا إذا لم تُجب.",
+    "silenceTimeoutLabel": "مدة الصمت قبل السؤال",
+    "autoEndGraceLabel": "الإنهاء التلقائي بعد",
+    "durationMinutes": "{{count}} د",
+    "durationSeconds": "{{count}} ث"
+  },
+  "meetingPrompt": {
+    "startTitle": "تم اكتشاف اجتماع",
+    "startBody": "يبدو أن {{app}} في اجتماع. هل تريد بدء النسخ؟",
+    "startBodyGeneric": "يبدو أن اجتماعًا قد بدأ. هل تريد بدء النسخ؟",
+    "start": "ابدأ",
+    "dismiss": "تجاهل",
+    "endTitleSilence": "تم اكتشاف صمت",
+    "endTitleAppClosed": "هل انتهى الاجتماع؟",
+    "endBodySilence": "لم يُكتشف أي كلام منذ فترة. هل تريد إنهاء الاجتماع؟",
+    "endBodyAppClosed": "لم يعد تطبيق الاجتماعات يستخدم الميكروفون. هل تريد إنهاء الاجتماع؟",
+    "end": "إنهاء الاجتماع",
+    "continue": "متابعة التسجيل",
+    "autoEndIn": "سيُنهى تلقائيًا خلال {{seconds}} ث"
   }
 }

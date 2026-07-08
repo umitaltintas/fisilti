@@ -27,11 +27,16 @@ import { ShortcutInput } from "../ShortcutInput";
 import { MeetingSignal } from "./MeetingSignal";
 import { Markdown } from "./Markdown";
 import {
+  changeMeetingAutoDetect,
+  changeMeetingAutoEnd,
+  changeMeetingAutoEndGrace,
   changeMeetingAutoSummarize,
+  changeMeetingSilenceTimeout,
   deleteMeeting,
   exportMeetingMarkdown,
   getMeeting,
   getMeetingAudioPath,
+  getMeetingAutoDetectSettings,
   getMeetingAutoSummarize,
   getMeetingStatus,
   getMeetingSummaryTemplates,
@@ -161,6 +166,38 @@ const SummaryLocationNote: React.FC<{
   );
 };
 
+// A labeled on/off switch with a supporting description, matching the inline
+// auto-summarize toggle's switch markup. Used for the auto-detect / auto-end
+// settings where each toggle needs an explanatory line beneath it.
+const MeetingToggle: React.FC<{
+  checked: boolean;
+  onToggle: () => void;
+  label: string;
+  description: string;
+}> = ({ checked, onToggle, label, description }) => (
+  <div className="flex items-start gap-2.5">
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={onToggle}
+      className={`relative mt-0.5 inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+        checked ? "bg-logo-primary" : "bg-mid-gray/30"
+      }`}
+    >
+      <span
+        className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+          checked ? "translate-x-4" : "translate-x-0.5"
+        }`}
+      />
+    </button>
+    <div className="min-w-0 cursor-pointer select-none" onClick={onToggle}>
+      <p className="text-sm text-text/80">{label}</p>
+      <p className="mt-0.5 text-xs text-text/50">{description}</p>
+    </div>
+  </div>
+);
+
 function formatElapsed(seconds: number): string {
   const total = Math.max(0, Math.floor(seconds));
   const hours = Math.floor(total / 3600);
@@ -243,6 +280,13 @@ export const MeetingSettings: React.FC = () => {
   const [summaryError, setSummaryError] = useState<string | null>(null);
   const [autoSummarize, setAutoSummarize] = useState(false);
 
+  // Automatic meeting detection / auto-end settings (persisted app settings).
+  const [autoDetect, setAutoDetect] = useState(false);
+  const [autoEnd, setAutoEnd] = useState(true);
+  const [silenceTimeoutSecs, setSilenceTimeoutSecs] = useState(180);
+  const [autoEndGraceSecs, setAutoEndGraceSecs] = useState(60);
+  const [detectError, setDetectError] = useState<string | null>(null);
+
   // Summary template picker + custom prompt (shared by live + detail flows).
   const [templates, setTemplates] = useState<MeetingSummaryTemplate[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
@@ -313,6 +357,15 @@ export const MeetingSettings: React.FC = () => {
     // Read the persisted auto-summarize setting (raw get_app_settings).
     void getMeetingAutoSummarize().then((v) => {
       if (!cancelled) setAutoSummarize(v);
+    });
+
+    // Read the persisted automatic-detection settings (all four at once).
+    void getMeetingAutoDetectSettings().then((s) => {
+      if (cancelled) return;
+      setAutoDetect(s.autoDetect);
+      setAutoEnd(s.autoEnd);
+      setSilenceTimeoutSecs(s.silenceTimeoutSecs);
+      setAutoEndGraceSecs(s.autoEndGraceSecs);
     });
 
     // Load summary templates for the picker + the provider trust info.
@@ -495,6 +548,54 @@ export const MeetingSettings: React.FC = () => {
     }
   };
 
+  const handleToggleAutoDetect = async () => {
+    const next = !autoDetect;
+    setAutoDetect(next);
+    setDetectError(null);
+    try {
+      await changeMeetingAutoDetect(next);
+    } catch (e) {
+      setAutoDetect(!next);
+      setDetectError(String(e));
+    }
+  };
+
+  const handleToggleAutoEnd = async () => {
+    const next = !autoEnd;
+    setAutoEnd(next);
+    setDetectError(null);
+    try {
+      await changeMeetingAutoEnd(next);
+    } catch (e) {
+      setAutoEnd(!next);
+      setDetectError(String(e));
+    }
+  };
+
+  const handleSilenceTimeoutChange = async (secs: number) => {
+    const prev = silenceTimeoutSecs;
+    setSilenceTimeoutSecs(secs);
+    setDetectError(null);
+    try {
+      await changeMeetingSilenceTimeout(secs);
+    } catch (e) {
+      setSilenceTimeoutSecs(prev);
+      setDetectError(String(e));
+    }
+  };
+
+  const handleAutoEndGraceChange = async (secs: number) => {
+    const prev = autoEndGraceSecs;
+    setAutoEndGraceSecs(secs);
+    setDetectError(null);
+    try {
+      await changeMeetingAutoEndGrace(secs);
+    } catch (e) {
+      setAutoEndGraceSecs(prev);
+      setDetectError(String(e));
+    }
+  };
+
   // Resolve the template argument to pass: a free-text custom prompt overrides
   // the dropdown selection when present.
   const resolveTemplateArg = useCallback((): string | undefined => {
@@ -601,6 +702,17 @@ export const MeetingSettings: React.FC = () => {
   const templateOptions: SelectOption[] = templates.map((tpl) => ({
     value: tpl.id,
     label: tpl.name,
+  }));
+
+  const silenceTimeoutOptions: SelectOption[] = [60, 120, 180, 300, 600].map(
+    (secs) => ({
+      value: String(secs),
+      label: t("meeting.durationMinutes", { count: secs / 60 }),
+    }),
+  );
+  const autoEndGraceOptions: SelectOption[] = [30, 60, 120].map((secs) => ({
+    value: String(secs),
+    label: t("meeting.durationSeconds", { count: secs }),
   }));
 
   return (
@@ -737,6 +849,70 @@ export const MeetingSettings: React.FC = () => {
           </label>
 
           {isRunning && <MeetingSignal active={isRunning} />}
+        </div>
+      </div>
+
+      {/* Automatic detection */}
+      <div className="space-y-2">
+        <div className="px-4">
+          <h2 className="text-xs font-medium text-mid-gray uppercase tracking-wide">
+            {t("meeting.autoDetectSection")}
+          </h2>
+        </div>
+        <div className="bg-background border border-mid-gray/20 rounded-lg p-4 space-y-4">
+          <MeetingToggle
+            checked={autoDetect}
+            onToggle={handleToggleAutoDetect}
+            label={t("meeting.autoDetectToggle")}
+            description={t("meeting.autoDetectDescription")}
+          />
+          <MeetingToggle
+            checked={autoEnd}
+            onToggle={handleToggleAutoEnd}
+            label={t("meeting.autoEndToggle")}
+            description={t("meeting.autoEndDescription")}
+          />
+
+          <div
+            className={`grid grid-cols-1 gap-3 sm:grid-cols-2 ${
+              autoEnd ? "" : "opacity-50"
+            }`}
+          >
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium uppercase tracking-wide text-mid-gray">
+                {t("meeting.silenceTimeoutLabel")}
+              </label>
+              <Select
+                value={String(silenceTimeoutSecs)}
+                options={silenceTimeoutOptions}
+                onChange={(v) => {
+                  if (v != null) void handleSilenceTimeoutChange(Number(v));
+                }}
+                isClearable={false}
+                disabled={!autoEnd}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium uppercase tracking-wide text-mid-gray">
+                {t("meeting.autoEndGraceLabel")}
+              </label>
+              <Select
+                value={String(autoEndGraceSecs)}
+                options={autoEndGraceOptions}
+                onChange={(v) => {
+                  if (v != null) void handleAutoEndGraceChange(Number(v));
+                }}
+                isClearable={false}
+                disabled={!autoEnd}
+              />
+            </div>
+          </div>
+
+          {detectError && (
+            <p className="text-sm text-red-400 whitespace-pre-wrap break-words">
+              {detectError}
+            </p>
+          )}
         </div>
       </div>
 

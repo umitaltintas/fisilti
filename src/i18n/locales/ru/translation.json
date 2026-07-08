@@ -682,6 +682,29 @@
     "summaryLocal": "Summary runs locally",
     "summaryCloud": "Summary uses {{provider}} — leaves your device",
     "summaryNoProvider": "No summary provider configured",
-    "cloudLivePreviewOff": "Идёт запись… облачная модель: расшифровка создаётся после остановки встречи."
+    "cloudLivePreviewOff": "Идёт запись… облачная модель: расшифровка создаётся после остановки встречи.",
+    "autoDetectSection": "Автоматическое обнаружение встреч",
+    "autoDetectToggle": "Обнаруживать встречи и предлагать начать транскрипцию",
+    "autoDetectDescription": "Когда приложение для встреч (Zoom, Teams, Meet…) начинает использовать микрофон, появляется предложение начать транскрипцию.",
+    "autoEndToggle": "Предлагать завершить после длительной тишины",
+    "autoEndDescription": "Если речь не обнаруживается в течение выбранного времени, появится вопрос о завершении встречи — без ответа она завершится автоматически.",
+    "silenceTimeoutLabel": "Тишина перед вопросом",
+    "autoEndGraceLabel": "Автозавершение без ответа через",
+    "durationMinutes": "{{count}} мин",
+    "durationSeconds": "{{count}} с"
+  },
+  "meetingPrompt": {
+    "startTitle": "Обнаружена встреча",
+    "startBody": "{{app}}, похоже, участвует во встрече. Начать транскрипцию?",
+    "startBodyGeneric": "Похоже, началась встреча. Начать транскрипцию?",
+    "start": "Начать",
+    "dismiss": "Игнорировать",
+    "endTitleSilence": "Обнаружена тишина",
+    "endTitleAppClosed": "Встреча завершена?",
+    "endBodySilence": "Речь не обнаруживается уже некоторое время. Завершить встречу?",
+    "endBodyAppClosed": "Приложение для встреч больше не использует микрофон. Завершить встречу?",
+    "end": "Завершить встречу",
+    "continue": "Продолжить запись",
+    "autoEndIn": "Автоматическое завершение через {{seconds}} с"
   }
 }

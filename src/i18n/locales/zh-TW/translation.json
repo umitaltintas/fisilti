@@ -682,6 +682,29 @@
     "summaryLocal": "Summary runs locally",
     "summaryCloud": "Summary uses {{provider}} — leaves your device",
     "summaryNoProvider": "No summary provider configured",
-    "cloudLivePreviewOff": "錄製中…雲端模型：轉錄會在您停止會議時產生。"
+    "cloudLivePreviewOff": "錄製中…雲端模型：轉錄會在您停止會議時產生。",
+    "autoDetectSection": "自動偵測會議",
+    "autoDetectToggle": "偵測會議並提示開始轉錄",
+    "autoDetectDescription": "當會議應用程式(Zoom、Teams、Meet 等)開始使用麥克風時,會提示是否開始轉錄。",
+    "autoEndToggle": "長時間靜音後提示結束",
+    "autoEndDescription": "如果在所選時間內未偵測到語音,會詢問是否結束會議;若無回應則自動結束。",
+    "silenceTimeoutLabel": "詢問前的靜音時間",
+    "autoEndGraceLabel": "無回應時自動結束時間",
+    "durationMinutes": "{{count}} 分鐘",
+    "durationSeconds": "{{count}} 秒"
+  },
+  "meetingPrompt": {
+    "startTitle": "偵測到會議",
+    "startBody": "{{app}} 似乎正在會議中。開始轉錄嗎?",
+    "startBodyGeneric": "似乎有會議開始了。開始轉錄嗎?",
+    "start": "開始",
+    "dismiss": "忽略",
+    "endTitleSilence": "偵測到靜音",
+    "endTitleAppClosed": "會議結束了嗎?",
+    "endBodySilence": "已有一段時間未偵測到語音。結束會議嗎?",
+    "endBodyAppClosed": "會議應用程式已不再使用麥克風。結束會議嗎?",
+    "end": "結束會議",
+    "continue": "繼續錄製",
+    "autoEndIn": "{{seconds}} 秒後自動結束"
   }
 }

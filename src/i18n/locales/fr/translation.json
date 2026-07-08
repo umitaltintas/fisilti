@@ -682,6 +682,29 @@
     "summaryLocal": "Summary runs locally",
     "summaryCloud": "Summary uses {{provider}} — leaves your device",
     "summaryNoProvider": "No summary provider configured",
-    "cloudLivePreviewOff": "Enregistrement… modèle cloud : la transcription est générée à l'arrêt de la réunion."
+    "cloudLivePreviewOff": "Enregistrement… modèle cloud : la transcription est générée à l'arrêt de la réunion.",
+    "autoDetectSection": "Détection automatique des réunions",
+    "autoDetectToggle": "Détecter les réunions et proposer de démarrer la transcription",
+    "autoDetectDescription": "Quand une application de réunion (Zoom, Teams, Meet…) commence à utiliser le micro, une invite propose de démarrer la transcription.",
+    "autoEndToggle": "Proposer de terminer après un long silence",
+    "autoEndDescription": "Si aucune parole n'est détectée pendant la durée choisie, une invite demande s'il faut terminer la réunion — et la termine automatiquement sans réponse.",
+    "silenceTimeoutLabel": "Silence avant de demander",
+    "autoEndGraceLabel": "Terminer automatiquement après",
+    "durationMinutes": "{{count}} min",
+    "durationSeconds": "{{count}} s"
+  },
+  "meetingPrompt": {
+    "startTitle": "Réunion détectée",
+    "startBody": "{{app}} semble être en réunion. Démarrer la transcription ?",
+    "startBodyGeneric": "Une réunion semble avoir commencé. Démarrer la transcription ?",
+    "start": "Démarrer",
+    "dismiss": "Ignorer",
+    "endTitleSilence": "Silence détecté",
+    "endTitleAppClosed": "Réunion terminée ?",
+    "endBodySilence": "Aucune parole détectée depuis un moment. Terminer la réunion ?",
+    "endBodyAppClosed": "L'application de réunion n'utilise plus le micro. Terminer la réunion ?",
+    "end": "Terminer la réunion",
+    "continue": "Continuer l'enregistrement",
+    "autoEndIn": "Fin automatique dans {{seconds}} s"
   }
 }

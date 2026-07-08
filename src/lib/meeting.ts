@@ -301,6 +301,80 @@ export function getMeetingAutoSummarize(): Promise<boolean> {
     .catch(() => false);
 }
 
+/** The four automatic-detection settings, read together for the settings UI.
+ * Mirrors the corresponding `meeting_*` fields in persisted app settings. */
+export interface MeetingAutoDetectSettings {
+  /** Watch for meeting apps grabbing the mic and offer to start transcribing. */
+  autoDetect: boolean;
+  /** Offer to end (and auto-end) the meeting after prolonged silence. */
+  autoEnd: boolean;
+  /** Seconds of silence before the end-of-meeting prompt appears. */
+  silenceTimeoutSecs: number;
+  /** Seconds the end prompt waits, unanswered, before auto-ending. */
+  autoEndGraceSecs: number;
+}
+
+/** Defaults for the automatic-detection settings, matching the Rust
+ * `AppSettings` defaults. Used as the fallback for `getMeetingAutoDetectSettings`. */
+const MEETING_AUTO_DETECT_DEFAULTS: MeetingAutoDetectSettings = {
+  autoDetect: false,
+  autoEnd: true,
+  silenceTimeoutSecs: 180,
+  autoEndGraceSecs: 60,
+};
+
+/** Persist the meeting auto-detect setting (`meeting_auto_detect`). When
+ * enabled, a meeting app grabbing the microphone triggers a prompt offering to
+ * start transcription. */
+export function changeMeetingAutoDetect(enabled: boolean): Promise<void> {
+  return invoke<void>("change_meeting_auto_detect_setting", { enabled });
+}
+
+/** Persist the meeting auto-end setting (`meeting_auto_end`). When enabled, a
+ * running meeting that goes silent for `silenceTimeoutSecs` prompts to end and
+ * auto-ends after `autoEndGraceSecs` if unanswered. */
+export function changeMeetingAutoEnd(enabled: boolean): Promise<void> {
+  return invoke<void>("change_meeting_auto_end_setting", { enabled });
+}
+
+/** Persist the silence-before-asking duration (`meeting_silence_timeout_secs`).
+ * The backend clamps to 30–3600 seconds. */
+export function changeMeetingSilenceTimeout(secs: number): Promise<void> {
+  return invoke<void>("change_meeting_silence_timeout_setting", { secs });
+}
+
+/** Persist the auto-end grace duration (`meeting_auto_end_grace_secs`) — how
+ * long the end prompt waits before auto-ending. The backend clamps to 10–600
+ * seconds. */
+export function changeMeetingAutoEndGrace(secs: number): Promise<void> {
+  return invoke<void>("change_meeting_auto_end_grace_setting", { secs });
+}
+
+/** Read all four automatic-detection settings from persisted app settings in a
+ * single call. Any field that cannot be read falls back to its default
+ * (`autoDetect: false`, `autoEnd: true`, `silenceTimeoutSecs: 180`,
+ * `autoEndGraceSecs: 60`); a failed read returns all defaults. */
+export function getMeetingAutoDetectSettings(): Promise<MeetingAutoDetectSettings> {
+  return invoke<{
+    meeting_auto_detect?: boolean;
+    meeting_auto_end?: boolean;
+    meeting_silence_timeout_secs?: number;
+    meeting_auto_end_grace_secs?: number;
+  }>("get_app_settings")
+    .then((s) => ({
+      autoDetect:
+        s?.meeting_auto_detect ?? MEETING_AUTO_DETECT_DEFAULTS.autoDetect,
+      autoEnd: s?.meeting_auto_end ?? MEETING_AUTO_DETECT_DEFAULTS.autoEnd,
+      silenceTimeoutSecs:
+        s?.meeting_silence_timeout_secs ??
+        MEETING_AUTO_DETECT_DEFAULTS.silenceTimeoutSecs,
+      autoEndGraceSecs:
+        s?.meeting_auto_end_grace_secs ??
+        MEETING_AUTO_DETECT_DEFAULTS.autoEndGraceSecs,
+    }))
+    .catch(() => ({ ...MEETING_AUTO_DETECT_DEFAULTS }));
+}
+
 /** Subscribe to live transcript updates. Returns a promise resolving to the
  * unlisten function (call it to clean up). */
 export function listenMeetingTranscript(

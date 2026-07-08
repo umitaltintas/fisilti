@@ -18,6 +18,7 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -150,6 +151,12 @@ pub struct MeetingManager {
     /// Bounded-memory: written incrementally, read back once on stop. Set by the
     /// capture loop, consumed by `finalize_session`.
     buffer_paths: Arc<Mutex<Option<SessionBuffers>>>,
+    /// Monotonic instant of the most recent speech frame from EITHER source's
+    /// VAD, or the session start when no speech has been seen yet. The
+    /// prolonged-silence auto-end flow compares its `elapsed()` against
+    /// `meeting_silence_timeout_secs`. Reset to "now" at session start and via
+    /// `reset_silence_timer` when the user keeps a meeting going.
+    silence_anchor: Arc<Mutex<Instant>>,
 }
 
 /// Temp-file paths holding the full session audio for the on-stop finalize
@@ -188,6 +195,7 @@ impl MeetingManager {
             buffer_paths: Arc::new(Mutex::new(None)),
             current_meeting_id: Arc::new(Mutex::new(None)),
             persisted_segment_count: Arc::new(Mutex::new(0)),
+            silence_anchor: Arc::new(Mutex::new(Instant::now())),
         }
     }
 
@@ -199,6 +207,20 @@ impl MeetingManager {
 
     pub fn status(&self) -> MeetingState {
         *self.state.lock().unwrap()
+    }
+
+    /// Reset the prolonged-silence timer used by the auto-end flow, as if
+    /// speech had just been detected. Called when the user answers the
+    /// "end meeting?" prompt with "keep going".
+    pub fn reset_silence_timer(&self) {
+        self.note_speech();
+    }
+
+    /// Record that speech was just observed (from either capture source's VAD),
+    /// so the prolonged-silence auto-end flow starts counting fresh. Cheap: a
+    /// single mutex store of `Instant::now()`, called per speech frame.
+    fn note_speech(&self) {
+        *self.silence_anchor.lock().unwrap() = Instant::now();
     }
 
     /// Return the full accumulated transcript text. Segments are sorted by their
@@ -253,6 +275,9 @@ impl MeetingManager {
             *self.buffer_paths.lock().unwrap() = None;
             *self.current_meeting_id.lock().unwrap() = None;
             *self.persisted_segment_count.lock().unwrap() = 0;
+            // Start the prolonged-silence timer fresh so it never inherits a
+            // stale anchor from a previous session.
+            self.note_speech();
             self.stop_signal.store(false, Ordering::Relaxed);
             self.active.store(true, Ordering::Relaxed);
 
@@ -1408,9 +1433,43 @@ impl MeetingManager {
         let mut mic_highpass = HighPass::new(MIC_HIGHPASS_HZ, WHISPER_SAMPLE_RATE as f32);
         let mut mic_norm = MicLoudnessNorm::new(WHISPER_SAMPLE_RATE);
 
+        // --- Prolonged-silence auto-end tracking ---
+        // Run the silence check about once a second (not per 30 ms frame), and
+        // refresh the cached auto-end settings only every few seconds:
+        // `get_settings` deserializes the tauri store, too heavy for the hot
+        // loop. `note_speech()` (above, in each source's VAD path) keeps the
+        // `silence_anchor` fresh; here we only read how long it's been.
+        const SILENCE_CHECK_INTERVAL: Duration = Duration::from_secs(1);
+        const SILENCE_SETTINGS_REFRESH: Duration = Duration::from_secs(5);
+        let mut silence_settings = crate::settings::get_settings(&self.app_handle);
+        let mut last_silence_check = Instant::now();
+        let mut last_settings_refresh = Instant::now();
+
         loop {
             if self.stop_signal.load(Ordering::Relaxed) {
                 break;
+            }
+
+            // Prolonged-silence auto-end: about once a second, (occasionally)
+            // refresh the cached settings and, when enabled, ask to end the
+            // meeting if no speech has been seen for the configured timeout.
+            // `request_auto_end` owns the grace timer + stop and is idempotent
+            // while a prompt is pending, so calling it every second is fine.
+            if last_silence_check.elapsed() >= SILENCE_CHECK_INTERVAL {
+                last_silence_check = Instant::now();
+                if last_settings_refresh.elapsed() >= SILENCE_SETTINGS_REFRESH {
+                    silence_settings = crate::settings::get_settings(&self.app_handle);
+                    last_settings_refresh = Instant::now();
+                }
+                if silence_settings.meeting_auto_end {
+                    let elapsed = self.silence_anchor.lock().unwrap().elapsed();
+                    if silence_exceeded(elapsed, silence_settings.meeting_silence_timeout_secs) {
+                        crate::meeting_detector::request_auto_end(
+                            &self.app_handle,
+                            crate::meeting_prompt::EndReason::Silence,
+                        );
+                    }
+                }
             }
 
             mic_frames.clear();
@@ -1680,6 +1739,8 @@ impl SourceProcessor {
 
             match self.vad.push_frame(&frame) {
                 Ok(VadFrame::Speech(speech)) => {
+                    // Either source speaking resets the prolonged-silence timer.
+                    manager.note_speech();
                     if self.segment.is_empty() {
                         let prelen = speech.len() as u64;
                         self.segment_start = self.total_samples.saturating_sub(prelen);
@@ -2413,6 +2474,14 @@ fn now_epoch_ms() -> i64 {
         .unwrap_or(0)
 }
 
+/// True when the time since the last observed speech frame has exceeded the
+/// configured prolonged-silence timeout. Extracted as a pure function so the
+/// threshold logic is unit-testable without a running capture loop.
+#[cfg(target_os = "macos")]
+fn silence_exceeded(anchor_elapsed: std::time::Duration, timeout_secs: u32) -> bool {
+    anchor_elapsed > std::time::Duration::from_secs(timeout_secs as u64)
+}
+
 /// Default human-readable title for a meeting, derived from its absolute start
 /// time. Uses `chrono` (already a dependency) to format the local datetime.
 fn default_meeting_title(started_at_ms: i64) -> String {
@@ -2615,6 +2684,19 @@ mod tests {
             2,
             "matches outside the echo time window are kept"
         );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn silence_exceeded_fires_only_past_the_timeout() {
+        use super::silence_exceeded;
+        use std::time::Duration;
+        // Below and exactly at the threshold: not yet exceeded.
+        assert!(!silence_exceeded(Duration::from_secs(179), 180));
+        assert!(!silence_exceeded(Duration::from_secs(180), 180));
+        // Just past the threshold: exceeded.
+        assert!(silence_exceeded(Duration::from_millis(180_001), 180));
+        assert!(silence_exceeded(Duration::from_secs(300), 180));
     }
 
     #[test]

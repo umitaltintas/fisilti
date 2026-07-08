@@ -682,6 +682,29 @@
     "summaryLocal": "Summary runs locally",
     "summaryCloud": "Summary uses {{provider}} — leaves your device",
     "summaryNoProvider": "No summary provider configured",
-    "cloudLivePreviewOff": "Registrazione… modello cloud: la trascrizione viene generata quando interrompi la riunione."
+    "cloudLivePreviewOff": "Registrazione… modello cloud: la trascrizione viene generata quando interrompi la riunione.",
+    "autoDetectSection": "Rilevamento automatico delle riunioni",
+    "autoDetectToggle": "Rileva le riunioni e proponi di avviare la trascrizione",
+    "autoDetectDescription": "Quando un'app per riunioni (Zoom, Teams, Meet…) inizia a usare il microfono, viene proposto di avviare la trascrizione.",
+    "autoEndToggle": "Proponi di terminare dopo un silenzio prolungato",
+    "autoEndDescription": "Se non viene rilevato parlato per la durata selezionata, viene chiesto se terminare la riunione; senza risposta viene terminata automaticamente.",
+    "silenceTimeoutLabel": "Silenzio prima della richiesta",
+    "autoEndGraceLabel": "Termina automaticamente dopo",
+    "durationMinutes": "{{count}} min",
+    "durationSeconds": "{{count}} s"
+  },
+  "meetingPrompt": {
+    "startTitle": "Riunione rilevata",
+    "startBody": "{{app}} sembra essere in riunione. Avviare la trascrizione?",
+    "startBodyGeneric": "Sembra che sia iniziata una riunione. Avviare la trascrizione?",
+    "start": "Avvia",
+    "dismiss": "Ignora",
+    "endTitleSilence": "Silenzio rilevato",
+    "endTitleAppClosed": "Riunione terminata?",
+    "endBodySilence": "Da un po' non viene rilevato parlato. Terminare la riunione?",
+    "endBodyAppClosed": "L'app per riunioni non usa più il microfono. Terminare la riunione?",
+    "end": "Termina riunione",
+    "continue": "Continua a registrare",
+    "autoEndIn": "Termine automatico tra {{seconds}} s"
   }
 }

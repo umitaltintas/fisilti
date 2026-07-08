@@ -682,6 +682,29 @@
     "summaryLocal": "Summary runs locally",
     "summaryCloud": "Summary uses {{provider}} — leaves your device",
     "summaryNoProvider": "No summary provider configured",
-    "cloudLivePreviewOff": "录制中…云端模型：转录将在您停止会议时生成。"
+    "cloudLivePreviewOff": "录制中…云端模型：转录将在您停止会议时生成。",
+    "autoDetectSection": "自动检测会议",
+    "autoDetectToggle": "检测会议并提示开始转录",
+    "autoDetectDescription": "当会议应用(Zoom、Teams、Meet 等)开始使用麦克风时,会提示是否开始转录。",
+    "autoEndToggle": "长时间静音后提示结束",
+    "autoEndDescription": "如果在所选时长内未检测到语音,会询问是否结束会议;若无响应则自动结束。",
+    "silenceTimeoutLabel": "询问前的静音时长",
+    "autoEndGraceLabel": "无响应时自动结束时间",
+    "durationMinutes": "{{count}} 分钟",
+    "durationSeconds": "{{count}} 秒"
+  },
+  "meetingPrompt": {
+    "startTitle": "检测到会议",
+    "startBody": "{{app}} 似乎正在会议中。开始转录吗?",
+    "startBodyGeneric": "似乎有会议开始了。开始转录吗?",
+    "start": "开始",
+    "dismiss": "忽略",
+    "endTitleSilence": "检测到静音",
+    "endTitleAppClosed": "会议结束了吗?",
+    "endBodySilence": "已有一段时间未检测到语音。结束会议吗?",
+    "endBodyAppClosed": "会议应用已不再使用麦克风。结束会议吗?",
+    "end": "结束会议",
+    "continue": "继续录制",
+    "autoEndIn": "{{seconds}} 秒后自动结束"
   }
 }

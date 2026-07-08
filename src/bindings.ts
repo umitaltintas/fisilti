@@ -125,6 +125,46 @@ async changeExtraRecordingBufferSetting(ms: number) : Promise<Result<null, strin
     else return { status: "error", error: e  as any };
 }
 },
+async changeMeetingAutoSummarizeSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_meeting_auto_summarize_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeMeetingAutoDetectSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_meeting_auto_detect_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeMeetingAutoEndSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_meeting_auto_end_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeMeetingSilenceTimeoutSetting(secs: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_meeting_silence_timeout_setting", { secs }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeMeetingAutoEndGraceSetting(secs: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_meeting_auto_end_grace_setting", { secs }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changePasteMethodSetting(method: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_paste_method_setting", { method }) };
@@ -728,9 +768,289 @@ async captureSystemAudioTest(seconds: number) : Promise<Result<string, string>> 
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Meeting mode (Step 2) test: capture `seconds` of BOTH the microphone and
+ * system audio, resample each to 16 kHz mono, mix them with clipping
+ * prevention, and write the mixed result to a 16 kHz mono f32 WAV in the temp
+ * dir. Returns the output path.
+ * 
+ * This is the transcription-ready target rate (`WHISPER_SAMPLE_RATE = 16000`),
+ * so the output is directly usable by `TranscriptionManager::transcribe`.
+ * 
+ * Design: resample-then-mix. The mic is captured on a dedicated cpal input
+ * stream (independent of the dictation `AudioRecordingManager` singleton),
+ * resampled to 16 kHz via `FrameResampler`, and forwarded over a channel. The
+ * system audio comes from Step 1's `SystemAudioStream` (~48 kHz), resampled to
+ * 16 kHz. Both feed a `MeetingMixer` that mixes in 100 ms windows.
+ * 
+ * On macOS this triggers BOTH the Audio-Capture (system) and Microphone
+ * permission dialogs. Must run inside the bundled app. Isolated from the
+ * existing dictation flow.
+ */
 async captureMixedAudioTest(seconds: number) : Promise<Result<string, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("capture_mixed_audio_test", { seconds }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Start a continuous meeting session: ensure the transcription model is
+ * loaded, then begin capturing mixed mic + system audio, segmenting it with
+ * VAD, and transcribing each segment.
+ * 
+ * macOS-only (CoreAudio tap). Returns an "unsupported" error on other
+ * platforms.
+ */
+async startMeeting() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("start_meeting") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Stop the meeting session and return the final accumulated transcript text.
+ */
+async stopMeeting() : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("stop_meeting") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Return the transcript accumulated so far (for polling during a session).
+ */
+async getMeetingTranscript() : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_meeting_transcript") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Return the meeting session status: "idle" or "running".
+ */
+async getMeetingStatus() : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_meeting_status") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Summarize the accumulated meeting transcript into meeting notes using the
+ * SAME LLM provider/model/api-key the user already configured for dictation
+ * post-processing (reads `settings::get_settings`). Does NOT modify or depend
+ * on dictation's post-processing behavior; it only reuses `llm_client`
+ * read-only.
+ * 
+ * Returns the LLM-generated meeting notes, or a clear, actionable error if
+ * there is no transcript or no LLM provider/model configured.
+ */
+async summarizeMeeting() : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("summarize_meeting") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Like `summarize_meeting`, but with an optional template selector + custom
+ * prompt override (Phase 2 item 4). `template` is matched first against a
+ * configured `meeting_summary_templates` id; if no template matches it is
+ * treated as a raw custom prompt. `None`/empty → the default prompt. The
+ * resulting summary is persisted onto the last-saved meeting row.
+ */
+async summarizeMeetingWith(template: string | null) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("summarize_meeting_with", { template }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Regenerate the summary for an ALREADY-PERSISTED meeting `id` (e.g. the user
+ * picked a different template). Reads the stored transcript + user notes,
+ * runs the summary, persists it onto that row, and returns it.
+ */
+async regenerateMeetingSummary(id: number, template: string | null) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("regenerate_meeting_summary", { id, template }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * List persisted meetings, newest-first (lightweight rows). When `query` is a
+ * non-empty string, filters by a case-insensitive substring match against the
+ * title, transcript, or summary. `None`/empty → all meetings (legacy behavior).
+ */
+async listMeetings(query: string | null) : Promise<Result<MeetingListItem[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_meetings", { query }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Fetch a single full meeting record (transcript + segments + summary).
+ */
+async getMeeting(id: number) : Promise<Result<MeetingRecord, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_meeting", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Return the absolute filesystem path to a meeting's saved mixed-audio WAV,
+ * for the frontend to play back. The frontend should pass this path to
+ * Tauri's `convertFileSrc()` and use the result as an `<audio>` `src`; the
+ * app's asset protocol is enabled with a broad scope so the converted URL is
+ * directly loadable. Errors if the meeting has no saved audio.
+ */
+async getMeetingAudioPath(id: number) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_meeting_audio_path", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Delete a persisted meeting by id.
+ */
+async deleteMeeting(id: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_meeting", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Manually rename a meeting (Phase 2 item 2). Overwrites the `title` column.
+ */
+async updateMeetingTitle(id: number, title: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("update_meeting_title", { id, title }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Save the user's own editable notes for a meeting (Phase 2 item 3). Distinct
+ * from the AI `summary`; stored in the `notes` column.
+ */
+async updateMeetingNotes(id: number, notes: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("update_meeting_notes", { id, notes }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Export a meeting as a clean Markdown document (Phase 2 item 6): title,
+ * date/time, duration, labeled transcript, user notes, and AI summary. The
+ * frontend handles the file-save dialog (Phase 4); this returns the string.
+ */
+async exportMeetingMarkdown(id: number) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("export_meeting_markdown", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * List meetings interrupted by a crash/OS-kill (still in `recording` status),
+ * newest-first. Each item reports whether its temp audio buffers still exist so
+ * the UI can offer a high-quality re-finalize vs. salvaging the partial text.
+ */
+async listInterruptedMeetings() : Promise<Result<InterruptedMeeting[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_interrupted_meetings") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Recover an interrupted meeting (Phase 2 item 1). If the per-source temp audio
+ * buffers still exist, re-runs the finalize pass for a high-quality labeled
+ * transcript and saves the mixed playback WAV; otherwise keeps the partial
+ * transcript that was incrementally saved. Either way the row is flipped to
+ * `completed` (so it isn't offered for recovery again) and the temp files are
+ * cleaned up. Returns the recovered full transcript.
+ */
+async recoverMeeting(id: number) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("recover_meeting", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * User accepted the auto-detection "start transcription?" prompt: hides the
+ * prompt window and starts a meeting session (same shared path as the UI
+ * button / tray / shortcut).
+ */
+async acceptMeetingPrompt() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("accept_meeting_prompt") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * User dismissed the auto-detection "start transcription?" prompt: hides the
+ * prompt window and snoozes detection until the current meeting-app signal
+ * clears (so the same meeting doesn't re-prompt).
+ */
+async dismissMeetingPrompt() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("dismiss_meeting_prompt") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * User answered the "end meeting?" prompt. `continue_meeting` true keeps the
+ * session running (and resets the silence timer); false stops it (finalize
+ * runs on a blocking thread inside the helper).
+ */
+async respondMeetingAutoEnd(continueMeeting: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("respond_meeting_auto_end", { continueMeeting }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Snapshot of the meeting auto-detection state (whether a meeting app is
+ * currently using the microphone, and which one) for the settings UI.
+ */
+async getMeetingDetectionStatus() : Promise<Result<MeetingDetectionStatus, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_meeting_detection_status") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -842,14 +1162,83 @@ historyUpdatePayload: "history-update-payload"
 
 /** user-defined types **/
 
-export type AppSettings = { bindings: Partial<{ [key in string]: ShortcutBinding }>; push_to_talk: boolean; audio_feedback: boolean; audio_feedback_volume?: number; sound_theme?: SoundTheme; start_hidden?: boolean; autostart_enabled?: boolean; update_checks_enabled?: boolean; selected_model?: string; always_on_microphone?: boolean; selected_microphone?: string | null; clamshell_microphone?: string | null; selected_output_device?: string | null; translate_to_english?: boolean; selected_language?: string; overlay_position?: OverlayPosition; debug_mode?: boolean; log_level?: LogLevel; custom_words?: string[]; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; history_limit?: number; recording_retention_period?: RecordingRetentionPeriod; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; auto_submit?: boolean; auto_submit_key?: AutoSubmitKey; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_api_keys?: Partial<{ [key in string]: string }>; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; openrouter_custom_model?: string; mute_while_recording?: boolean; append_trailing_space?: boolean; app_language?: string; experimental_enabled?: boolean; lazy_stream_close?: boolean; keyboard_implementation?: KeyboardImplementation; show_tray_icon?: boolean; paste_delay_ms?: number; typing_tool?: TypingTool; external_script_path: string | null; custom_filler_words?: string[] | null; whisper_accelerator?: WhisperAcceleratorSetting; ort_accelerator?: OrtAcceleratorSetting; extra_recording_buffer_ms?: number }
+export type AppSettings = { bindings: Partial<{ [key in string]: ShortcutBinding }>; push_to_talk: boolean; audio_feedback: boolean; audio_feedback_volume?: number; sound_theme?: SoundTheme; start_hidden?: boolean; autostart_enabled?: boolean; update_checks_enabled?: boolean; selected_model?: string; always_on_microphone?: boolean; selected_microphone?: string | null; clamshell_microphone?: string | null; selected_output_device?: string | null; translate_to_english?: boolean; selected_language?: string; overlay_position?: OverlayPosition; debug_mode?: boolean; log_level?: LogLevel; custom_words?: string[]; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; history_limit?: number; recording_retention_period?: RecordingRetentionPeriod; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; auto_submit?: boolean; auto_submit_key?: AutoSubmitKey; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_api_keys?: Partial<{ [key in string]: string }>; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; 
+/**
+ * Custom OpenRouter model slug used by the "Custom OpenRouter model" cloud
+ * transcription entry (e.g. `openai/gpt-4o-mini-transcribe`). Empty unless
+ * the user enters one in Settings → Models.
+ */
+openrouter_custom_model?: string; mute_while_recording?: boolean; append_trailing_space?: boolean; app_language?: string; experimental_enabled?: boolean; lazy_stream_close?: boolean; keyboard_implementation?: KeyboardImplementation; show_tray_icon?: boolean; paste_delay_ms?: number; typing_tool?: TypingTool; external_script_path: string | null; custom_filler_words?: string[] | null; whisper_accelerator?: WhisperAcceleratorSetting; ort_accelerator?: OrtAcceleratorSetting; extra_recording_buffer_ms?: number; 
+/**
+ * Meeting mode: automatically summarize the meeting transcript on stop
+ * (using the active post-process provider). Additive; defaults to false.
+ */
+meeting_auto_summarize?: boolean; 
+/**
+ * Meeting mode: the model used for the high-quality FINAL (on-stop)
+ * re-transcription pass. Swapped in for finalize only, then the user's
+ * normal `selected_model` is restored. Defaults to "turbo"
+ * (large-v3-turbo). The LIVE preview path keeps using `selected_model`.
+ */
+meeting_final_model?: string; 
+/**
+ * Meeting mode: language forced for meeting transcription windows. Fixes
+ * per-window language flapping that auto-detect causes. Defaults to "tr"
+ * (Turkish). Set to "auto" to restore per-window auto-detect. Only affects
+ * the meeting path; dictation keeps using `selected_language`.
+ */
+meeting_language?: string; 
+/**
+ * Meeting mode: preset summary prompt templates the user can choose from
+ * when summarizing a meeting. Each produces structured markdown. Additive;
+ * defaults to a built-in set (General / Standup / 1:1 / Decisions & Action
+ * Items / Q&A). The picker UI is Phase 4; the backend exposes them now.
+ */
+meeting_summary_templates?: MeetingSummaryTemplate[]; 
+/**
+ * Meeting mode: automatically detect when a meeting app (Zoom, Teams, a
+ * browser running Meet, …) starts using the microphone and show a prompt
+ * offering to start a transcription session. macOS only. Opt-in.
+ */
+meeting_auto_detect?: boolean; 
+/**
+ * Meeting mode: while a session is running, offer to end it after
+ * `meeting_silence_timeout_secs` of continuous silence (or when the
+ * detected meeting app releases the microphone), and end it automatically
+ * if the prompt goes unanswered for `meeting_auto_end_grace_secs`.
+ */
+meeting_auto_end?: boolean; 
+/**
+ * Seconds of continuous silence before the "end meeting?" prompt appears.
+ */
+meeting_silence_timeout_secs?: number; 
+/**
+ * Seconds the "end meeting?" prompt waits for a response before the
+ * session is ended automatically.
+ */
+meeting_auto_end_grace_secs?: number }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AvailableAccelerators = { whisper: string[]; ort: string[] }
 export type BindingResponse = { success: boolean; binding: ShortcutBinding | null; error: string | null }
 export type ClipboardHandling = "dont_modify" | "copy_to_clipboard"
 export type CustomSounds = { start: boolean; stop: boolean }
-export type EngineType = "Whisper" | "Parakeet" | "Moonshine" | "MoonshineStreaming" | "SenseVoice" | "GigaAM" | "Canary" | "OpenRouter" | "OpenRouterAsr"
+export type EngineType = "Whisper" | "Parakeet" | "Moonshine" | "MoonshineStreaming" | "SenseVoice" | "GigaAM" | "Canary" | 
+/**
+ * Cloud transcription via OpenRouter using an audio-capable **chat** model
+ * (e.g. `google/gemini-2.5-flash-lite`) and the chat-completions endpoint.
+ * Not downloaded: `url`/`sha256` are `None`, `is_downloaded` is always
+ * `true`, and `filename` carries the OpenRouter model slug instead of a
+ * path. The OpenRouter API key is reused from the post-processing settings.
+ */
+"OpenRouter" | 
+/**
+ * Cloud transcription via OpenRouter using a dedicated **ASR** model (e.g.
+ * `openai/whisper-1`, `openai/gpt-4o-transcribe`) and the
+ * `/audio/transcriptions` endpoint — verbatim speech-to-text. Same
+ * not-downloaded/`filename`-as-slug conventions as [`EngineType::OpenRouter`].
+ */
+"OpenRouterAsr"
 export type HistoryEntry = { id: number; file_name: string; timestamp: number; saved: boolean; title: string; transcription_text: string; post_processed_text: string | null; post_process_prompt: string | null; post_process_requested: boolean }
 export type HistoryUpdatePayload = { action: "added"; entry: HistoryEntry } | { action: "updated"; entry: HistoryEntry } | { action: "deleted"; id: number } | { action: "toggled"; id: number }
 /**
@@ -860,9 +1249,73 @@ export type ImplementationChangeResult = { success: boolean;
  * List of binding IDs that were reset to defaults due to incompatibility
  */
 reset_bindings: string[] }
+/**
+ * An interrupted meeting (status still `"recording"`) detected at startup, with
+ * the info a recovery pass needs.
+ */
+export type InterruptedMeeting = { id: number; started_at: number; title: string; 
+/**
+ * Whatever partial transcript was incrementally saved before the crash.
+ */
+transcript: string; 
+/**
+ * True if the per-source temp audio buffers still exist on disk (so a
+ * re-finalize can recover a high-quality transcript). False → only the
+ * partial transcript can be salvaged.
+ */
+has_buffers: boolean }
 export type KeyboardImplementation = "tauri" | "handy_keys"
 export type LLMPrompt = { id: string; name: string; prompt: string }
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error"
+/**
+ * Detection status snapshot for the frontend (settings UI / debugging).
+ */
+export type MeetingDetectionStatus = { 
+/**
+ * True when a meeting app is currently using the microphone.
+ */
+detected: boolean; 
+/**
+ * Human-readable name of the detected app, when `detected`.
+ */
+app_name: string | null }
+/**
+ * Lightweight row for the meetings list view (newest-first).
+ */
+export type MeetingListItem = { id: number; started_at: number; ended_at: number; duration_ms: number; title: string; has_summary: boolean; 
+/**
+ * Short preview of the transcript (first ~200 chars).
+ */
+transcript_preview: string; 
+/**
+ * Lifecycle status: `"recording"` (interrupted/in-progress) or
+ * `"completed"`. The list view can surface a "needs recovery" badge.
+ */
+status: string }
+/**
+ * Full meeting record returned by `get_meeting`.
+ */
+export type MeetingRecord = { id: number; started_at: number; ended_at: number; duration_ms: number; title: string; transcript: string; segments: TranscriptSegment[]; summary: string | null; created_at: number; 
+/**
+ * Absolute path to the persisted mixed 16 kHz mono WAV, if saved.
+ */
+audio_path: string | null; 
+/**
+ * User's own editable notes, distinct from the AI `summary`.
+ */
+notes: string | null; 
+/**
+ * Lifecycle status: `"recording"` or `"completed"`.
+ */
+status: string }
+/**
+ * A preset summary prompt template for meeting mode. `id` is a stable key the
+ * frontend passes to `summarize_meeting_with`; `name` is the display label;
+ * `prompt` is the system instruction sent to the LLM (it should instruct the
+ * model to produce structured markdown and to answer in the transcript's
+ * language).
+ */
+export type MeetingSummaryTemplate = { id: string; name: string; prompt: string }
 export type ModelInfo = { id: string; name: string; description: string; filename: string; url: string | null; sha256: string | null; size_mb: number; is_downloaded: boolean; is_downloading: boolean; partial_size: number; is_directory: boolean; engine_type: EngineType; accuracy_score: number; speed_score: number; supports_translation: boolean; is_recommended: boolean; supported_languages: string[]; supports_language_selection: boolean; is_custom: boolean }
 export type ModelLoadStatus = { is_loaded: boolean; current_model: string | null }
 export type ModelUnloadTimeout = "never" | "immediately" | "min_2" | "min_5" | "min_10" | "min_15" | "hour_1" | "sec_15"
@@ -875,6 +1328,31 @@ export type PostProcessProvider = { id: string; label: string; base_url: string;
 export type RecordingRetentionPeriod = "never" | "preserve_limit" | "days_3" | "weeks_2" | "months_3"
 export type ShortcutBinding = { id: string; name: string; description: string; default_binding: string; current_binding: string }
 export type SoundTheme = "marimba" | "pop" | "custom"
+/**
+ * A single transcribed speech segment with its (relative) start timestamp.
+ */
+export type TranscriptSegment = { 
+/**
+ * Cleaned transcript text for this segment.
+ */
+text: string; 
+/**
+ * Milliseconds since the meeting session started.
+ */
+timestamp_ms: number; 
+/**
+ * Which captured source produced this segment (mic = "you",
+ * system = "others").
+ */
+source?: TranscriptSource }
+/**
+ * Which captured source a transcript segment came from.
+ * 
+ * Serializes as `"you"` (microphone / the local speaker) and `"others"`
+ * (system audio / remote participants) so the frontend can label segments
+ * directly without an extra mapping step.
+ */
+export type TranscriptSource = "you" | "others"
 export type TypingTool = "auto" | "wtype" | "kwtype" | "dotool" | "ydotool" | "xdotool"
 export type WhisperAcceleratorSetting = "auto" | "cpu" | "gpu"
 export type WindowsMicrophonePermissionStatus = { supported: boolean; overall_access: PermissionAccess; device_access: PermissionAccess; app_access: PermissionAccess; desktop_app_access: PermissionAccess }

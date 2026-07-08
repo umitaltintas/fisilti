@@ -682,6 +682,29 @@
     "summaryLocal": "Summary runs locally",
     "summaryCloud": "Summary uses {{provider}} — leaves your device",
     "summaryNoProvider": "No summary provider configured",
-    "cloudLivePreviewOff": "録音中… クラウドモデル: 文字起こしは会議を停止したときに生成されます。"
+    "cloudLivePreviewOff": "録音中… クラウドモデル: 文字起こしは会議を停止したときに生成されます。",
+    "autoDetectSection": "会議の自動検出",
+    "autoDetectToggle": "会議を検出して文字起こしの開始を提案",
+    "autoDetectDescription": "会議アプリ(Zoom、Teams、Meet など)がマイクを使い始めると、文字起こしの開始を提案します。",
+    "autoEndToggle": "長い無音のあとに終了を提案",
+    "autoEndDescription": "選択した時間、音声が検出されない場合、会議を終了するか確認します。応答がない場合は自動的に終了します。",
+    "silenceTimeoutLabel": "確認までの無音時間",
+    "autoEndGraceLabel": "未応答時の自動終了までの時間",
+    "durationMinutes": "{{count}} 分",
+    "durationSeconds": "{{count}} 秒"
+  },
+  "meetingPrompt": {
+    "startTitle": "会議を検出しました",
+    "startBody": "{{app}} が会議中のようです。文字起こしを開始しますか?",
+    "startBodyGeneric": "会議が始まったようです。文字起こしを開始しますか?",
+    "start": "開始",
+    "dismiss": "無視",
+    "endTitleSilence": "無音を検出しました",
+    "endTitleAppClosed": "会議が終了しましたか?",
+    "endBodySilence": "しばらく音声が検出されていません。会議を終了しますか?",
+    "endBodyAppClosed": "会議アプリがマイクを使用しなくなりました。会議を終了しますか?",
+    "end": "会議を終了",
+    "continue": "録音を続ける",
+    "autoEndIn": "{{seconds}} 秒後に自動終了します"
   }
 }

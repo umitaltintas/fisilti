@@ -682,6 +682,29 @@
     "onDeviceBadge": "100% on-device transcription",
     "summaryLocal": "Summary runs locally",
     "summaryCloud": "Summary uses {{provider}} — leaves your device",
-    "summaryNoProvider": "No summary provider configured"
+    "summaryNoProvider": "No summary provider configured",
+    "autoDetectSection": "Automatic meeting detection",
+    "autoDetectToggle": "Detect meetings and offer to start transcription",
+    "autoDetectDescription": "When a meeting app (Zoom, Teams, Meet…) starts using the microphone, a prompt offers to start transcribing.",
+    "autoEndToggle": "Offer to end after prolonged silence",
+    "autoEndDescription": "If no speech is detected for the selected duration, a prompt asks whether to end the meeting — and ends it automatically if you don't respond.",
+    "silenceTimeoutLabel": "Silence before asking",
+    "autoEndGraceLabel": "Auto-end if unanswered for",
+    "durationMinutes": "{{count}} min",
+    "durationSeconds": "{{count}} sec"
+  },
+  "meetingPrompt": {
+    "startTitle": "Meeting detected",
+    "startBody": "{{app}} appears to be in a meeting. Start transcription?",
+    "startBodyGeneric": "A meeting appears to have started. Start transcription?",
+    "start": "Start",
+    "dismiss": "Ignore",
+    "endTitleSilence": "Silence detected",
+    "endTitleAppClosed": "Meeting ended?",
+    "endBodySilence": "No speech has been detected for a while. End the meeting?",
+    "endBodyAppClosed": "The meeting app is no longer using the microphone. End the meeting?",
+    "end": "End meeting",
+    "continue": "Keep recording",
+    "autoEndIn": "Ending automatically in {{seconds}} s"
   }
 }

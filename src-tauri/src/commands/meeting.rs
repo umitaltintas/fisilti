@@ -82,12 +82,10 @@ pub fn toggle_meeting_from_app(app: &AppHandle) {
     // listener could not run, leaving the tray stuck on "Recording…". Dispatch
     // to a blocking thread instead (the result is only logged, so we don't await
     // it). stop() emits the idle state early so the tray clears promptly.
-    tauri::async_runtime::spawn_blocking(move || {
-        match toggle_meeting_session(&app, &manager) {
-            Ok(Some(_)) => log::info!("Meeting stopped via tray/shortcut"),
-            Ok(None) => log::info!("Meeting started via tray/shortcut"),
-            Err(e) => log::warn!("Toggle meeting via tray/shortcut failed: {}", e),
-        }
+    tauri::async_runtime::spawn_blocking(move || match toggle_meeting_session(&app, &manager) {
+        Ok(Some(_)) => log::info!("Meeting stopped via tray/shortcut"),
+        Ok(None) => log::info!("Meeting started via tray/shortcut"),
+        Err(e) => log::warn!("Toggle meeting via tray/shortcut failed: {}", e),
     });
 }
 
@@ -589,6 +587,43 @@ pub async fn recover_meeting(
     tauri::async_runtime::spawn_blocking(move || manager.recover_meeting(id))
         .await
         .map_err(|e| format!("Recovery task failed: {}", e))?
+}
+
+/// User accepted the auto-detection "start transcription?" prompt: hides the
+/// prompt window and starts a meeting session (same shared path as the UI
+/// button / tray / shortcut).
+#[tauri::command]
+#[specta::specta]
+pub fn accept_meeting_prompt(app: AppHandle) -> Result<(), String> {
+    crate::meeting_detector::accept_start_prompt(&app)
+}
+
+/// User dismissed the auto-detection "start transcription?" prompt: hides the
+/// prompt window and snoozes detection until the current meeting-app signal
+/// clears (so the same meeting doesn't re-prompt).
+#[tauri::command]
+#[specta::specta]
+pub fn dismiss_meeting_prompt(app: AppHandle) -> Result<(), String> {
+    crate::meeting_detector::dismiss_start_prompt(&app)
+}
+
+/// User answered the "end meeting?" prompt. `continue_meeting` true keeps the
+/// session running (and resets the silence timer); false stops it (finalize
+/// runs on a blocking thread inside the helper).
+#[tauri::command]
+#[specta::specta]
+pub fn respond_meeting_auto_end(app: AppHandle, continue_meeting: bool) -> Result<(), String> {
+    crate::meeting_detector::respond_auto_end(&app, continue_meeting)
+}
+
+/// Snapshot of the meeting auto-detection state (whether a meeting app is
+/// currently using the microphone, and which one) for the settings UI.
+#[tauri::command]
+#[specta::specta]
+pub fn get_meeting_detection_status(
+    app: AppHandle,
+) -> Result<crate::meeting_detector::MeetingDetectionStatus, String> {
+    Ok(crate::meeting_detector::detection_status(&app))
 }
 
 #[cfg(test)]

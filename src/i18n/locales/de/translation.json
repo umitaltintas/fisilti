@@ -682,6 +682,29 @@
     "summaryLocal": "Summary runs locally",
     "summaryCloud": "Summary uses {{provider}} — leaves your device",
     "summaryNoProvider": "No summary provider configured",
-    "cloudLivePreviewOff": "Aufnahme läuft… Cloud-Modell: Das Transkript wird erstellt, wenn du das Meeting beendest."
+    "cloudLivePreviewOff": "Aufnahme läuft… Cloud-Modell: Das Transkript wird erstellt, wenn du das Meeting beendest.",
+    "autoDetectSection": "Automatische Meeting-Erkennung",
+    "autoDetectToggle": "Meetings erkennen und Transkription anbieten",
+    "autoDetectDescription": "Wenn eine Meeting-App (Zoom, Teams, Meet…) das Mikrofon verwendet, wird angeboten, die Transkription zu starten.",
+    "autoEndToggle": "Beenden nach längerer Stille anbieten",
+    "autoEndDescription": "Wird für die gewählte Dauer keine Sprache erkannt, wird gefragt, ob das Meeting beendet werden soll — ohne Antwort wird es automatisch beendet.",
+    "silenceTimeoutLabel": "Stille vor der Nachfrage",
+    "autoEndGraceLabel": "Automatisch beenden nach",
+    "durationMinutes": "{{count}} Min.",
+    "durationSeconds": "{{count}} Sek."
+  },
+  "meetingPrompt": {
+    "startTitle": "Meeting erkannt",
+    "startBody": "{{app}} scheint in einem Meeting zu sein. Transkription starten?",
+    "startBodyGeneric": "Ein Meeting scheint begonnen zu haben. Transkription starten?",
+    "start": "Starten",
+    "dismiss": "Ignorieren",
+    "endTitleSilence": "Stille erkannt",
+    "endTitleAppClosed": "Meeting beendet?",
+    "endBodySilence": "Seit einiger Zeit wurde keine Sprache erkannt. Meeting beenden?",
+    "endBodyAppClosed": "Die Meeting-App verwendet das Mikrofon nicht mehr. Meeting beenden?",
+    "end": "Meeting beenden",
+    "continue": "Weiter aufnehmen",
+    "autoEndIn": "Automatisches Beenden in {{seconds}} s"
   }
 }

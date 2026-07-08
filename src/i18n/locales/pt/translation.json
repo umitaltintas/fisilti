@@ -682,6 +682,29 @@
     "summaryLocal": "Summary runs locally",
     "summaryCloud": "Summary uses {{provider}} — leaves your device",
     "summaryNoProvider": "No summary provider configured",
-    "cloudLivePreviewOff": "Gravando… modelo na nuvem: a transcrição é gerada quando você para a reunião."
+    "cloudLivePreviewOff": "Gravando… modelo na nuvem: a transcrição é gerada quando você para a reunião.",
+    "autoDetectSection": "Detecção automática de reuniões",
+    "autoDetectToggle": "Detectar reuniões e oferecer iniciar a transcrição",
+    "autoDetectDescription": "Quando um aplicativo de reunião (Zoom, Teams, Meet…) começa a usar o microfone, é oferecido iniciar a transcrição.",
+    "autoEndToggle": "Oferecer encerrar após silêncio prolongado",
+    "autoEndDescription": "Se nenhuma fala for detectada durante o período selecionado, será perguntado se deseja encerrar a reunião — e ela será encerrada automaticamente se não houver resposta.",
+    "silenceTimeoutLabel": "Silêncio antes de perguntar",
+    "autoEndGraceLabel": "Encerrar automaticamente após",
+    "durationMinutes": "{{count}} min",
+    "durationSeconds": "{{count}} s"
+  },
+  "meetingPrompt": {
+    "startTitle": "Reunião detectada",
+    "startBody": "{{app}} parece estar em uma reunião. Iniciar a transcrição?",
+    "startBodyGeneric": "Uma reunião parece ter começado. Iniciar a transcrição?",
+    "start": "Iniciar",
+    "dismiss": "Ignorar",
+    "endTitleSilence": "Silêncio detectado",
+    "endTitleAppClosed": "Reunião encerrada?",
+    "endBodySilence": "Nenhuma fala detectada há algum tempo. Encerrar a reunião?",
+    "endBodyAppClosed": "O aplicativo de reunião não está mais usando o microfone. Encerrar a reunião?",
+    "end": "Encerrar reunião",
+    "continue": "Continuar gravando",
+    "autoEndIn": "Encerramento automático em {{seconds}} s"
   }
 }

@@ -1,29 +1,9 @@
 name: "code quality"
 on:
+  # Manual-only: this personal fork develops on macOS with local checks
+  # (bun run lint, format:check, cargo fmt/clippy); the hosted runners keep
+  # failing and burn Actions minutes. Trigger from the Actions tab if needed.
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - "src/**"
-      - "package.json"
-      - "bun.lock"
-      - ".eslintrc*"
-      - "eslint.config.*"
-      - ".prettierrc*"
-      - "tsconfig*"
-      - "tailwind.config.*"
-      - ".github/workflows/**"
-  pull_request:
-    paths:
-      - "src/**"
-      - "package.json"
-      - "bun.lock"
-      - ".eslintrc*"
-      - "eslint.config.*"
-      - ".prettierrc*"
-      - "tsconfig*"
-      - "tailwind.config.*"
-      - ".github/workflows/**"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}

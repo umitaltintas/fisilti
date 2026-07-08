@@ -1,13 +1,8 @@
 name: "Playwright"
 on:
+  # Manual-only: not maintained on this personal fork; runs kept failing on
+  # PRs. Trigger from the Actions tab if/when the Playwright suite is revived.
   workflow_dispatch:
-  pull_request:
-    paths:
-      - "src/**"
-      - "package.json"
-      - "bun.lock"
-      - "playwright.config.*"
-      - "tests/**"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}

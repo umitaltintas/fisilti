@@ -1,13 +1,10 @@
 name: "test"
 on:
+  # Manual-only: this personal fork develops on macOS and the backend now
+  # depends on macOS-only pieces (cidre / CoreAudio); the ubuntu runner keeps
+  # failing. Tests run locally via `cargo test`. Trigger from the Actions tab
+  # if needed.
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - "src-tauri/**"
-  pull_request:
-    paths:
-      - "src-tauri/**"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}

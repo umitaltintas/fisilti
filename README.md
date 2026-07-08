@@ -41,6 +41,14 @@ where — if anywhere — your data goes.
 - **AI meeting-notes summary** via OpenRouter, Ollama, or any OpenAI-compatible
   provider
 - **Persistent meeting history** with stored audio and **playback**
+- **Automatic meeting detection** (opt-in) — when a meeting app (Zoom, Teams,
+  Webex, WhatsApp, …) or a browser (Google Meet & co. run in tabs) starts using
+  the microphone, a small prompt offers to start transcribing
+- **Auto-end on silence** — if nobody speaks for a configurable duration (or
+  the meeting app releases the microphone), Fisilti asks whether to end the
+  meeting and ends it automatically if the prompt goes unanswered
+- Tray menu shortcuts: start/stop a meeting and open the past-meetings list
+  without opening the main window
 
 ## Requirements
 
@@ -66,9 +74,35 @@ external provider you configure (and are optional).
 # Install JS dependencies
 bun install
 
-# Build the app
+# Build the app (ad-hoc signed — fine for a one-off build)
 bun run tauri build
+
+# RECOMMENDED for repeated local builds: sign with a stable identity so macOS
+# permissions survive rebuilds (see "Stable signing" below)
+bun run build:mac
 ```
+
+### Stable signing (recommended)
+
+`bun run tauri build` signs the app **ad-hoc**, which gives every build a
+different code-signing identity — macOS then treats each rebuild as a new app
+and silently drops its permission grants (Accessibility is the most visible
+victim: the checkbox looks enabled but no longer applies).
+
+`bun run build:mac` instead signs with a certificate named
+**"Fisilti Dev Signing"** from your login keychain, so permissions are granted
+once and persist across rebuilds. Create the certificate once (no Apple
+account needed):
+
+1. Open **Keychain Access** → menu **Keychain Access → Certificate Assistant →
+   Create a Certificate…**
+2. Name: `Fisilti Dev Signing` — Identity Type: _Self-Signed Root_ —
+   Certificate Type: **Code Signing** → Create.
+3. Build with `bun run build:mac`. On the first build macOS asks to allow
+   `codesign` to use the key — choose **Always Allow**.
+
+If you switch from ad-hoc builds, reset the stale permission entries once:
+`tccutil reset All com.umitaltintas.fisilti`, then re-grant on next launch.
 
 > **macOS tip:** if the build fails with a CMake policy error, prefix the
 > command with `CMAKE_POLICY_VERSION_MINIMUM=3.5`:
@@ -123,10 +157,11 @@ time each is needed — approve them in **System Settings → Privacy & Security
   system-audio capture (the CoreAudio process tap). Without it, the "others"
   side of a meeting records silence.
 
-> **Note:** because the build is ad-hoc signed, its signature changes every time
-> you rebuild, so macOS treats a freshly rebuilt copy as a new app and the
-> permissions above must be re-granted. Once installed and granted, the app
-> keeps its permissions until you replace it with a new build.
+> **Note:** with the default ad-hoc build (`bun run tauri build`) the signature
+> changes every time you rebuild, so macOS treats a freshly rebuilt copy as a
+> new app and the permissions above must be re-granted. Build with
+> `bun run build:mac` instead (see [Stable signing](#stable-signing-recommended))
+> and permissions persist across rebuilds.
 
 ## Built on Handy
 

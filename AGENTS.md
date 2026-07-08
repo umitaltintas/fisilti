@@ -20,8 +20,12 @@ bun run tauri dev
 # If cmake error on macOS:
 CMAKE_POLICY_VERSION_MINIMUM=3.5 bun run tauri dev
 
-# Build for production
+# Build for production (ad-hoc signed; CI uses this)
 bun run tauri build
+
+# Build for local install: signs with the stable "Fisilti Dev Signing"
+# keychain identity so macOS permissions survive rebuilds
+bun run build:mac
 
 # Frontend only development
 bun run dev        # Start Vite dev server
@@ -58,6 +62,12 @@ Fisilti is a cross-platform desktop speech-to-text application built with Tauri 
 - `commands/` - Tauri command handlers for frontend communication
 - `shortcut.rs` - Global keyboard shortcut handling
 - `settings.rs` - Application settings management
+- `meeting/` - Meeting mode (mic + system-audio capture, live transcript,
+  finalize + AI summary)
+- `meeting_detector.rs` - Auto-detection of meetings (CoreAudio process
+  objects, macOS 14+) + silence/app-closed auto-end flow
+- `meeting_prompt.rs` - Always-on-top prompt window ("start transcription?" /
+  "end meeting?"); React page in `src/meeting-prompt/`
 
 **Frontend (React/TypeScript - src/):**
 

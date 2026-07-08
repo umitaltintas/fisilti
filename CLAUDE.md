@@ -15,8 +15,13 @@ bun run tauri dev
 # If cmake error on macOS:
 CMAKE_POLICY_VERSION_MINIMUM=3.5 bun run tauri dev
 
-# Build for production
+# Build for production (ad-hoc signed; CI uses this)
 bun run tauri build
+
+# Build for LOCAL install (signs with the stable "Fisilti Dev Signing"
+# keychain identity so macOS TCC permissions survive rebuilds — always
+# prefer this when the build will be installed to /Applications)
+bun run build:mac
 
 # Linting and formatting (run before committing)
 bun run lint              # ESLint for frontend
@@ -147,6 +152,52 @@ Fisilti supports command-line parameters on all platforms for integration with s
 - Remote control flags (`--toggle-transcription`, `--toggle-post-process`, `--cancel`) work by launching a second instance that sends its args to the running instance via `tauri_plugin_single_instance`, then exits
 - `send_transcription_input()` in `signal_handle.rs` is shared between signal handlers and CLI to avoid code duplication
 - `CliArgs` is stored in Tauri managed state (`.manage()`) so it's accessible in `on_window_event` and other handlers
+
+## Meeting Auto-Detection (macOS)
+
+Opt-in feature: detect when a meeting app starts using the microphone, prompt
+to start a transcription session, and offer to end (then auto-end) the session
+on prolonged silence or when the meeting app releases the mic.
+
+**Implementation files:**
+
+- `src-tauri/src/meeting_detector.rs` - poll thread (3s cadence) + pure
+  `DetectionSm` state machine + the auto-end grace-timer controller
+- `src-tauri/src/meeting_prompt.rs` - the small always-on-top clickable prompt
+  window (label `meeting_prompt`); React page in `src/meeting-prompt/`
+- `src-tauri/src/meeting/manager.rs` - prolonged-silence tracking in the
+  capture loop (`silence_anchor`, reset by speech frames from either VAD)
+- Settings UI: "Automatic meeting detection" section in
+  `src/components/settings/meeting/MeetingSettings.tsx`; helpers in
+  `src/lib/meeting.ts`
+
+**Settings (`AppSettings`):** `meeting_auto_detect` (default false),
+`meeting_auto_end` (default true), `meeting_silence_timeout_secs` (180),
+`meeting_auto_end_grace_secs` (60).
+
+**Key design decisions:**
+
+- Detection uses **CoreAudio process objects** (macOS 14+, via `cidre`):
+  `kAudioHardwarePropertyProcessObjectList` → per-process bundle id +
+  `IsRunningInput`. A process from the allowlist in `MEETING_APPS`
+  (dedicated apps + browsers, matched exact-or-dotted-prefix so helper
+  subprocesses count) that is actively pulling mic input = "in a meeting".
+  Our own PID is excluded (the capture tap makes Fisilti itself report input).
+- Start prompt is debounced (2 polls ≈ 6s); dismissing snoozes until the
+  signal clears; stopping a session while the app still holds the mic also
+  snoozes (no instant re-prompt for the same meeting).
+- The end prompt is armed once (generation counter guards the grace thread
+  against stale timers); unanswered prompts auto-stop via the shared
+  `stop_meeting_session` path so finalize/summary run normally.
+- The prompt window is a plain focusable `WebviewWindowBuilder` window (NOT
+  `tauri_nspanel` — the overlay is deliberately non-clickable, this one must
+  accept clicks). A `meeting-prompt-ready` handshake re-emits the payload so
+  the first show never races the page mount.
+- Commands: `accept_meeting_prompt`, `dismiss_meeting_prompt`,
+  `respond_meeting_auto_end`, `get_meeting_detection_status`. Events:
+  `meeting-prompt-update`, `meeting-detection-changed`.
+- Tray: the "Meetings" item opens the main window on the Meeting section via
+  a `navigate-section` event (listener in `App.tsx`).
 
 ## Debug Mode
 

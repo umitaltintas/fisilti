@@ -183,6 +183,10 @@ pub fn update_tray_menu(app: &AppHandle, state: &TrayIconState, locale: Option<&
     )
     .expect("failed to create toggle meeting item");
 
+    // Opens the main window on the Meeting section (past transcripts list).
+    let meetings_i = MenuItem::with_id(app, "meetings", &strings.meetings, true, None::<&str>)
+        .expect("failed to create meetings item");
+
     // Platform-specific accelerators
     #[cfg(target_os = "macos")]
     let (settings_accelerator, quit_accelerator) = (Some("Cmd+,"), Some("Cmd+Q"));
@@ -277,6 +281,7 @@ pub fn update_tray_menu(app: &AppHandle, state: &TrayIconState, locale: Option<&
                     &cancel_i,
                     &separator(),
                     &toggle_meeting_i,
+                    &meetings_i,
                     &separator(),
                     &copy_last_transcript_i,
                     &separator(),
@@ -294,6 +299,7 @@ pub fn update_tray_menu(app: &AppHandle, state: &TrayIconState, locale: Option<&
                 &version_i,
                 &separator(),
                 &toggle_meeting_i,
+                &meetings_i,
                 &separator(),
                 &copy_last_transcript_i,
                 &separator(),

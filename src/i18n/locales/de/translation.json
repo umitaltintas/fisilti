@@ -9,7 +9,8 @@
     "cancel": "Abbrechen",
     "startMeeting": "Meeting starten",
     "stopMeeting": "Meeting stoppen",
-    "recordingIndicator": "Fısıltı — Aufnahme…"
+    "recordingIndicator": "Fısıltı — Aufnahme…",
+    "meetings": "Meetings..."
   },
   "sidebar": {
     "general": "Allgemein",

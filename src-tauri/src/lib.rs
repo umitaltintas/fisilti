@@ -233,6 +233,12 @@ fn initialize_core_logic(app_handle: &AppHandle) {
             "copy_last_transcript" => {
                 tray::copy_last_transcript(app);
             }
+            "meetings" => {
+                // Open the main window on the Meeting section so the past
+                // transcripts list is immediately visible.
+                show_main_window(app);
+                let _ = app.emit("navigate-section", "meeting");
+            }
             "toggle_meeting" => {
                 // Start/stop a meeting from the tray without opening the window.
                 // The shared helper emits "meeting-state-changed", which the

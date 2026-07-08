@@ -9,7 +9,8 @@
     "cancel": "Отмена",
     "startMeeting": "Начать встречу",
     "stopMeeting": "Остановить встречу",
-    "recordingIndicator": "Fisilti — Запись…"
+    "recordingIndicator": "Fisilti — Запись…",
+    "meetings": "Встречи..."
   },
   "sidebar": {
     "general": "Общие",

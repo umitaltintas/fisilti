@@ -9,7 +9,8 @@
     "cancel": "Cancel",
     "startMeeting": "Start Meeting",
     "stopMeeting": "Stop Meeting",
-    "recordingIndicator": "Fisilti — Recording…"
+    "recordingIndicator": "Fisilti — Recording…",
+    "meetings": "Meetings..."
   },
   "sidebar": {
     "general": "General",

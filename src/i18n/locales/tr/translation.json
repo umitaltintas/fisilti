@@ -9,7 +9,8 @@
     "cancel": "İptal",
     "startMeeting": "Toplantıyı Başlat",
     "stopMeeting": "Toplantıyı Durdur",
-    "recordingIndicator": "Fisilti — Kaydediliyor…"
+    "recordingIndicator": "Fisilti — Kaydediliyor…",
+    "meetings": "Toplantılar..."
   },
   "sidebar": {
     "general": "Genel",

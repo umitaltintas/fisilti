@@ -70,6 +70,20 @@ function App() {
     }
   }, [onboardingStep, refreshAudioDevices, refreshOutputDevices]);
 
+  // Navigate to a sidebar section when the backend asks for it (e.g. the
+  // tray's "Meetings" item emits "navigate-section" with the section id).
+  useEffect(() => {
+    const unlisten = listen<string>("navigate-section", (event) => {
+      if (event.payload in SECTIONS_CONFIG) {
+        setCurrentSection(event.payload as SidebarSection);
+      }
+    });
+
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
+
   // Handle keyboard shortcuts for debug mode toggle
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {

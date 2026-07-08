@@ -9,7 +9,8 @@
     "cancel": "Zrušit",
     "startMeeting": "Zahájit schůzku",
     "stopMeeting": "Ukončit schůzku",
-    "recordingIndicator": "Fısıltı — Nahrávání…"
+    "recordingIndicator": "Fısıltı — Nahrávání…",
+    "meetings": "Schůzky..."
   },
   "sidebar": {
     "general": "Obecné",

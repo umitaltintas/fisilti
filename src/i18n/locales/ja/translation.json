@@ -9,7 +9,8 @@
     "cancel": "キャンセル",
     "startMeeting": "会議を開始",
     "stopMeeting": "会議を停止",
-    "recordingIndicator": "Fısıltı — 録音中…"
+    "recordingIndicator": "Fısıltı — 録音中…",
+    "meetings": "会議..."
   },
   "sidebar": {
     "general": "一般",

@@ -258,26 +258,41 @@ const MEETING_APPS: &[(&str, &str)] = &[
     ("app.zen-browser.zen", "Zen"),
 ];
 
-/// Map a process bundle id to a known meeting-app display name, matching by exact
-/// id or dotted-prefix (so "com.google.Chrome.helper.Renderer" → "Chrome", but
+/// A meeting app currently pulling mic input, matched against the allowlist.
+#[cfg(any(target_os = "macos", test))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct MeetingSignal {
+    /// Human-readable display name (e.g. "Zoom", "Chrome").
+    pub name: &'static str,
+    /// The allowlist MAIN bundle id (e.g. "com.google.Chrome"), even when the
+    /// matched process was a helper subprocess. Used by `meeting_naming` to
+    /// find the window-owning application.
+    pub bundle_id: &'static str,
+}
+
+/// Map a process bundle id to its allowlist entry, matching by exact id or
+/// dotted-prefix (so "com.google.Chrome.helper.Renderer" → "Chrome", but
 /// "com.google.ChromeBeta" does NOT match "com.google.Chrome").
 #[cfg(any(target_os = "macos", test))]
-fn meeting_app_name(bundle_id: &str) -> Option<&'static str> {
+fn meeting_app_match(bundle_id: &str) -> Option<MeetingSignal> {
     MEETING_APPS.iter().find_map(|&(id, name)| {
         let is_match = bundle_id == id
             || bundle_id
                 .strip_prefix(id)
                 .is_some_and(|rest| rest.starts_with('.'));
-        is_match.then_some(name)
+        is_match.then_some(MeetingSignal {
+            name,
+            bundle_id: id,
+        })
     })
 }
 
 /// Scan CoreAudio process objects for a known meeting app actively using the
-/// microphone (audio INPUT). Returns the app's display name, or `None` when
-/// nothing matches or the API errors (older macOS, permission, …). Never panics:
+/// microphone (audio INPUT). Returns the matched app, or `None` when nothing
+/// matches or the API errors (older macOS, permission, …). Never panics:
 /// any CoreAudio error is logged at debug and treated as "no signal".
 #[cfg(target_os = "macos")]
-fn detect_meeting_signal() -> Option<String> {
+fn detect_meeting_signal() -> Option<MeetingSignal> {
     use cidre::core_audio as ca;
 
     let processes = match ca::System::processes() {
@@ -305,11 +320,19 @@ fn detect_meeting_signal() -> Option<String> {
             Ok(b) => b.to_string(),
             Err(_) => continue,
         };
-        if let Some(name) = meeting_app_name(&bundle) {
-            return Some(name.to_string());
+        if let Some(signal) = meeting_app_match(&bundle) {
+            return Some(signal);
         }
     }
     None
+}
+
+/// One-shot detection of the meeting app currently using the microphone, for
+/// `meeting_naming`'s window-title lookup. Independent of the poll thread's
+/// cached state so a manual session start (auto-detect off) still resolves.
+#[cfg(target_os = "macos")]
+pub(crate) fn current_meeting_signal() -> Option<MeetingSignal> {
+    detect_meeting_signal()
 }
 
 /// Register the `Arc<MeetingDetector>` in Tauri state and start the poll
@@ -373,6 +396,7 @@ fn poll_loop(app: AppHandle) {
         } else {
             None
         };
+        let signal_name: Option<&str> = signal.map(|s| s.name);
 
         let mut actions: Vec<PollAction> = Vec::new();
         let mut hide_end_prompt = false;
@@ -382,12 +406,12 @@ fn poll_loop(app: AppHandle) {
 
             // Snapshot + change detection.
             let detected = signal.is_some();
-            if st.detected != detected || st.app_name.as_deref() != signal.as_deref() {
+            if st.detected != detected || st.app_name.as_deref() != signal_name {
                 st.detected = detected;
-                st.app_name = signal.clone();
+                st.app_name = signal_name.map(str::to_string);
                 changed = Some(MeetingDetectionStatus {
                     detected,
-                    app_name: signal.clone(),
+                    app_name: signal_name.map(str::to_string),
                 });
             }
 
@@ -407,9 +431,9 @@ fn poll_loop(app: AppHandle) {
                 }
             } else if running {
                 let end_pending = st.end_pending;
-                actions.push(st.sm.step_running(signal.as_deref(), auto_end, end_pending));
+                actions.push(st.sm.step_running(signal_name, auto_end, end_pending));
             } else {
-                actions.push(st.sm.step_idle(signal.as_deref()));
+                actions.push(st.sm.step_idle(signal_name));
                 // Safety net: the session was stopped by another path while an
                 // end prompt was still up → clear it and hide the window.
                 if st.end_pending {
@@ -650,6 +674,11 @@ pub fn detection_status(app: &AppHandle) -> MeetingDetectionStatus {
 mod tests {
     use super::*;
 
+    /// Test shim: display name of the matched allowlist entry.
+    fn meeting_app_name(bundle_id: &str) -> Option<&'static str> {
+        meeting_app_match(bundle_id).map(|s| s.name)
+    }
+
     #[test]
     fn bundle_matching_exact_and_prefix() {
         // Exact dedicated-app ids.
@@ -665,12 +694,16 @@ mod tests {
         assert_eq!(meeting_app_name("com.apple.FaceTime"), Some("FaceTime"));
         assert_eq!(meeting_app_name("company.thebrowser.Browser"), Some("Arc"));
 
-        // Browser helper subprocesses: dotted-prefix match.
+        // Browser helper subprocesses: dotted-prefix match. The signal always
+        // reports the MAIN allowlist bundle id, not the helper's.
         assert_eq!(meeting_app_name("com.google.Chrome"), Some("Chrome"));
         assert_eq!(meeting_app_name("com.google.Chrome.helper"), Some("Chrome"));
         assert_eq!(
-            meeting_app_name("com.google.Chrome.helper.Renderer"),
-            Some("Chrome")
+            meeting_app_match("com.google.Chrome.helper.Renderer"),
+            Some(MeetingSignal {
+                name: "Chrome",
+                bundle_id: "com.google.Chrome"
+            })
         );
 
         // A non-dotted extension is a DIFFERENT app and must not match.

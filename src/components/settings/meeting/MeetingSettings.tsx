@@ -1,43 +1,16 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { convertFileSrc } from "@tauri-apps/api/core";
 import type { UnlistenFn } from "@tauri-apps/api/event";
-import { save } from "@tauri-apps/plugin-dialog";
-import { writeTextFile } from "@tauri-apps/plugin-fs";
-import {
-  ArrowLeft,
-  Check,
-  Copy,
-  Download,
-  Loader2,
-  Lock,
-  Mic,
-  Pencil,
-  RefreshCw,
-  Search,
-  Sparkles,
-  Square,
-  Trash2,
-  X,
-} from "lucide-react";
+import { History, Mic, Settings2 } from "lucide-react";
 
-import { Button } from "../../ui/Button";
-import { Select, type SelectOption } from "../../ui/Select";
-import { ShortcutInput } from "../ShortcutInput";
-import { MeetingSignal } from "./MeetingSignal";
-import { Markdown } from "./Markdown";
+import { LiveSession } from "./LiveSession";
+import { MeetingHistory } from "./MeetingHistory";
+import { MeetingDetail } from "./MeetingDetail";
+import { MeetingPreferences } from "./MeetingPreferences";
+import { NOTES_AUTOSAVE_MS, SEARCH_DEBOUNCE_MS } from "./shared";
 import {
-  changeMeetingAutoDetect,
-  changeMeetingAutoEnd,
-  changeMeetingAutoEndGrace,
-  changeMeetingAutoSummarize,
-  changeMeetingSilenceTimeout,
   deleteMeeting,
-  exportMeetingMarkdown,
   getMeeting,
-  getMeetingAudioPath,
-  getMeetingAutoDetectSettings,
-  getMeetingAutoSummarize,
   getMeetingStatus,
   getMeetingSummaryTemplates,
   getMeetingTranscript,
@@ -49,12 +22,10 @@ import {
   listenMeetingTitle,
   listenMeetingTranscript,
   recoverMeeting,
-  regenerateMeetingSummary,
   startMeeting,
   stopMeeting,
   summarizeMeetingWith,
   updateMeetingNotes,
-  updateMeetingTitle,
   type InterruptedMeeting,
   type MeetingListItem,
   type MeetingRecord,
@@ -65,191 +36,16 @@ import {
 } from "@/lib/meeting";
 import { useModelStore } from "@/stores/modelStore";
 
-const NOTES_AUTOSAVE_MS = 800;
-const SEARCH_DEBOUNCE_MS = 300;
+type MeetingTab = "session" | "history" | "settings";
 
-const CopyButton: React.FC<{
-  onCopy: () => void;
-  disabled?: boolean;
-  title: string;
-  copiedTitle: string;
-}> = ({ onCopy, disabled, title, copiedTitle }) => {
-  const [copied, setCopied] = useState(false);
-
-  const handleClick = () => {
-    onCopy();
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  return (
-    <button
-      onClick={handleClick}
-      disabled={disabled}
-      title={copied ? copiedTitle : title}
-      className="p-1.5 rounded-md flex items-center justify-center transition-colors cursor-pointer text-text/50 hover:text-logo-primary disabled:cursor-not-allowed disabled:text-text/20"
-    >
-      {copied ? (
-        <Check width={16} height={16} />
-      ) : (
-        <Copy width={16} height={16} />
-      )}
-    </button>
-  );
-};
-
-// Render a transcript as a clean, chronological flow of plain text lines.
-//
-// Speaker attribution ("You" / "Others") was removed: it was source-based
-// (mic vs system audio), not real diarization, and broke down on speaker
-// output where the mic re-captures the remote voice and mislabels it. The
-// backend still de-duplicates echoed segments, so this stays a single clean
-// transcript without doubled lines.
-const PlainTranscript: React.FC<{
-  segments: TranscriptSegment[];
-}> = ({ segments }) => (
-  <div className="space-y-2">
-    {segments.map((seg, i) => (
-      <p
-        key={i}
-        className="text-sm whitespace-pre-wrap break-words select-text text-text/90"
-      >
-        {seg.text}
-      </p>
-    ))}
-  </div>
-);
-
-// Build a copy-friendly transcript: one line per segment, no speaker labels.
-// Falls back to the plain joined transcript when no segments are available.
-const plainTranscriptText = (
-  segments: TranscriptSegment[],
-  fallback: string,
-): string => {
-  if (segments.length === 0) return fallback;
-  return segments.map((seg) => seg.text).join("\n");
-};
-
-// Persistent "100% on-device transcription" trust badge.
-const OnDeviceBadge: React.FC<{ t: (key: string) => string }> = ({ t }) => (
-  <span className="inline-flex items-center gap-1.5 rounded-full bg-logo-primary/10 px-2.5 py-1 text-[11px] font-medium text-logo-primary">
-    <Lock width={12} height={12} />
-    {t("meeting.onDeviceBadge")}
-  </span>
-);
-
-// Honest indicator for where the SUMMARY runs (local vs a cloud provider).
-const SummaryLocationNote: React.FC<{
-  info: SummaryProviderInfo | null;
-  t: (key: string, opts?: Record<string, unknown>) => string;
-}> = ({ info, t }) => {
-  if (!info) return null;
-  if (info.location === "none") {
-    return (
-      <p className="text-[11px] text-text/40">
-        {t("meeting.summaryNoProvider")}
-      </p>
-    );
-  }
-  if (info.location === "local") {
-    return (
-      <p className="inline-flex items-center gap-1.5 text-[11px] text-emerald-500">
-        <Lock width={11} height={11} />
-        {t("meeting.summaryLocal")}
-      </p>
-    );
-  }
-  return (
-    <p className="text-[11px] text-amber-500">
-      {t("meeting.summaryCloud", { provider: info.label })}
-    </p>
-  );
-};
-
-// A labeled on/off switch with a supporting description, matching the inline
-// auto-summarize toggle's switch markup. Used for the auto-detect / auto-end
-// settings where each toggle needs an explanatory line beneath it.
-const MeetingToggle: React.FC<{
-  checked: boolean;
-  onToggle: () => void;
-  label: string;
-  description: string;
-}> = ({ checked, onToggle, label, description }) => (
-  <div className="flex items-start gap-2.5">
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      onClick={onToggle}
-      className={`relative mt-0.5 inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
-        checked ? "bg-logo-primary" : "bg-mid-gray/30"
-      }`}
-    >
-      <span
-        className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-          checked ? "translate-x-4" : "translate-x-0.5"
-        }`}
-      />
-    </button>
-    <div className="min-w-0 cursor-pointer select-none" onClick={onToggle}>
-      <p className="text-sm text-text/80">{label}</p>
-      <p className="mt-0.5 text-xs text-text/50">{description}</p>
-    </div>
-  </div>
-);
-
-function formatElapsed(seconds: number): string {
-  const total = Math.max(0, Math.floor(seconds));
-  const hours = Math.floor(total / 3600);
-  const mins = Math.floor((total % 3600) / 60);
-  const secs = total % 60;
-  const mm = mins.toString().padStart(2, "0");
-  const ss = secs.toString().padStart(2, "0");
-  // Past one hour, render h:mm:ss so the minutes don't roll over past 59.
-  return hours > 0 ? `${hours}:${mm}:${ss}` : `${mm}:${ss}`;
-}
-
-// Format an epoch-ms timestamp using the user's locale (no hardcoded format).
-function formatMeetingDate(epochMs: number, locale: string): string {
-  try {
-    const date = new Date(epochMs);
-    if (isNaN(date.getTime())) return "";
-    return new Intl.DateTimeFormat(locale, {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(date);
-  } catch {
-    return "";
-  }
-}
-
-// Format a duration in ms as `Hh Mm` (>= 1h) or `mm:ss` otherwise.
-function formatDuration(durationMs: number): string {
-  const totalSeconds = Math.max(0, Math.floor(durationMs / 1000));
-  const hours = Math.floor(totalSeconds / 3600);
-  const mins = Math.floor((totalSeconds % 3600) / 60);
-  const secs = totalSeconds % 60;
-  if (hours > 0) {
-    return `${hours}h ${mins}m`;
-  }
-  return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
-}
-
-// Build a safe-ish default export filename from a meeting title.
-function exportFilename(title: string): string {
-  const base = title.trim() || "meeting";
-  const slug = base
-    .replace(/[\\/:*?"<>|]/g, "")
-    .replace(/\s+/g, "-")
-    .slice(0, 60);
-  return `${slug || "meeting"}.md`;
-}
-
+// The Meeting section, split into three tabs so each job gets its own space:
+// "Session" (the live/last workspace), "History" (past meetings + detail) and
+// "Settings" (one-time configuration). Shared session state and backend event
+// subscriptions live here so switching tabs never drops a running meeting.
 export const MeetingSettings: React.FC = () => {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
+
+  const [tab, setTab] = useState<MeetingTab>("session");
 
   // Cloud models skip the live per-segment pass (it would be one request each),
   // so the live transcript stays empty until the on-stop finalize. Detect that
@@ -278,16 +74,9 @@ export const MeetingSettings: React.FC = () => {
   const [summary, setSummary] = useState("");
   const [summarizing, setSummarizing] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
-  const [autoSummarize, setAutoSummarize] = useState(false);
 
-  // Automatic meeting detection / auto-end settings (persisted app settings).
-  const [autoDetect, setAutoDetect] = useState(false);
-  const [autoEnd, setAutoEnd] = useState(true);
-  const [silenceTimeoutSecs, setSilenceTimeoutSecs] = useState(180);
-  const [autoEndGraceSecs, setAutoEndGraceSecs] = useState(60);
-  const [detectError, setDetectError] = useState<string | null>(null);
-
-  // Summary template picker + custom prompt (shared by live + detail flows).
+  // Summary template picker + custom prompt for the live flow (the detail
+  // view keeps its own local pair).
   const [templates, setTemplates] = useState<MeetingSummaryTemplate[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [customPrompt, setCustomPrompt] = useState("");
@@ -317,7 +106,6 @@ export const MeetingSettings: React.FC = () => {
   const [recoveringId, setRecoveringId] = useState<number | null>(null);
   const [recoverError, setRecoverError] = useState<string | null>(null);
 
-  const transcriptRef = useRef<HTMLDivElement>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const notesSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -353,20 +141,6 @@ export const MeetingSettings: React.FC = () => {
     let cancelled = false;
 
     void loadPastMeetings();
-
-    // Read the persisted auto-summarize setting (raw get_app_settings).
-    void getMeetingAutoSummarize().then((v) => {
-      if (!cancelled) setAutoSummarize(v);
-    });
-
-    // Read the persisted automatic-detection settings (all four at once).
-    void getMeetingAutoDetectSettings().then((s) => {
-      if (cancelled) return;
-      setAutoDetect(s.autoDetect);
-      setAutoEnd(s.autoEnd);
-      setSilenceTimeoutSecs(s.silenceTimeoutSecs);
-      setAutoEndGraceSecs(s.autoEndGraceSecs);
-    });
 
     // Load summary templates for the picker + the provider trust info.
     void getMeetingSummaryTemplates().then((tpl) => {
@@ -438,13 +212,15 @@ export const MeetingSettings: React.FC = () => {
       }),
     );
 
-    // Auto-title pass updates the title after a meeting finishes; reflect it
-    // live in the detail view + refresh the list.
+    // Automatic titles (calendar/window naming at start, LLM auto-title after
+    // stop) arrive with the affected row id; rename only the matching meeting.
     register(
-      listenMeetingTitle((title) => {
-        setDetail((prev) => (prev ? { ...prev, title } : prev));
+      listenMeetingTitle(({ id, title }) => {
+        setDetail((prev) =>
+          prev && prev.id === id ? { ...prev, title } : prev,
+        );
         setPastMeetings((prev) =>
-          prev.map((m, i) => (i === 0 ? { ...m, title } : m)),
+          prev.map((m) => (m.id === id ? { ...m, title } : m)),
         );
       }),
     );
@@ -466,14 +242,6 @@ export const MeetingSettings: React.FC = () => {
       if (searchRef.current) clearTimeout(searchRef.current);
     };
   }, [searchQuery, loadPastMeetings]);
-
-  // Auto-scroll the transcript panel to the newest line.
-  useEffect(() => {
-    const el = transcriptRef.current;
-    if (el) {
-      el.scrollTop = el.scrollHeight;
-    }
-  }, [transcript, liveSegments]);
 
   const handleStart = async () => {
     setError(null);
@@ -536,66 +304,6 @@ export const MeetingSettings: React.FC = () => {
     }
   };
 
-  const handleToggleAutoSummarize = async () => {
-    const next = !autoSummarize;
-    setAutoSummarize(next);
-    try {
-      await changeMeetingAutoSummarize(next);
-    } catch (e) {
-      // Revert the optimistic toggle on failure.
-      setAutoSummarize(!next);
-      setSummaryError(String(e));
-    }
-  };
-
-  const handleToggleAutoDetect = async () => {
-    const next = !autoDetect;
-    setAutoDetect(next);
-    setDetectError(null);
-    try {
-      await changeMeetingAutoDetect(next);
-    } catch (e) {
-      setAutoDetect(!next);
-      setDetectError(String(e));
-    }
-  };
-
-  const handleToggleAutoEnd = async () => {
-    const next = !autoEnd;
-    setAutoEnd(next);
-    setDetectError(null);
-    try {
-      await changeMeetingAutoEnd(next);
-    } catch (e) {
-      setAutoEnd(!next);
-      setDetectError(String(e));
-    }
-  };
-
-  const handleSilenceTimeoutChange = async (secs: number) => {
-    const prev = silenceTimeoutSecs;
-    setSilenceTimeoutSecs(secs);
-    setDetectError(null);
-    try {
-      await changeMeetingSilenceTimeout(secs);
-    } catch (e) {
-      setSilenceTimeoutSecs(prev);
-      setDetectError(String(e));
-    }
-  };
-
-  const handleAutoEndGraceChange = async (secs: number) => {
-    const prev = autoEndGraceSecs;
-    setAutoEndGraceSecs(secs);
-    setDetectError(null);
-    try {
-      await changeMeetingAutoEndGrace(secs);
-    } catch (e) {
-      setAutoEndGraceSecs(prev);
-      setDetectError(String(e));
-    }
-  };
-
   // Resolve the template argument to pass: a free-text custom prompt overrides
   // the dropdown selection when present.
   const resolveTemplateArg = useCallback((): string | undefined => {
@@ -635,6 +343,7 @@ export const MeetingSettings: React.FC = () => {
   };
 
   const openDetail = async (id: number) => {
+    setTab("history");
     setDetail(null);
     setDetailError(null);
     setDetailLoading(true);
@@ -692,983 +401,122 @@ export const MeetingSettings: React.FC = () => {
     });
   };
 
-  const copyTranscript = () =>
-    copyText(plainTranscriptText(liveSegments, transcript));
-  const copyNotes = () => copyText(summary);
-  const copyUserNotes = () => copyText(userNotes);
+  const goToHistoryList = () => {
+    closeDetail();
+    setTab("history");
+  };
 
-  const hasTranscript = transcript.trim().length > 0;
+  // Re-clicking the active History tab pops back from a detail view.
+  const handleTabChange = (next: MeetingTab) => {
+    if (next === "history" && tab === "history") closeDetail();
+    setTab(next);
+  };
 
-  const templateOptions: SelectOption[] = templates.map((tpl) => ({
-    value: tpl.id,
-    label: tpl.name,
-  }));
+  const tabs: { id: MeetingTab; label: string; Icon: typeof Mic }[] = [
+    { id: "session", label: t("meeting.tabSession"), Icon: Mic },
+    { id: "history", label: t("meeting.tabHistory"), Icon: History },
+    { id: "settings", label: t("meeting.tabSettings"), Icon: Settings2 },
+  ];
 
-  const silenceTimeoutOptions: SelectOption[] = [60, 120, 180, 300, 600].map(
-    (secs) => ({
-      value: String(secs),
-      label: t("meeting.durationMinutes", { count: secs / 60 }),
-    }),
-  );
-  const autoEndGraceOptions: SelectOption[] = [30, 60, 120].map((secs) => ({
-    value: String(secs),
-    label: t("meeting.durationSeconds", { count: secs }),
-  }));
+  const detailOpen = detail !== null || detailLoading || detailError !== null;
 
   return (
     <div className="max-w-3xl w-full mx-auto space-y-6">
-      {/* Crash-recovery banner */}
-      {interrupted.length > 0 && (
-        <div className="space-y-2">
-          {interrupted.map((m) => (
-            <div
-              key={m.id}
-              className="bg-logo-primary/5 border border-logo-primary/30 rounded-lg p-4 flex items-start justify-between gap-3"
-            >
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-text">
-                  {t("meeting.recoverTitle")}
-                </p>
-                <p className="mt-0.5 text-xs text-text/60">
-                  {t("meeting.recoverDescription")}
-                </p>
-                {recoverError && recoveringId === null && (
-                  <p className="mt-1 text-xs text-red-400 break-words">
-                    {recoverError}
-                  </p>
-                )}
-              </div>
-              <div className="shrink-0 flex items-center gap-1.5">
-                <Button
-                  onClick={() => handleRecover(m.id)}
-                  variant="primary-soft"
-                  size="sm"
-                  disabled={recoveringId !== null}
-                  className="flex items-center gap-1.5"
-                >
-                  {recoveringId === m.id ? (
-                    <Loader2 width={14} height={14} className="animate-spin" />
-                  ) : (
-                    <RefreshCw width={14} height={14} />
-                  )}
-                  <span>
-                    {recoveringId === m.id
-                      ? t("meeting.recovering")
-                      : t("meeting.recover")}
-                  </span>
-                </Button>
-                <Button
-                  onClick={() => handleDiscardInterrupted(m.id)}
-                  variant="secondary"
-                  size="sm"
-                  disabled={recoveringId !== null}
-                >
-                  {t("meeting.discard")}
-                </Button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Controls + status */}
-      <div className="space-y-2">
-        <div className="px-4 flex items-center justify-between">
-          <h2 className="text-xs font-medium text-mid-gray uppercase tracking-wide">
-            {t("meeting.title")}
-          </h2>
-          {isRunning && (
-            <div className="flex items-center gap-2 text-sm text-text/80">
-              <span className="relative flex h-2.5 w-2.5">
-                <span className="absolute inline-flex h-full w-full rounded-full bg-red-500/70 animate-ping" />
-                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
-              </span>
-              <span>{t("meeting.recording")}</span>
-              <span className="tabular-nums font-medium">
-                {formatElapsed(elapsed)}
-              </span>
-            </div>
-          )}
-        </div>
-
-        <div className="bg-background border border-mid-gray/20 rounded-lg p-4 space-y-3">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <Button
-              onClick={isRunning ? handleStop : handleStart}
-              variant={isRunning ? "danger" : "primary"}
-              size="md"
-              disabled={busy}
-              className="flex items-center gap-2"
-            >
-              {isRunning ? (
-                <Square width={16} height={16} />
-              ) : (
-                <Mic width={16} height={16} />
-              )}
-              <span>
-                {isRunning
-                  ? t("meeting.stopMeeting")
-                  : t("meeting.startMeeting")}
-              </span>
-            </Button>
-            <OnDeviceBadge t={t} />
-          </div>
-
-          {error && (
-            <p className="text-sm text-red-400 whitespace-pre-wrap break-words">
-              {error}
-            </p>
-          )}
-
-          {/* Optional global shortcut to start/stop a meeting without opening
-              the window. Unbound by default; mirrors the tray quick-start. */}
-          <ShortcutInput shortcutId="toggle_meeting" descriptionMode="inline" />
-
-          <label className="flex items-center gap-2.5 cursor-pointer select-none">
-            <button
-              type="button"
-              role="switch"
-              aria-checked={autoSummarize}
-              onClick={handleToggleAutoSummarize}
-              className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
-                autoSummarize ? "bg-logo-primary" : "bg-mid-gray/30"
-              }`}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-                  autoSummarize ? "translate-x-4" : "translate-x-0.5"
-                }`}
-              />
-            </button>
-            <span
-              className="text-sm text-text/80"
-              onClick={handleToggleAutoSummarize}
-            >
-              {t("meeting.autoSummarize")}
-            </span>
-          </label>
-
-          {isRunning && <MeetingSignal active={isRunning} />}
-        </div>
-      </div>
-
-      {/* Automatic detection */}
-      <div className="space-y-2">
-        <div className="px-4">
-          <h2 className="text-xs font-medium text-mid-gray uppercase tracking-wide">
-            {t("meeting.autoDetectSection")}
-          </h2>
-        </div>
-        <div className="bg-background border border-mid-gray/20 rounded-lg p-4 space-y-4">
-          <MeetingToggle
-            checked={autoDetect}
-            onToggle={handleToggleAutoDetect}
-            label={t("meeting.autoDetectToggle")}
-            description={t("meeting.autoDetectDescription")}
-          />
-          <MeetingToggle
-            checked={autoEnd}
-            onToggle={handleToggleAutoEnd}
-            label={t("meeting.autoEndToggle")}
-            description={t("meeting.autoEndDescription")}
-          />
-
-          <div
-            className={`grid grid-cols-1 gap-3 sm:grid-cols-2 ${
-              autoEnd ? "" : "opacity-50"
+      {/* Tab bar */}
+      <div
+        role="tablist"
+        className="flex items-center gap-1 rounded-lg border border-mid-gray/20 bg-mid-gray/5 p-1"
+      >
+        {tabs.map(({ id, label, Icon }) => (
+          <button
+            key={id}
+            role="tab"
+            aria-selected={tab === id}
+            onClick={() => handleTabChange(id)}
+            className={`flex-1 flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm transition-colors cursor-pointer ${
+              tab === id
+                ? "bg-background text-text border border-mid-gray/20 shadow-sm"
+                : "border border-transparent text-text/60 hover:text-text"
             }`}
           >
-            <div className="space-y-1">
-              <label className="text-[11px] font-medium uppercase tracking-wide text-mid-gray">
-                {t("meeting.silenceTimeoutLabel")}
-              </label>
-              <Select
-                value={String(silenceTimeoutSecs)}
-                options={silenceTimeoutOptions}
-                onChange={(v) => {
-                  if (v != null) void handleSilenceTimeoutChange(Number(v));
-                }}
-                isClearable={false}
-                disabled={!autoEnd}
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[11px] font-medium uppercase tracking-wide text-mid-gray">
-                {t("meeting.autoEndGraceLabel")}
-              </label>
-              <Select
-                value={String(autoEndGraceSecs)}
-                options={autoEndGraceOptions}
-                onChange={(v) => {
-                  if (v != null) void handleAutoEndGraceChange(Number(v));
-                }}
-                isClearable={false}
-                disabled={!autoEnd}
-              />
-            </div>
-          </div>
-
-          {detectError && (
-            <p className="text-sm text-red-400 whitespace-pre-wrap break-words">
-              {detectError}
-            </p>
-          )}
-        </div>
+            <Icon width={15} height={15} />
+            <span>{label}</span>
+            {id === "session" && isRunning && (
+              <span className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full rounded-full bg-red-500/70 animate-ping" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
+              </span>
+            )}
+          </button>
+        ))}
       </div>
 
-      {detail || detailLoading || detailError ? (
-        <MeetingDetailView
-          detail={detail}
-          loading={detailLoading}
-          error={detailError}
-          locale={i18n.language}
+      {tab === "session" && (
+        <LiveSession
+          isRunning={isRunning}
+          busy={busy}
+          elapsed={elapsed}
+          error={error}
+          finalizing={finalizing}
+          selectedIsCloud={selectedIsCloud}
+          transcript={transcript}
+          liveSegments={liveSegments}
+          userNotes={userNotes}
+          notesSaving={notesSaving}
+          hasSavedMeeting={currentMeetingId != null}
+          summary={summary}
+          summarizing={summarizing}
+          summaryError={summaryError}
           templates={templates}
+          selectedTemplate={selectedTemplate}
+          onSelectTemplate={setSelectedTemplate}
+          customPrompt={customPrompt}
+          onCustomPromptChange={setCustomPrompt}
           providerInfo={providerInfo}
-          onBack={closeDetail}
+          recentMeetings={pastMeetings}
+          interrupted={interrupted}
+          recoveringId={recoveringId}
+          recoverError={recoverError}
+          onStart={handleStart}
+          onStop={handleStop}
+          onSummarize={handleSummarize}
+          onUserNotesChange={handleUserNotesChange}
+          onOpenMeeting={openDetail}
+          onViewAllMeetings={goToHistoryList}
+          onRecover={handleRecover}
+          onDiscardInterrupted={handleDiscardInterrupted}
           onCopy={copyText}
-          onRefreshList={() => loadPastMeetings(searchQuery)}
-          setDetail={setDetail}
-          t={t}
         />
-      ) : (
-        <>
-          {/* Editable user notes (primary panel during recording) */}
-          <div className="space-y-2">
-            <div className="px-4 flex items-center justify-between">
-              <h2 className="text-xs font-medium text-mid-gray uppercase tracking-wide">
-                {t("meeting.myNotes")}
-              </h2>
-              <div className="flex items-center gap-2">
-                {currentMeetingId != null && (
-                  <span className="text-[10px] font-medium uppercase tracking-wide text-text/40">
-                    {notesSaving
-                      ? t("meeting.notesSaving")
-                      : t("meeting.notesSaved")}
-                  </span>
-                )}
-                <CopyButton
-                  onCopy={copyUserNotes}
-                  disabled={userNotes.trim().length === 0}
-                  title={t("meeting.copyMyNotes")}
-                  copiedTitle={t("meeting.copied")}
-                />
-              </div>
-            </div>
-            <div className="bg-background border border-mid-gray/20 rounded-lg p-4">
-              <textarea
-                value={userNotes}
-                onChange={(e) => handleUserNotesChange(e.target.value)}
-                placeholder={t("meeting.myNotesPlaceholder")}
-                className="w-full min-h-[8rem] resize-y bg-transparent text-sm text-text/90 placeholder:text-text/40 focus:outline-none"
-              />
-            </div>
-          </div>
-
-          {/* Live transcript (secondary, collapsible) */}
-          <details className="group space-y-2" open={isRunning}>
-            <summary className="px-4 flex items-center justify-between cursor-pointer list-none">
-              <h2 className="text-xs font-medium text-mid-gray uppercase tracking-wide">
-                {t("meeting.transcript")}
-              </h2>
-              <div className="flex items-center gap-2">
-                {isRunning && (
-                  <span className="text-[10px] font-medium uppercase tracking-wide text-text/40">
-                    {t("meeting.livePreview")}
-                  </span>
-                )}
-                <CopyButton
-                  onCopy={copyTranscript}
-                  disabled={!hasTranscript}
-                  title={t("meeting.copyTranscript")}
-                  copiedTitle={t("meeting.copied")}
-                />
-              </div>
-            </summary>
-            <div className="relative mt-2">
-              <div
-                ref={transcriptRef}
-                className="bg-background border border-mid-gray/20 rounded-lg p-4 h-64 overflow-y-auto"
-              >
-                {liveSegments.length > 0 ? (
-                  <PlainTranscript segments={liveSegments} />
-                ) : hasTranscript ? (
-                  <p className="text-sm text-text/90 whitespace-pre-wrap break-words select-text">
-                    {transcript}
-                  </p>
-                ) : (
-                  <p className="text-sm text-text/40">
-                    {isRunning
-                      ? selectedIsCloud
-                        ? t("meeting.cloudLivePreviewOff")
-                        : t("meeting.listening")
-                      : t("meeting.transcriptEmpty")}
-                  </p>
-                )}
-              </div>
-              {finalizing && (
-                <div className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-2 rounded-b-lg border-t border-mid-gray/20 bg-background/95 py-2 text-sm text-text/70 backdrop-blur-sm">
-                  <Loader2 width={15} height={15} className="animate-spin" />
-                  <span>{t("meeting.finalizing")}</span>
-                </div>
-              )}
-            </div>
-          </details>
-
-          {/* AI summary */}
-          <div className="space-y-2">
-            <div className="px-4 flex items-center justify-between">
-              <h2 className="text-xs font-medium text-mid-gray uppercase tracking-wide">
-                {t("meeting.summary")}
-              </h2>
-              {summary.trim().length > 0 && (
-                <CopyButton
-                  onCopy={copyNotes}
-                  title={t("meeting.copyNotes")}
-                  copiedTitle={t("meeting.copied")}
-                />
-              )}
-            </div>
-            <div className="bg-background border border-mid-gray/20 rounded-lg p-4 space-y-3">
-              <SummaryControls
-                templateOptions={templateOptions}
-                selectedTemplate={selectedTemplate}
-                onSelectTemplate={setSelectedTemplate}
-                customPrompt={customPrompt}
-                onCustomPromptChange={setCustomPrompt}
-                disabled={!hasTranscript || isRunning || summarizing}
-                t={t}
-              />
-
-              <Button
-                onClick={handleSummarize}
-                variant="primary-soft"
-                size="md"
-                disabled={!hasTranscript || isRunning || summarizing}
-                className="flex items-center gap-2"
-              >
-                <Sparkles
-                  width={16}
-                  height={16}
-                  className={summarizing ? "animate-pulse" : ""}
-                />
-                <span>
-                  {summarizing
-                    ? t("meeting.summarizing")
-                    : t("meeting.generateFromNotes")}
-                </span>
-              </Button>
-
-              <SummaryLocationNote info={providerInfo} t={t} />
-
-              {summaryError && (
-                <p className="text-sm text-red-400 whitespace-pre-wrap break-words">
-                  {summaryError}
-                </p>
-              )}
-
-              {summary.trim().length > 0 && <Markdown>{summary}</Markdown>}
-            </div>
-          </div>
-        </>
       )}
 
-      {/* Past meetings */}
-      <div className="space-y-2">
-        <div className="px-4 flex items-center justify-between gap-3">
-          <h2 className="text-xs font-medium text-mid-gray uppercase tracking-wide">
-            {t("meeting.pastMeetings")}
-          </h2>
-        </div>
-        <div className="px-4">
-          <div className="relative">
-            <Search
-              width={15}
-              height={15}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-text/40 pointer-events-none"
-            />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={t("meeting.searchPlaceholder")}
-              className="w-full rounded-md border border-mid-gray/20 bg-mid-gray/5 py-2 pl-9 pr-8 text-sm text-text placeholder:text-text/40 focus:border-logo-primary focus:outline-none focus:ring-1 focus:ring-logo-primary"
-            />
-            {searchQuery.length > 0 && (
-              <button
-                onClick={() => setSearchQuery("")}
-                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-text/40 hover:text-logo-primary cursor-pointer"
-                title={t("meeting.dismiss")}
-              >
-                <X width={14} height={14} />
-              </button>
-            )}
-          </div>
-        </div>
-        <div className="bg-background border border-mid-gray/20 rounded-lg overflow-visible">
-          {pastError && (
-            <p className="px-4 py-3 text-sm text-red-400 whitespace-pre-wrap break-words">
-              {pastError}
-            </p>
-          )}
-          {pastMeetings.length === 0 ? (
-            <div className="px-4 py-3 text-center text-text/60 text-sm">
-              {searchQuery.trim().length > 0
-                ? t("meeting.searchNoResults")
-                : t("meeting.pastMeetingsEmpty")}
-            </div>
-          ) : (
-            <div className="divide-y divide-mid-gray/20">
-              {pastMeetings.map((m) => (
-                <PastMeetingRow
-                  key={m.id}
-                  meeting={m}
-                  locale={i18n.language}
-                  confirming={confirmDeleteId === m.id}
-                  onOpen={() => openDetail(m.id)}
-                  onRequestDelete={() => setConfirmDeleteId(m.id)}
-                  onCancelDelete={() => setConfirmDeleteId(null)}
-                  onConfirmDelete={() => handleDelete(m.id)}
-                  t={t}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// Shared summary template picker + custom-prompt field. Used by both the live
-// summary panel and the detail view's regenerate controls.
-interface SummaryControlsProps {
-  templateOptions: SelectOption[];
-  selectedTemplate: string | null;
-  onSelectTemplate: (value: string | null) => void;
-  customPrompt: string;
-  onCustomPromptChange: (value: string) => void;
-  disabled?: boolean;
-  t: (key: string) => string;
-}
-
-const SummaryControls: React.FC<SummaryControlsProps> = ({
-  templateOptions,
-  selectedTemplate,
-  onSelectTemplate,
-  customPrompt,
-  onCustomPromptChange,
-  disabled,
-  t,
-}) => (
-  <div className="space-y-2">
-    <div className="space-y-1">
-      <label className="text-[11px] font-medium uppercase tracking-wide text-mid-gray">
-        {t("meeting.template")}
-      </label>
-      <Select
-        value={selectedTemplate}
-        options={templateOptions}
-        onChange={onSelectTemplate}
-        isClearable={false}
-        disabled={disabled}
-        placeholder={t("meeting.template")}
-      />
-    </div>
-    <div className="space-y-1">
-      <label className="text-[11px] font-medium uppercase tracking-wide text-mid-gray">
-        {t("meeting.customPrompt")}
-      </label>
-      <textarea
-        value={customPrompt}
-        onChange={(e) => onCustomPromptChange(e.target.value)}
-        placeholder={t("meeting.customPromptPlaceholder")}
-        disabled={disabled}
-        className="w-full min-h-[3rem] resize-y rounded-md border border-mid-gray/20 bg-mid-gray/5 p-2 text-sm text-text/90 placeholder:text-text/40 focus:border-logo-primary focus:outline-none focus:ring-1 focus:ring-logo-primary disabled:opacity-50"
-      />
-    </div>
-  </div>
-);
-
-interface PastMeetingRowProps {
-  meeting: MeetingListItem;
-  locale: string;
-  confirming: boolean;
-  onOpen: () => void;
-  onRequestDelete: () => void;
-  onCancelDelete: () => void;
-  onConfirmDelete: () => void;
-  t: (key: string) => string;
-}
-
-const PastMeetingRow: React.FC<PastMeetingRowProps> = ({
-  meeting,
-  locale,
-  confirming,
-  onOpen,
-  onRequestDelete,
-  onCancelDelete,
-  onConfirmDelete,
-  t,
-}) => {
-  const title = meeting.title.trim() || t("meeting.untitledMeeting");
-  return (
-    <div className="px-4 py-3 flex items-start justify-between gap-3">
-      <button
-        onClick={onOpen}
-        className="flex-1 min-w-0 text-left cursor-pointer group"
-      >
-        <div className="flex items-center gap-2">
-          <p className="text-sm font-medium text-text group-hover:text-logo-primary transition-colors truncate">
-            {title}
-          </p>
-          {meeting.has_summary && (
-            <Sparkles
-              width={14}
-              height={14}
-              className="shrink-0 text-logo-primary"
-              aria-label={t("meeting.hasSummary")}
-            />
-          )}
-        </div>
-        <div className="mt-0.5 flex items-center gap-2 text-xs text-text/50">
-          <span>{formatMeetingDate(meeting.started_at, locale)}</span>
-          <span aria-hidden>•</span>
-          <span className="tabular-nums">
-            {formatDuration(meeting.duration_ms)}
-          </span>
-        </div>
-        {meeting.transcript_preview.trim().length > 0 && (
-          <p className="mt-1 text-xs text-text/60 line-clamp-2 break-words">
-            {meeting.transcript_preview}
-          </p>
-        )}
-      </button>
-      <div className="shrink-0 flex items-center gap-1">
-        {confirming ? (
-          <>
-            <Button
-              onClick={onConfirmDelete}
-              variant="danger"
-              size="sm"
-              title={t("meeting.confirmDelete")}
-            >
-              {t("meeting.confirm")}
-            </Button>
-            <Button onClick={onCancelDelete} variant="secondary" size="sm">
-              {t("meeting.cancel")}
-            </Button>
-          </>
+      {tab === "history" &&
+        (detailOpen ? (
+          <MeetingDetail
+            detail={detail}
+            loading={detailLoading}
+            error={detailError}
+            templates={templates}
+            providerInfo={providerInfo}
+            onBack={closeDetail}
+            onCopy={copyText}
+            onRefreshList={() => loadPastMeetings(searchQuery)}
+            setDetail={setDetail}
+          />
         ) : (
-          <button
-            onClick={onRequestDelete}
-            title={t("meeting.delete")}
-            className="p-1.5 rounded-md flex items-center justify-center transition-colors cursor-pointer text-text/50 hover:text-red-400"
-          >
-            <Trash2 width={16} height={16} />
-          </button>
-        )}
-      </div>
-    </div>
-  );
-};
+          <MeetingHistory
+            meetings={pastMeetings}
+            error={pastError}
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            confirmDeleteId={confirmDeleteId}
+            onRequestDelete={setConfirmDeleteId}
+            onCancelDelete={() => setConfirmDeleteId(null)}
+            onConfirmDelete={handleDelete}
+            onOpen={openDetail}
+          />
+        ))}
 
-interface MeetingDetailViewProps {
-  detail: MeetingRecord | null;
-  loading: boolean;
-  error: string | null;
-  locale: string;
-  templates: MeetingSummaryTemplate[];
-  providerInfo: SummaryProviderInfo | null;
-  onBack: () => void;
-  onCopy: (text: string) => void;
-  onRefreshList: () => void;
-  setDetail: React.Dispatch<React.SetStateAction<MeetingRecord | null>>;
-  t: (key: string, opts?: Record<string, unknown>) => string;
-}
-
-const MeetingDetailView: React.FC<MeetingDetailViewProps> = ({
-  detail,
-  loading,
-  error,
-  locale,
-  templates,
-  providerInfo,
-  onBack,
-  onCopy,
-  onRefreshList,
-  setDetail,
-  t,
-}) => {
-  const title = detail
-    ? detail.title.trim() || t("meeting.untitledMeeting")
-    : "";
-  const hasTranscript = !!detail && detail.transcript.trim().length > 0;
-  const labeledSegments = detail?.segments ?? [];
-  const hasLabeledSegments = labeledSegments.length > 0;
-  const summary = detail?.summary?.trim() ?? "";
-
-  // Inline title rename.
-  const [editingTitle, setEditingTitle] = useState(false);
-  const [titleDraft, setTitleDraft] = useState("");
-
-  // Editable user notes in the detail view (debounced autosave).
-  const [notes, setNotes] = useState("");
-  const [notesSaving, setNotesSaving] = useState(false);
-  const notesSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Regenerate controls.
-  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
-  const [customPrompt, setCustomPrompt] = useState("");
-  const [regenerating, setRegenerating] = useState(false);
-  const [regenError, setRegenError] = useState<string | null>(null);
-
-  // Export.
-  const [exporting, setExporting] = useState(false);
-  const [exportErr, setExportErr] = useState<string | null>(null);
-
-  const detailId = detail?.id;
-
-  // Sync local editable state when the detail record loads/changes.
-  useEffect(() => {
-    setNotes(detail?.notes ?? "");
-    setTitleDraft(detail?.title ?? "");
-    setEditingTitle(false);
-    setRegenError(null);
-    setExportErr(null);
-  }, [detailId, detail?.notes, detail?.title]);
-
-  useEffect(() => {
-    setSelectedTemplate((cur) => cur ?? templates[0]?.id ?? null);
-  }, [templates]);
-
-  // Resolve a playable audio URL for the saved recording, if any. Older
-  // meetings have no `audio_path`; we ask the backend for the absolute path
-  // and wrap it with convertFileSrc so the asset protocol can serve it.
-  const [audioSrc, setAudioSrc] = useState<string | null>(null);
-  const detailHasAudioPath = !!detail?.audio_path;
-  useEffect(() => {
-    let cancelled = false;
-    setAudioSrc(null);
-    if (detailId == null || !detailHasAudioPath) return;
-    getMeetingAudioPath(detailId)
-      .then((path) => {
-        if (!cancelled) setAudioSrc(convertFileSrc(path));
-      })
-      .catch(() => {
-        // Audio missing or unreadable; fall back to the no-audio hint.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [detailId, detailHasAudioPath]);
-
-  const handleSaveTitle = async () => {
-    if (detailId == null) return;
-    const next = titleDraft.trim();
-    setEditingTitle(false);
-    if (next === (detail?.title ?? "").trim()) return;
-    try {
-      await updateMeetingTitle(detailId, next);
-      setDetail((prev) => (prev ? { ...prev, title: next } : prev));
-      onRefreshList();
-    } catch (e) {
-      setRegenError(String(e));
-    }
-  };
-
-  const handleNotesChange = (value: string) => {
-    setNotes(value);
-    if (detailId == null) return;
-    const id = detailId;
-    if (notesSaveRef.current) clearTimeout(notesSaveRef.current);
-    setNotesSaving(true);
-    notesSaveRef.current = setTimeout(() => {
-      updateMeetingNotes(id, value)
-        .catch((e) => setRegenError(String(e)))
-        .finally(() => setNotesSaving(false));
-    }, NOTES_AUTOSAVE_MS);
-  };
-
-  const handleRegenerate = async () => {
-    if (detailId == null) return;
-    setRegenError(null);
-    setRegenerating(true);
-    const custom = customPrompt.trim();
-    const arg = custom.length > 0 ? custom : (selectedTemplate ?? undefined);
-    try {
-      const result = await regenerateMeetingSummary(detailId, arg);
-      setDetail((prev) => (prev ? { ...prev, summary: result } : prev));
-      onRefreshList();
-    } catch (e) {
-      setRegenError(String(e));
-    } finally {
-      setRegenerating(false);
-    }
-  };
-
-  const handleExport = async () => {
-    if (detailId == null) return;
-    setExportErr(null);
-    setExporting(true);
-    try {
-      const markdown = await exportMeetingMarkdown(detailId);
-      const path = await save({
-        defaultPath: exportFilename(title),
-        filters: [{ name: "Markdown", extensions: ["md"] }],
-      });
-      if (!path) return; // user cancelled
-      await writeTextFile(path, markdown);
-    } catch (e) {
-      setExportErr(String(e));
-    } finally {
-      setExporting(false);
-    }
-  };
-
-  const templateOptions: SelectOption[] = templates.map((tpl) => ({
-    value: tpl.id,
-    label: tpl.name,
-  }));
-
-  return (
-    <div className="space-y-2">
-      <div className="px-4 flex items-center justify-between gap-2">
-        <button
-          onClick={onBack}
-          className="flex items-center gap-1.5 text-sm text-text/70 hover:text-logo-primary transition-colors cursor-pointer"
-        >
-          <ArrowLeft width={16} height={16} />
-          <span>{t("meeting.back")}</span>
-        </button>
-        <div className="flex items-center gap-2">
-          {detail && (
-            <div className="flex items-center gap-2 text-xs text-text/50 min-w-0">
-              <span className="truncate">
-                {formatMeetingDate(detail.started_at, locale)}
-              </span>
-              <span aria-hidden>•</span>
-              <span className="tabular-nums">
-                {formatDuration(detail.duration_ms)}
-              </span>
-            </div>
-          )}
-          {detail && (
-            <Button
-              onClick={handleExport}
-              variant="secondary"
-              size="sm"
-              disabled={exporting}
-              className="flex items-center gap-1.5"
-            >
-              {exporting ? (
-                <Loader2 width={14} height={14} className="animate-spin" />
-              ) : (
-                <Download width={14} height={14} />
-              )}
-              <span>
-                {exporting ? t("meeting.exporting") : t("meeting.export")}
-              </span>
-            </Button>
-          )}
-        </div>
-      </div>
-
-      <div className="bg-background border border-mid-gray/20 rounded-lg p-4 space-y-4">
-        {loading && (
-          <p className="text-sm text-text/60">{t("meeting.loading")}</p>
-        )}
-
-        {error && (
-          <p className="text-sm text-red-400 whitespace-pre-wrap break-words">
-            {error}
-          </p>
-        )}
-
-        {exportErr && (
-          <p className="text-sm text-red-400 whitespace-pre-wrap break-words">
-            {t("meeting.exportError")}
-          </p>
-        )}
-
-        {detail && (
-          <>
-            {editingTitle ? (
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  value={titleDraft}
-                  onChange={(e) => setTitleDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") void handleSaveTitle();
-                    if (e.key === "Escape") setEditingTitle(false);
-                  }}
-                  autoFocus
-                  className="flex-1 rounded-md border border-mid-gray/20 bg-mid-gray/5 px-2 py-1 text-base text-text focus:border-logo-primary focus:outline-none focus:ring-1 focus:ring-logo-primary"
-                />
-                <Button
-                  onClick={handleSaveTitle}
-                  variant="primary-soft"
-                  size="sm"
-                >
-                  {t("meeting.save")}
-                </Button>
-                <Button
-                  onClick={() => setEditingTitle(false)}
-                  variant="secondary"
-                  size="sm"
-                >
-                  {t("meeting.cancel")}
-                </Button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 group">
-                <h3 className="text-base font-medium text-text break-words">
-                  {title}
-                </h3>
-                <button
-                  onClick={() => setEditingTitle(true)}
-                  title={t("meeting.rename")}
-                  className="p-1 rounded-md text-text/40 hover:text-logo-primary transition-colors cursor-pointer"
-                >
-                  <Pencil width={14} height={14} />
-                </button>
-              </div>
-            )}
-
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xs font-medium text-mid-gray uppercase tracking-wide">
-                  {t("meeting.transcript")}
-                </h2>
-                <CopyButton
-                  onCopy={() =>
-                    onCopy(
-                      plainTranscriptText(labeledSegments, detail.transcript),
-                    )
-                  }
-                  disabled={!hasTranscript}
-                  title={t("meeting.copyTranscript")}
-                  copiedTitle={t("meeting.copied")}
-                />
-              </div>
-              {hasLabeledSegments ? (
-                <PlainTranscript segments={labeledSegments} />
-              ) : hasTranscript ? (
-                <p className="text-sm text-text/90 whitespace-pre-wrap break-words select-text">
-                  {detail.transcript}
-                </p>
-              ) : (
-                <p className="text-sm text-text/40">
-                  {t("meeting.transcriptEmpty")}
-                </p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <h2 className="text-xs font-medium text-mid-gray uppercase tracking-wide">
-                {t("meeting.audio")}
-              </h2>
-              {audioSrc ? (
-                <audio
-                  controls
-                  src={audioSrc}
-                  className="w-full"
-                  preload="metadata"
-                />
-              ) : (
-                <p className="text-sm text-text/40">{t("meeting.noAudio")}</p>
-              )}
-            </div>
-
-            {/* Editable user notes */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xs font-medium text-mid-gray uppercase tracking-wide">
-                  {t("meeting.myNotes")}
-                </h2>
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-medium uppercase tracking-wide text-text/40">
-                    {notesSaving
-                      ? t("meeting.notesSaving")
-                      : t("meeting.notesSaved")}
-                  </span>
-                  <CopyButton
-                    onCopy={() => onCopy(notes)}
-                    disabled={notes.trim().length === 0}
-                    title={t("meeting.copyMyNotes")}
-                    copiedTitle={t("meeting.copied")}
-                  />
-                </div>
-              </div>
-              <textarea
-                value={notes}
-                onChange={(e) => handleNotesChange(e.target.value)}
-                placeholder={t("meeting.myNotesPlaceholder")}
-                className="w-full min-h-[6rem] resize-y rounded-md border border-mid-gray/20 bg-mid-gray/5 p-2 text-sm text-text/90 placeholder:text-text/40 focus:border-logo-primary focus:outline-none focus:ring-1 focus:ring-logo-primary"
-              />
-            </div>
-
-            {/* AI summary + regenerate */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xs font-medium text-mid-gray uppercase tracking-wide">
-                  {t("meeting.summary")}
-                </h2>
-                {summary.length > 0 && (
-                  <CopyButton
-                    onCopy={() => onCopy(summary)}
-                    title={t("meeting.copySummary")}
-                    copiedTitle={t("meeting.copied")}
-                  />
-                )}
-              </div>
-
-              <SummaryControls
-                templateOptions={templateOptions}
-                selectedTemplate={selectedTemplate}
-                onSelectTemplate={setSelectedTemplate}
-                customPrompt={customPrompt}
-                onCustomPromptChange={setCustomPrompt}
-                disabled={!hasTranscript || regenerating}
-                t={t}
-              />
-
-              <Button
-                onClick={handleRegenerate}
-                variant="primary-soft"
-                size="md"
-                disabled={!hasTranscript || regenerating}
-                className="flex items-center gap-2"
-              >
-                <RefreshCw
-                  width={16}
-                  height={16}
-                  className={regenerating ? "animate-spin" : ""}
-                />
-                <span>
-                  {regenerating
-                    ? t("meeting.regenerating")
-                    : t("meeting.regenerate")}
-                </span>
-              </Button>
-
-              <SummaryLocationNote info={providerInfo} t={t} />
-
-              {regenError && (
-                <p className="text-sm text-red-400 whitespace-pre-wrap break-words">
-                  {regenError}
-                </p>
-              )}
-
-              {summary.length > 0 ? (
-                <Markdown>{summary}</Markdown>
-              ) : (
-                <p className="text-sm text-text/40">{t("meeting.noSummary")}</p>
-              )}
-            </div>
-          </>
-        )}
-      </div>
+      {tab === "settings" && <MeetingPreferences />}
     </div>
   );
 };

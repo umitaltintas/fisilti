@@ -8,5 +8,9 @@
   <string>Fısıltı needs screen &amp; system audio recording permission to capture system audio for meeting transcription.</string>
   <key>NSAudioCaptureUsageDescription</key>
   <string>Fısıltı captures system audio to transcribe meetings.</string>
+  <key>NSCalendarsUsageDescription</key>
+  <string>Fısıltı reads your calendar to name meeting transcripts after the event in progress.</string>
+  <key>NSCalendarsFullAccessUsageDescription</key>
+  <string>Fısıltı reads your calendar to name meeting transcripts after the event in progress.</string>
 </dict>
 </plist>

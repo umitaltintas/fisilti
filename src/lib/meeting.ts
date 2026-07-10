@@ -419,13 +419,58 @@ export function listenMeetingSummary(
   });
 }
 
-/** Subscribe to automatic title updates (fired after the auto-title pass
- * generates a title for the just-finished meeting). The payload is the new
- * title string. Returns a promise resolving to the unlisten function. */
+/** Payload of the `"meeting-title-update"` event. Mirrors Rust
+ * `MeetingTitleUpdate`. Fired whenever a meeting's title changes
+ * automatically: at session start when the calendar/window naming resolves,
+ * or after stop when the LLM auto-title lands. */
+export interface MeetingTitleUpdate {
+  /** Row id of the renamed meeting. */
+  id: number;
+  /** The new title. */
+  title: string;
+}
+
+/** Subscribe to automatic title updates. Returns a promise resolving to the
+ * unlisten function. */
 export function listenMeetingTitle(
-  cb: (title: string) => void,
+  cb: (update: MeetingTitleUpdate) => void,
 ): Promise<UnlistenFn> {
-  return listen<string>(MEETING_TITLE_UPDATE, (event) => {
+  return listen<MeetingTitleUpdate>(MEETING_TITLE_UPDATE, (event) => {
     cb(event.payload);
   });
+}
+
+/** Status of macOS calendar access for meeting naming. */
+export type CalendarAccessStatus =
+  | "authorized"
+  | "denied"
+  | "notDetermined"
+  | "unavailable";
+
+/** Read the current Calendars permission status for meeting naming. */
+export function getCalendarAccessStatus(): Promise<CalendarAccessStatus> {
+  return invoke<string>("get_calendar_access_status").then(
+    (s) => s as CalendarAccessStatus,
+  );
+}
+
+/** Request Calendars access (shows the system prompt on first call). Resolves
+ * `true` when full access is granted. May take as long as the user leaves the
+ * prompt open. */
+export function requestCalendarAccess(): Promise<boolean> {
+  return invoke<boolean>("request_calendar_access");
+}
+
+/** Persist the calendar-naming setting (`meeting_calendar_names`). When
+ * enabled, a new session is named after the calendar event in progress. */
+export function changeMeetingCalendarNames(enabled: boolean): Promise<void> {
+  return invoke<void>("change_meeting_calendar_names_setting", { enabled });
+}
+
+/** Read the calendar-naming setting from persisted app settings. Falls back
+ * to `false` if the setting cannot be read. */
+export function getMeetingCalendarNames(): Promise<boolean> {
+  return invoke<{ meeting_calendar_names?: boolean }>("get_app_settings")
+    .then((s) => s?.meeting_calendar_names ?? false)
+    .catch(() => false);
 }

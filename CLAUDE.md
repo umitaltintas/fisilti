@@ -199,6 +199,27 @@ on prolonged silence or when the meeting app releases the mic.
 - Tray: the "Meetings" item opens the main window on the Meeting section via
   a `navigate-section` event (listener in `App.tsx`).
 
+## Meeting Naming (macOS)
+
+New sessions are titled after the real meeting instead of the datetime
+default, in priority order: calendar event in progress (EventKit, opt-in
+`meeting_calendar_names` setting → Calendars TCC prompt) → the detected
+meeting app's window/tab title (AX API; reuses the accessibility permission,
+cleaned of product suffixes and rejected when generic, e.g. "Zoom Meeting" or
+a bare Meet room code) → the existing LLM auto-title on stop → datetime.
+
+- `src-tauri/src/meeting_naming.rs` - calendar + window-title resolution and
+  the pure `clean_window_title` heuristics (unit-tested)
+- `MeetingManager::resolve_session_title` runs on a background thread at
+  start (2 attempts, 12s apart); the resolved title names the in-progress row
+  and suppresses the LLM auto-title on stop
+- The `meeting-title-update` event carries `{ id, title }` so the UI renames
+  only the matching meeting
+- Commands: `get_calendar_access_status`, `request_calendar_access`,
+  `change_meeting_calendar_names_setting`. The toggle lives in the meeting
+  "Settings" tab (`MeetingPreferences.tsx`) and requests calendar access
+  before persisting the setting
+
 ## Debug Mode
 
 Access debug features: `Cmd+Shift+D` (macOS) or `Ctrl+Shift+D` (Windows/Linux)

@@ -440,6 +440,12 @@ pub struct AppSettings {
     /// Seconds of continuous silence before the "end meeting?" prompt appears.
     #[serde(default = "default_meeting_silence_timeout_secs")]
     pub meeting_silence_timeout_secs: u32,
+    /// Meeting mode: name new sessions after the calendar event in progress at
+    /// start time (macOS EventKit). Opt-in: enabling prompts for the Calendars
+    /// permission. Window-title naming and the LLM auto-title stay available
+    /// regardless.
+    #[serde(default)]
+    pub meeting_calendar_names: bool,
     /// Seconds the "end meeting?" prompt waits for a response before the
     /// session is ended automatically.
     #[serde(default = "default_meeting_auto_end_grace_secs")]
@@ -940,6 +946,7 @@ pub fn get_default_settings() -> AppSettings {
         meeting_summary_templates: default_meeting_summary_templates(),
         meeting_auto_detect: false,
         meeting_auto_end: default_meeting_auto_end(),
+        meeting_calendar_names: false,
         meeting_silence_timeout_secs: default_meeting_silence_timeout_secs(),
         meeting_auto_end_grace_secs: default_meeting_auto_end_grace_secs(),
     }

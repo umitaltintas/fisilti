@@ -111,6 +111,27 @@ futures-channel = "0.3.31"
 # Meeting mode: EBU R128 loudness measurement for mic normalization (Item 5).
 # macOS-only because it's only used in the macOS meeting capture loop.
 ebur128 = "0.1.10"
+# Meeting naming: EventKit lookup of the ongoing calendar event so sessions can
+# be named after the real meeting (opt-in `meeting_calendar_names` setting).
+objc2 = "0.6"
+objc2-event-kit = { version = "0.3", features = [
+  "EKEventStore",
+  "EKEvent",
+  "EKCalendar",
+  "EKCalendarItem",
+  "EKObject",
+  "EKTypes",
+  "block2",
+] }
+objc2-foundation = { version = "0.3", features = [
+  "NSDate",
+  "NSArray",
+  "NSString",
+  "NSError",
+  "NSPredicate",
+  "NSObjCRuntime",
+] }
+block2 = "0.6"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk-layer-shell = { version = "0.8", features = ["v0_6"] }

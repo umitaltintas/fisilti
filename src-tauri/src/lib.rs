@@ -12,6 +12,7 @@ mod llm_client;
 mod managers;
 mod meeting;
 mod meeting_detector;
+mod meeting_naming;
 mod meeting_prompt;
 mod overlay;
 pub mod portable;
@@ -382,6 +383,7 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_meeting_auto_summarize_setting,
             shortcut::change_meeting_auto_detect_setting,
             shortcut::change_meeting_auto_end_setting,
+            shortcut::change_meeting_calendar_names_setting,
             shortcut::change_meeting_silence_timeout_setting,
             shortcut::change_meeting_auto_end_grace_setting,
             shortcut::change_paste_method_setting,
@@ -480,6 +482,8 @@ pub fn run(cli_args: CliArgs) {
             commands::meeting::dismiss_meeting_prompt,
             commands::meeting::respond_meeting_auto_end,
             commands::meeting::get_meeting_detection_status,
+            commands::meeting::get_calendar_access_status,
+            commands::meeting::request_calendar_access,
             commands::transcription::set_model_unload_timeout,
             commands::transcription::get_model_load_status,
             commands::transcription::unload_model_manually,

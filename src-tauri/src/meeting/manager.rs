@@ -68,6 +68,16 @@ pub struct MeetingTranscriptUpdate {
     pub full_transcript: String,
 }
 
+/// Event payload emitted on `"meeting-title-update"` whenever a meeting's
+/// title changes automatically — at session start when `meeting_naming`
+/// resolves a calendar/window title, or after stop when the LLM auto-title
+/// lands. Carries the row id so the UI only renames the matching meeting.
+#[derive(Clone, Debug, Serialize, Type)]
+pub struct MeetingTitleUpdate {
+    pub id: i64,
+    pub title: String,
+}
+
 /// Event payload emitted on `"meeting-finalizing"` to signal the on-stop
 /// full-audio re-transcription pass. The UI keeps showing the live (rough)
 /// transcript as a preview while `finalizing` is true, then receives the
@@ -157,6 +167,11 @@ pub struct MeetingManager {
     /// `meeting_silence_timeout_secs`. Reset to "now" at session start and via
     /// `reset_silence_timer` when the user keeps a meeting going.
     silence_anchor: Arc<Mutex<Instant>>,
+    /// Explicit title for the CURRENT session resolved from the calendar or
+    /// the meeting app's window title (`meeting_naming`), `None` until (and
+    /// unless) the background resolution succeeds. When set, it names the
+    /// persisted row and suppresses the LLM auto-title on stop.
+    session_title: Arc<Mutex<Option<String>>>,
 }
 
 /// Temp-file paths holding the full session audio for the on-stop finalize
@@ -196,6 +211,7 @@ impl MeetingManager {
             current_meeting_id: Arc::new(Mutex::new(None)),
             persisted_segment_count: Arc::new(Mutex::new(0)),
             silence_anchor: Arc::new(Mutex::new(Instant::now())),
+            session_title: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -275,6 +291,7 @@ impl MeetingManager {
             *self.buffer_paths.lock().unwrap() = None;
             *self.current_meeting_id.lock().unwrap() = None;
             *self.persisted_segment_count.lock().unwrap() = 0;
+            *self.session_title.lock().unwrap() = None;
             // Start the prolonged-silence timer fresh so it never inherits a
             // stale anchor from a previous session.
             self.note_speech();
@@ -289,6 +306,14 @@ impl MeetingManager {
                 manager.active.store(false, Ordering::Relaxed);
             });
             *self.worker.lock().unwrap() = Some(handle);
+
+            // TITLE (naming): try to name the session after the real meeting
+            // (calendar event, else the meeting app's window title) in the
+            // background — AX / EventKit calls must never delay the start.
+            {
+                let manager = self.clone();
+                std::thread::spawn(move || manager.resolve_session_title());
+            }
 
             *state = MeetingState::Running;
             log::info!("Meeting session started");
@@ -420,7 +445,12 @@ impl MeetingManager {
             None => {
                 // Fallback: no in-progress row (insert failed or capture path
                 // never ran). Insert a completed row directly.
-                let title = default_meeting_title(started_at);
+                let title = self
+                    .session_title
+                    .lock()
+                    .unwrap()
+                    .clone()
+                    .unwrap_or_else(|| default_meeting_title(started_at));
                 let record = MeetingRecordInput {
                     started_at,
                     ended_at,
@@ -459,13 +489,64 @@ impl MeetingManager {
             .map_err(|e| format!("Failed to update meeting summary: {}", e))
     }
 
+    /// TITLE (naming): resolve an explicit session title from the calendar
+    /// event in progress or the meeting app's window title, on a background
+    /// thread spawned by `start()`. Tries twice (browser tab titles can take a
+    /// moment to reflect the joined meeting). On success stashes the title so
+    /// the capture loop's row insert picks it up, renames the in-progress row
+    /// if it already exists, and emits `"meeting-title-update"`.
+    #[cfg(target_os = "macos")]
+    fn resolve_session_title(&self) {
+        for attempt in 0..2 {
+            if attempt > 0 {
+                std::thread::sleep(std::time::Duration::from_secs(12));
+            }
+            if self.status() != MeetingState::Running {
+                return;
+            }
+            let Some(title) = crate::meeting_naming::resolve_session_title(&self.app_handle) else {
+                continue;
+            };
+            *self.session_title.lock().unwrap() = Some(title.clone());
+            // Rename the in-progress row when it is already inserted; otherwise
+            // the capture loop reads the stash at insert time.
+            let id = *self.current_meeting_id.lock().unwrap();
+            if let Some(id) = id {
+                self.apply_title(id, &title);
+            }
+            return;
+        }
+    }
+
+    /// Persist `title` on meeting row `id` and notify the UI via
+    /// `"meeting-title-update"`. Shared by the naming resolution and the LLM
+    /// auto-title.
+    fn apply_title(&self, id: i64, title: &str) {
+        if let Err(e) = self.store.update_title(id, title) {
+            log::error!("meeting title: failed to persist: {}", e);
+            return;
+        }
+        use tauri::Emitter;
+        let _ = self.app_handle.emit(
+            "meeting-title-update",
+            MeetingTitleUpdate {
+                id,
+                title: title.to_string(),
+            },
+        );
+    }
+
     /// AUTO-TITLE (Phase 2 item 2). Generate a short title from the transcript
     /// via the active post-process LLM provider and store it on the saved row,
     /// replacing the datetime default. Best-effort + graceful: if no provider is
     /// configured or the call errors, the datetime title is kept. Runs async so
-    /// it never blocks stop(). Emits `"meeting-title-update"` (the new title) on
-    /// success so the UI can refresh.
+    /// it never blocks stop(). Emits `"meeting-title-update"` on success so the
+    /// UI can refresh. Skipped entirely when the session already carries an
+    /// explicit name from the calendar / window title.
     fn maybe_auto_title(&self) {
+        if self.session_title.lock().unwrap().is_some() {
+            return;
+        }
         let id = match self.last_saved_meeting_id() {
             Some(id) => id,
             None => return,
@@ -482,12 +563,7 @@ impl MeetingManager {
                     if title.is_empty() {
                         return;
                     }
-                    if let Err(e) = manager.store.update_title(id, &title) {
-                        log::error!("meeting auto-title: failed to persist: {}", e);
-                        return;
-                    }
-                    use tauri::Emitter;
-                    let _ = manager.app_handle.emit("meeting-title-update", title);
+                    manager.apply_title(id, &title);
                 }
                 // Graceful fallback: keep the datetime title.
                 Err(e) => log::info!("meeting auto-title skipped: {}", e),
@@ -1202,7 +1278,14 @@ impl MeetingManager {
                 .lock()
                 .unwrap()
                 .unwrap_or_else(now_epoch_ms);
-            let title = default_meeting_title(started_at);
+            // Prefer the explicit session title (calendar / window) when the
+            // background resolution already landed; datetime otherwise.
+            let title = self
+                .session_title
+                .lock()
+                .unwrap()
+                .clone()
+                .unwrap_or_else(|| default_meeting_title(started_at));
             let stored = crate::meeting::store::StoredBuffers {
                 mic: Some(mic_buf_path.to_string_lossy().to_string()),
                 system: Some(system_buf_path.to_string_lossy().to_string()),
@@ -1213,6 +1296,14 @@ impl MeetingManager {
                     log::info!("meeting: inserted in-progress row {} (recording)", id);
                     *self.current_meeting_id.lock().unwrap() = Some(id);
                     *self.persisted_segment_count.lock().unwrap() = 0;
+                    // Close the race with the resolution thread: if it stashed
+                    // a title after we read it but before the row id was
+                    // registered above, rename the row now.
+                    if let Some(resolved) = self.session_title.lock().unwrap().clone() {
+                        if resolved != title {
+                            self.apply_title(id, &resolved);
+                        }
+                    }
                 }
                 Err(e) => log::error!("meeting: failed to insert in-progress row: {}", e),
             }

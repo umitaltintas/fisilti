@@ -19,6 +19,12 @@ function cssVar(name: string, fallback: string): string {
 interface MeetingSignalProps {
   /** Only subscribes/animates while true; resets to flat when it goes false. */
   active: boolean;
+  /**
+   * "full" (default): labeled panel with oscilloscope + level bars.
+   * "compact": a slim borderless oscilloscope strip meant to sit inline in a
+   * header row next to the recording timer.
+   */
+  variant?: "full" | "compact";
 }
 
 /**
@@ -36,7 +42,10 @@ interface MeetingSignalProps {
  * toward the latest target -- and reuse its bar look (rounded, min height,
  * amplitude-based opacity).
  */
-export const MeetingSignal: React.FC<MeetingSignalProps> = ({ active }) => {
+export const MeetingSignal: React.FC<MeetingSignalProps> = ({
+  active,
+  variant = "full",
+}) => {
   const { t } = useTranslation();
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -187,6 +196,10 @@ export const MeetingSignal: React.FC<MeetingSignalProps> = ({ active }) => {
     raf = requestAnimationFrame(render);
     return () => cancelAnimationFrame(raf);
   }, []);
+
+  if (variant === "compact") {
+    return <canvas ref={canvasRef} className="block w-full h-6" aria-hidden />;
+  }
 
   return (
     <div className="space-y-2">

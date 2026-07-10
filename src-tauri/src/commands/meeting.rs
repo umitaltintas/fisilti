@@ -626,6 +626,25 @@ pub fn get_meeting_detection_status(
     Ok(crate::meeting_detector::detection_status(&app))
 }
 
+/// Authorization status of macOS calendar access for meeting naming:
+/// `"authorized"` | `"denied"` | `"notDetermined"` | `"unavailable"`.
+#[tauri::command]
+#[specta::specta]
+pub fn get_calendar_access_status() -> Result<String, String> {
+    Ok(crate::meeting_naming::calendar_access_status().to_string())
+}
+
+/// Request macOS calendar access for meeting naming, showing the system prompt
+/// on first call. Resolves `true` when full access is granted. Runs on a
+/// blocking thread — the system prompt can stay open for a while.
+#[tauri::command]
+#[specta::specta]
+pub async fn request_calendar_access() -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(crate::meeting_naming::request_calendar_access)
+        .await
+        .map_err(|e| format!("Calendar access request failed: {}", e))
+}
+
 #[cfg(test)]
 mod tests {
     use super::render_meeting_markdown;

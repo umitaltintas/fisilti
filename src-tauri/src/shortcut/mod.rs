@@ -707,6 +707,15 @@ pub fn change_meeting_auto_detect_setting(app: AppHandle, enabled: bool) -> Resu
 
 #[tauri::command]
 #[specta::specta]
+pub fn change_meeting_calendar_names_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.meeting_calendar_names = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
 pub fn change_meeting_auto_end_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
     settings.meeting_auto_end = enabled;

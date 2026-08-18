@@ -242,6 +242,25 @@ impl MeetingStore {
         Ok(())
     }
 
+    /// Keep the live clock of an in-progress row current: bumps only
+    /// `ended_at`/`duration_ms`, leaving the transcript untouched. Called on a
+    /// timer by the capture loop so a running meeting reports its real length
+    /// even when no transcript segments are being produced (e.g. a cloud model,
+    /// where the live pass is skipped entirely).
+    pub fn update_progress_timestamp(
+        &self,
+        id: i64,
+        ended_at: i64,
+        duration_ms: i64,
+    ) -> Result<()> {
+        let conn = self.get_connection()?;
+        conn.execute(
+            "UPDATE meetings SET ended_at = ?1, duration_ms = ?2 WHERE id = ?3",
+            params![ended_at, duration_ms, id],
+        )?;
+        Ok(())
+    }
+
     /// CRASH-RECOVERY: finalize an in-progress row to `completed`, writing the
     /// final transcript/segments/timestamps and clearing the temp-buffer paths.
     /// Used by both the normal stop() path and the recovery path.
@@ -357,9 +376,14 @@ impl MeetingStore {
         Ok(buffers)
     }
 
-    /// List meetings, newest-first. When `query` is `Some`, filters by a
-    /// case-insensitive substring match against title, transcript, or summary
-    /// (SQLite `LIKE`). `None` → all meetings (unchanged legacy behavior).
+    /// List COMPLETED meetings, newest-first. When `query` is `Some`, filters by
+    /// a case-insensitive substring match against title, transcript, or summary
+    /// (SQLite `LIKE`). `None` → all completed meetings.
+    ///
+    /// Rows still in `recording` status are deliberately excluded: the live one
+    /// belongs to the session panel (where it would otherwise show up as a
+    /// duplicate 00:00 entry) and interrupted ones are surfaced by
+    /// `list_interrupted` as a recovery banner.
     pub fn list_meetings(&self, query: Option<&str>) -> Result<Vec<MeetingListItem>> {
         let conn = self.get_connection()?;
         let map_row = |row: &rusqlite::Row<'_>| -> rusqlite::Result<MeetingListItem> {
@@ -392,9 +416,10 @@ impl MeetingStore {
                 let mut stmt = conn.prepare(
                     "SELECT id, started_at, ended_at, duration_ms, title, transcript, summary, status
                      FROM meetings
-                     WHERE title LIKE ?1 ESCAPE '\\'
+                     WHERE status = 'completed'
+                       AND (title LIKE ?1 ESCAPE '\\'
                         OR transcript LIKE ?1 ESCAPE '\\'
-                        OR IFNULL(summary, '') LIKE ?1 ESCAPE '\\'
+                        OR IFNULL(summary, '') LIKE ?1 ESCAPE '\\')
                      ORDER BY started_at DESC, id DESC",
                 )?;
                 let rows: Vec<MeetingListItem> = stmt
@@ -406,6 +431,7 @@ impl MeetingStore {
                 let mut stmt = conn.prepare(
                     "SELECT id, started_at, ended_at, duration_ms, title, transcript, summary, status
                      FROM meetings
+                     WHERE status = 'completed'
                      ORDER BY started_at DESC, id DESC",
                 )?;
                 let rows: Vec<MeetingListItem> = stmt
@@ -489,5 +515,94 @@ impl MeetingStore {
         let conn = self.get_connection()?;
         conn.execute("DELETE FROM meetings WHERE id = ?1", params![id])?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusqlite_migration::Migrations;
+
+    /// A store backed by a fresh temp database carrying the REAL schema, so
+    /// these tests break if a migration changes the `meetings` table.
+    fn temp_store(name: &str) -> MeetingStore {
+        let path = std::env::temp_dir().join(format!("fisilti_store_test_{}.db", name));
+        let _ = std::fs::remove_file(&path);
+        let mut conn = Connection::open(&path).expect("open temp db");
+        Migrations::new(crate::managers::history::MIGRATIONS.to_vec())
+            .to_latest(&mut conn)
+            .expect("migrate temp db");
+        MeetingStore::with_db_path(path)
+    }
+
+    fn buffers() -> StoredBuffers {
+        StoredBuffers {
+            mic: Some("/tmp/mic.f32".into()),
+            system: Some("/tmp/sys.f32".into()),
+            mixed: Some("/tmp/mix.f32".into()),
+        }
+    }
+
+    #[test]
+    fn list_meetings_hides_in_progress_rows() {
+        let store = temp_store("hides_in_progress");
+        let running = store
+            .start_meeting(1_000, "Running meeting", &buffers())
+            .expect("insert in-progress");
+        let done = store
+            .start_meeting(2_000, "Finished meeting", &buffers())
+            .expect("insert second");
+        store
+            .finalize_meeting(done, "hello there", &[], 5_000, 3_000)
+            .expect("finalize");
+
+        let all = store.list_meetings(None).expect("list");
+        let ids: Vec<i64> = all.iter().map(|m| m.id).collect();
+        assert_eq!(ids, vec![done], "only completed meetings belong in history");
+        assert!(!ids.contains(&running));
+
+        // The same must hold for the search path, not just the unfiltered list.
+        let searched = store.list_meetings(Some("meeting")).expect("search");
+        assert_eq!(
+            searched.iter().map(|m| m.id).collect::<Vec<_>>(),
+            vec![done]
+        );
+    }
+
+    #[test]
+    fn progress_clock_updates_duration_without_touching_transcript() {
+        let store = temp_store("progress_clock");
+        let id = store
+            .start_meeting(1_000, "Live meeting", &buffers())
+            .expect("insert");
+        store
+            .update_in_progress(id, "partial text", &[], 4_000, 3_000)
+            .expect("incremental persist");
+
+        store
+            .update_progress_timestamp(id, 61_000, 60_000)
+            .expect("progress clock");
+
+        let record = store.get_meeting(id).expect("get");
+        assert_eq!(record.duration_ms, 60_000);
+        assert_eq!(record.ended_at, 61_000);
+        assert_eq!(
+            record.transcript, "partial text",
+            "the clock update must not clobber the transcript"
+        );
+        assert_eq!(record.status, STATUS_RECORDING);
+    }
+
+    #[test]
+    fn in_progress_row_starts_at_zero_duration() {
+        // Guards the premise of the progress clock: without an update, a running
+        // meeting really does read as a zero-second one.
+        let store = temp_store("zero_duration");
+        let id = store
+            .start_meeting(1_000, "Live meeting", &buffers())
+            .expect("insert");
+        let record = store.get_meeting(id).expect("get");
+        assert_eq!(record.duration_ms, 0);
+        assert_eq!(record.ended_at, record.started_at);
     }
 }

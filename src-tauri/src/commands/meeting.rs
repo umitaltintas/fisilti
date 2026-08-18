@@ -157,6 +157,18 @@ pub fn get_meeting_status(meeting_manager: State<Arc<MeetingManager>>) -> Result
     Ok(status.to_string())
 }
 
+/// Return the running session's start time as epoch milliseconds, or `null`
+/// when no session is running. The UI uses it to render a truthful elapsed
+/// timer when it attaches to a session that was started elsewhere (tray, global
+/// shortcut, or the meeting auto-detect prompt).
+#[tauri::command]
+#[specta::specta]
+pub fn get_meeting_started_at(
+    meeting_manager: State<Arc<MeetingManager>>,
+) -> Result<Option<i64>, String> {
+    Ok(meeting_manager.session_started_at_ms())
+}
+
 /// Summarize the accumulated meeting transcript into meeting notes using the
 /// SAME LLM provider/model/api-key the user already configured for dictation
 /// post-processing (reads `settings::get_settings`). Does NOT modify or depend

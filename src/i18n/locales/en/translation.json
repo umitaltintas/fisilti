@@ -621,6 +621,7 @@
     "stopMeeting": "Stop Meeting",
     "transcript": "Transcript",
     "transcriptEmpty": "No transcript yet. Start a meeting to capture live audio.",
+    "transcriptionFailed": "Transcription failed, so this meeting has no text. The audio was saved and the recording was kept. Reason: {{error}}",
     "listening": "Listening...",
     "cloudLivePreviewOff": "Recording… cloud model: the transcript is generated when you stop the meeting.",
     "notes": "Notes",

@@ -133,6 +133,8 @@ const MEETING_AUDIO_LEVEL = "meeting-audio-level";
 const MEETING_FINALIZING = "meeting-finalizing";
 const MEETING_SUMMARY_UPDATE = "meeting-summary-update";
 const MEETING_TITLE_UPDATE = "meeting-title-update";
+const MEETING_STATE_CHANGED = "meeting-state-changed";
+const MEETING_ERROR = "meeting-error";
 
 /** Begin a capture + mix + VAD + transcribe meeting session (macOS). */
 export function startMeeting(): Promise<void> {
@@ -154,6 +156,13 @@ export function getMeetingStatus(): Promise<MeetingStatus> {
   return invoke<string>("get_meeting_status").then((s) =>
     s === "running" ? "running" : "idle",
   );
+}
+
+/** Epoch-ms start time of the running session, or `null` when idle. Lets the UI
+ * show a truthful elapsed timer when it attaches to a session that was started
+ * from the tray, a global shortcut, or the auto-detect prompt. */
+export function getMeetingStartedAt(): Promise<number | null> {
+  return invoke<number | null>("get_meeting_started_at");
 }
 
 /** Produce an LLM summary of the accumulated transcript (markdown-ish notes). */
@@ -436,6 +445,30 @@ export function listenMeetingTitle(
   cb: (update: MeetingTitleUpdate) => void,
 ): Promise<UnlistenFn> {
   return listen<MeetingTitleUpdate>(MEETING_TITLE_UPDATE, (event) => {
+    cb(event.payload);
+  });
+}
+
+/** Subscribe to session start/stop, whatever triggered it — the UI command, the
+ * tray item, a global shortcut, or the meeting auto-detect prompt. Without this
+ * a window that is already open never learns about a session started elsewhere.
+ * Returns a promise resolving to the unlisten function. */
+export function listenMeetingState(
+  cb: (status: MeetingStatus) => void,
+): Promise<UnlistenFn> {
+  return listen<string>(MEETING_STATE_CHANGED, (event) => {
+    cb(event.payload === "running" ? "running" : "idle");
+  });
+}
+
+/** Subscribe to transcription failures reported by the on-stop finalize pass
+ * (every window failed: no API balance, network down, model unavailable). The
+ * payload is the underlying error message. Returns a promise resolving to the
+ * unlisten function. */
+export function listenMeetingError(
+  cb: (message: string) => void,
+): Promise<UnlistenFn> {
+  return listen<string>(MEETING_ERROR, (event) => {
     cb(event.payload);
   });
 }

@@ -11,13 +11,16 @@ import { NOTES_AUTOSAVE_MS, SEARCH_DEBOUNCE_MS } from "./shared";
 import {
   deleteMeeting,
   getMeeting,
+  getMeetingStartedAt,
   getMeetingStatus,
   getMeetingSummaryTemplates,
   getMeetingTranscript,
   getSummaryProviderInfo,
   listInterruptedMeetings,
   listMeetings,
+  listenMeetingError,
   listenMeetingFinalizing,
+  listenMeetingState,
   listenMeetingSummary,
   listenMeetingTitle,
   listenMeetingTranscript,
@@ -107,10 +110,20 @@ export const MeetingSettings: React.FC = () => {
   const [recoverError, setRecoverError] = useState<string | null>(null);
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Epoch-ms the running session actually started, so the displayed elapsed
+  // time stays correct even when this component attaches mid-meeting.
+  const startedAtRef = useRef<number | null>(null);
+  // Mirrors `status` for the state-change listener, which must compare against
+  // the current value without re-subscribing on every transition.
+  const statusRef = useRef<MeetingStatus>("idle");
   const notesSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isRunning = status === "running";
+
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
 
   const loadPastMeetings = useCallback(async (query?: string) => {
     try {
@@ -122,6 +135,17 @@ export const MeetingSettings: React.FC = () => {
     }
   }, []);
 
+  // Crash-recovery banner source. Also lists sessions kept because their
+  // transcription failed, so it has to be refreshed after a meeting ends — not
+  // only on mount.
+  const loadInterrupted = useCallback(async () => {
+    try {
+      setInterrupted(await listInterruptedMeetings());
+    } catch {
+      // Best-effort; no banner on failure.
+    }
+  }, []);
+
   const stopTimer = useCallback(() => {
     if (timerRef.current !== null) {
       clearInterval(timerRef.current);
@@ -129,12 +153,23 @@ export const MeetingSettings: React.FC = () => {
     }
   }, []);
 
-  const startTimer = useCallback(() => {
-    stopTimer();
-    timerRef.current = setInterval(() => {
-      setElapsed((e) => e + 1);
-    }, 1000);
-  }, [stopTimer]);
+  // Start the elapsed clock from `startedAtMs` (the backend's session start).
+  // Omit it for a session we just started ourselves. Deriving the display from
+  // a timestamp instead of incrementing a counter keeps it right when the
+  // window was opened late or the interval was throttled in the background.
+  const startTimer = useCallback(
+    (startedAtMs?: number | null) => {
+      stopTimer();
+      startedAtRef.current = startedAtMs ?? Date.now();
+      const tick = () => {
+        const base = startedAtRef.current ?? Date.now();
+        setElapsed(Math.max(0, Math.floor((Date.now() - base) / 1000)));
+      };
+      tick();
+      timerRef.current = setInterval(tick, 1000);
+    },
+    [stopTimer],
+  );
 
   // Reflect an already-running session on mount and subscribe to updates.
   useEffect(() => {
@@ -153,13 +188,7 @@ export const MeetingSettings: React.FC = () => {
     });
 
     // Crash-recovery: surface any interrupted meetings as a banner.
-    void listInterruptedMeetings()
-      .then((items) => {
-        if (!cancelled) setInterrupted(items);
-      })
-      .catch(() => {
-        // Best-effort; no banner on failure.
-      });
+    void loadInterrupted();
 
     (async () => {
       try {
@@ -172,7 +201,8 @@ export const MeetingSettings: React.FC = () => {
           } catch {
             // ignore: transcript fetch is best-effort
           }
-          startTimer();
+          const startedAt = await getMeetingStartedAt().catch(() => null);
+          startTimer(startedAt);
         }
       } catch (e) {
         if (!cancelled) setError(String(e));
@@ -203,6 +233,49 @@ export const MeetingSettings: React.FC = () => {
     register(
       listenMeetingFinalizing((value) => {
         setFinalizing(value);
+        // The finalize pass just wrote the meeting row. Refresh both lists so a
+        // session stopped from the tray / shortcut / auto-end (i.e. without
+        // going through handleStop) still shows up — as a past meeting, or as a
+        // recovery banner entry when its transcription failed.
+        if (!value) {
+          void loadPastMeetings();
+          void loadInterrupted();
+        }
+      }),
+    );
+
+    // A session can be started or stopped without this window being involved:
+    // the tray item, a global shortcut, or the meeting auto-detect prompt. Track
+    // that state here, otherwise an already-open window shows "idle" (and a
+    // frozen 00:00) for the whole meeting.
+    register(
+      listenMeetingState((next) => {
+        if (statusRef.current === next) return;
+        statusRef.current = next;
+        setStatus(next);
+        if (next === "running") {
+          setError(null);
+          setTranscript("");
+          setLiveSegments([]);
+          setSummary("");
+          setSummaryError(null);
+          setUserNotes("");
+          setFinalizing(false);
+          setCurrentMeetingId(null);
+          void getMeetingStartedAt()
+            .catch(() => null)
+            .then((startedAt) => startTimer(startedAt));
+        } else {
+          stopTimer();
+        }
+      }),
+    );
+
+    // Transcription failures are otherwise invisible: the finalize pass logs a
+    // warning and the user just sees an empty transcript.
+    register(
+      listenMeetingError((message) => {
+        setError(t("meeting.transcriptionFailed", { error: message }));
       }),
     );
 
@@ -230,7 +303,7 @@ export const MeetingSettings: React.FC = () => {
       for (const fn of unlisteners) fn();
       stopTimer();
     };
-  }, [startTimer, stopTimer, loadPastMeetings]);
+  }, [startTimer, stopTimer, loadPastMeetings, loadInterrupted, t]);
 
   // Debounced search: empty query -> all meetings.
   useEffect(() => {
@@ -283,7 +356,13 @@ export const MeetingSettings: React.FC = () => {
         () => [] as MeetingListItem[],
       );
       setPastMeetings(items);
-      const newest = items[0];
+      // A session whose transcription failed is kept for recovery instead of
+      // being completed, so it is NOT in this list — surface it in the banner.
+      void loadInterrupted();
+      // Only adopt the newest row as "the meeting we just recorded" when this
+      // stop actually produced one. Otherwise items[0] is an OLDER meeting and
+      // its notes/summary would be shown as if they belonged to this session.
+      const newest = finalTranscript.trim().length > 0 ? items[0] : undefined;
       if (newest) {
         setCurrentMeetingId(newest.id);
         try {

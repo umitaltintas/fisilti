@@ -167,11 +167,39 @@ pub struct MeetingManager {
     /// `meeting_silence_timeout_secs`. Reset to "now" at session start and via
     /// `reset_silence_timer` when the user keeps a meeting going.
     silence_anchor: Arc<Mutex<Instant>>,
+    /// Error surfaced by the most recent finalize pass when EVERY transcription
+    /// window failed (no balance, network down, model unavailable). Distinct
+    /// from "the meeting was genuinely silent": `persist_session` keeps the row
+    /// + audio in this case and the UI shows the reason instead of failing
+    /// silently. Cleared at the start of every session.
+    last_finalize_error: Arc<Mutex<Option<String>>>,
     /// Explicit title for the CURRENT session resolved from the calendar or
     /// the meeting app's window title (`meeting_naming`), `None` until (and
     /// unless) the background resolution succeeds. When set, it names the
     /// persisted row and suppresses the LLM auto-title on stop.
     session_title: Arc<Mutex<Option<String>>>,
+}
+
+/// Tally of transcription failures seen during a finalize pass, used to tell
+/// "the meeting was silent" apart from "every transcription call failed". Only
+/// the first error message is kept — the windows all fail for the same reason
+/// (no API balance, network down, model missing) and one line is what the UI
+/// shows.
+#[cfg(target_os = "macos")]
+#[derive(Default)]
+struct FinalizeErrors {
+    count: usize,
+    first: Option<String>,
+}
+
+#[cfg(target_os = "macos")]
+impl FinalizeErrors {
+    fn record(&mut self, err: String) {
+        self.count += 1;
+        if self.first.is_none() {
+            self.first = Some(err);
+        }
+    }
 }
 
 /// Temp-file paths holding the full session audio for the on-stop finalize
@@ -211,6 +239,7 @@ impl MeetingManager {
             current_meeting_id: Arc::new(Mutex::new(None)),
             persisted_segment_count: Arc::new(Mutex::new(0)),
             silence_anchor: Arc::new(Mutex::new(Instant::now())),
+            last_finalize_error: Arc::new(Mutex::new(None)),
             session_title: Arc::new(Mutex::new(None)),
         }
     }
@@ -223,6 +252,16 @@ impl MeetingManager {
 
     pub fn status(&self) -> MeetingState {
         *self.state.lock().unwrap()
+    }
+
+    /// Absolute epoch-ms start time of the running session, or `None` when idle.
+    /// Lets a UI that opens (or reloads) mid-meeting show the REAL elapsed time
+    /// instead of counting up from the moment it attached.
+    pub fn session_started_at_ms(&self) -> Option<i64> {
+        match self.status() {
+            MeetingState::Running => *self.session_started_at_ms.lock().unwrap(),
+            MeetingState::Idle => None,
+        }
     }
 
     /// Reset the prolonged-silence timer used by the auto-end flow, as if
@@ -291,6 +330,7 @@ impl MeetingManager {
             *self.buffer_paths.lock().unwrap() = None;
             *self.current_meeting_id.lock().unwrap() = None;
             *self.persisted_segment_count.lock().unwrap() = 0;
+            *self.last_finalize_error.lock().unwrap() = None;
             *self.session_title.lock().unwrap() = None;
             // Start the prolonged-silence timer fresh so it never inherits a
             // stale anchor from a previous session.
@@ -416,15 +456,37 @@ impl MeetingManager {
 
         let current_id = *self.current_meeting_id.lock().unwrap();
 
+        // An empty transcript means one of two very different things:
+        //   1. Nothing was said, or nothing was captured — nothing worth keeping.
+        //   2. Audio WAS captured but every transcription call failed (no API
+        //      balance, network down, model unavailable).
+        // Deleting the row in case 2 destroys a recording the user cannot get
+        // back. Keep it instead, as an in-progress row so the EXISTING recovery
+        // flow can re-run the finalize pass once the cause is fixed, and write
+        // the playback WAV now so the audio outlives the temp directory.
         if transcript.trim().is_empty() {
-            // Empty meeting: don't keep a dangling `recording` row. Delete the
-            // in-progress row (if any) so it isn't offered for recovery.
-            log::debug!("Meeting transcript empty; skipping persistence");
-            if let Some(id) = current_id {
-                let _ = self.store.delete_meeting(id);
-                *self.current_meeting_id.lock().unwrap() = None;
+            let failure = self.last_finalize_error.lock().unwrap().clone();
+            let captured_samples = self.captured_sample_count();
+            match empty_session_outcome(failure.as_deref(), captured_samples) {
+                EmptySessionOutcome::PreserveForRecovery => {
+                    log::warn!(
+                        "meeting: transcription failed on a session with {} samples of audio; \
+                         keeping it for recovery (reason: {})",
+                        captured_samples,
+                        failure.as_deref().unwrap_or("unknown")
+                    );
+                    self.preserve_failed_session();
+                    return;
+                }
+                EmptySessionOutcome::Discard => {
+                    log::debug!("Meeting transcript empty; skipping persistence");
+                    if let Some(id) = current_id {
+                        let _ = self.store.delete_meeting(id);
+                        *self.current_meeting_id.lock().unwrap() = None;
+                    }
+                    return;
+                }
             }
-            return;
         }
 
         match current_id {
@@ -470,6 +532,40 @@ impl MeetingManager {
                 }
             }
         }
+    }
+
+    /// Number of 16 kHz mono samples the capture loop wrote to the mixed
+    /// session buffer, from the file size alone (the buffer is raw f32). Used to
+    /// tell "no audio was captured" apart from "audio captured, transcription
+    /// failed" when deciding whether an empty-transcript session is worth
+    /// keeping. Returns 0 when no buffer exists (non-macOS, or capture never
+    /// started).
+    fn captured_sample_count(&self) -> u64 {
+        let buffers = match self.buffer_paths.lock().unwrap().clone() {
+            Some(b) => b,
+            None => return 0,
+        };
+        std::fs::metadata(&buffers.mixed)
+            .map(|m| m.len() / std::mem::size_of::<f32>() as u64)
+            .unwrap_or(0)
+    }
+
+    /// Keep a session whose transcription failed wholesale. The row stays in
+    /// `recording` status on purpose: that is exactly what the crash-recovery
+    /// banner offers a "Recover" button for, so once the user fixes the cause
+    /// (adds API balance, switches to a local model) one click re-runs the
+    /// finalize pass over the SAME audio. Its clock is brought up to date and
+    /// the mixed playback WAV is written now, so the recording survives even if
+    /// the temp buffers are cleaned up before the user gets to it. The temp
+    /// buffers are deliberately NOT deleted — the recovery pass needs them.
+    fn preserve_failed_session(&self) {
+        let Some(id) = *self.current_meeting_id.lock().unwrap() else {
+            return;
+        };
+        let _ = id;
+        self.update_progress_clock();
+        #[cfg(target_os = "macos")]
+        self.write_playback_wav(id);
     }
 
     /// Returns the row id of the most recently persisted meeting (set on stop),
@@ -609,22 +705,43 @@ impl MeetingManager {
                 .store
                 .get_buffers(id)
                 .map_err(|e| format!("Failed to read meeting buffers: {}", e))?;
-            if let Some(recovered) = self.refinalize_from_buffers(&buffers) {
-                if recovered.iter().any(|s| !s.text.trim().is_empty()) {
-                    final_segments = recovered;
-                    final_transcript = join_segments(&final_segments);
-                }
-            }
-            // Save mixed playback audio if the mixed buffer survived.
+            let outcome = self.refinalize_from_buffers(&buffers);
+
+            // Save mixed playback audio if the mixed buffer survived. Do this
+            // before any early return so the audio is preserved either way.
             if let Some(mixed) = buffers.mixed.as_deref() {
                 self.save_recovered_audio(id, std::path::Path::new(mixed));
             }
-            // Clean up temp buffers.
-            for p in [&buffers.mic, &buffers.system, &buffers.mixed]
-                .into_iter()
-                .flatten()
-            {
-                let _ = std::fs::remove_file(p);
+
+            match outcome {
+                Ok(recovered) => {
+                    if let Some(recovered) = recovered {
+                        if recovered.iter().any(|s| !s.text.trim().is_empty()) {
+                            final_segments = recovered;
+                            final_transcript = join_segments(&final_segments);
+                        }
+                    }
+                    // Clean up temp buffers: this meeting is about to complete.
+                    for p in [&buffers.mic, &buffers.system, &buffers.mixed]
+                        .into_iter()
+                        .flatten()
+                    {
+                        let _ = std::fs::remove_file(p);
+                    }
+                }
+                // Every window failed again (still no API balance, still
+                // offline). KEEP the buffers and leave the row in `recording`
+                // so the user gets another attempt once the cause is fixed —
+                // completing it here would discard the only copy of the audio
+                // the recovery pass can read.
+                Err(reason) => {
+                    log::warn!(
+                        "meeting: recovery of row {} failed ({}); leaving it recoverable",
+                        id,
+                        reason
+                    );
+                    return Err(reason);
+                }
             }
         }
 
@@ -649,13 +766,14 @@ impl MeetingManager {
 
     /// macOS recovery helper: re-run the finalize windowing/transcription over
     /// the saved per-source temp buffers. Loads the final model for the pass and
-    /// restores the prior model afterwards. Returns `None` if neither buffer is
-    /// readable / present.
+    /// restores the prior model afterwards. `Ok(None)` when neither buffer is
+    /// readable / present; `Err` when every transcription call failed, so the
+    /// caller can keep the meeting recoverable instead of burning its buffers.
     #[cfg(target_os = "macos")]
     fn refinalize_from_buffers(
         &self,
         buffers: &crate::meeting::store::StoredBuffers,
-    ) -> Option<Vec<TranscriptSegment>> {
+    ) -> Result<Option<Vec<TranscriptSegment>>, String> {
         use tauri::Manager;
         // Ensure a transcription model is available for the pass.
         self.transcription_manager.initiate_model_load();
@@ -667,6 +785,7 @@ impl MeetingManager {
         );
 
         let mut out: Vec<TranscriptSegment> = Vec::new();
+        let mut errors = FinalizeErrors::default();
         let mut any = false;
         for (path_opt, source) in [
             (&buffers.mic, TranscriptSource::Mic),
@@ -683,18 +802,34 @@ impl MeetingManager {
                         Ok(p) => chunk_for_finalize(&audio, p),
                         Err(_) => chunk_fixed(&audio),
                     };
-                    self.transcribe_windows(&audio, &windows, source, &mut out);
+                    self.transcribe_windows(&audio, &windows, source, &mut out, &mut errors);
                 }
                 _ => {}
             }
         }
 
         self.restore_model(restore_model);
+        let produced_text = out.iter().any(|s| !s.text.trim().is_empty());
+        if errors.count > 0 && !produced_text {
+            let reason = errors
+                .first
+                .clone()
+                .unwrap_or_else(|| "transcription failed".to_string());
+            log::error!(
+                "meeting recovery: all {} window(s) failed; first error: {}",
+                errors.count,
+                reason
+            );
+            self.emit_error(&reason);
+            // Signal a FAILED pass (as opposed to "the audio really is silent")
+            // so the caller can leave the meeting recoverable.
+            return Err(reason);
+        }
         if any {
             out.sort_by_key(|s| s.timestamp_ms);
-            Some(out)
+            Ok(Some(out))
         } else {
-            None
+            Ok(None)
         }
     }
 
@@ -763,6 +898,7 @@ impl MeetingManager {
         };
 
         let mut final_segments: Vec<TranscriptSegment> = Vec::new();
+        let mut errors = FinalizeErrors::default();
         for (path, source) in [
             (&buffers.mic, TranscriptSource::Mic),
             (&buffers.system, TranscriptSource::System),
@@ -779,7 +915,13 @@ impl MeetingManager {
                             chunk_fixed(&audio)
                         }
                     };
-                    self.transcribe_windows(&audio, &windows, source, &mut final_segments);
+                    self.transcribe_windows(
+                        &audio,
+                        &windows,
+                        source,
+                        &mut final_segments,
+                        &mut errors,
+                    );
                 }
                 Ok(_) => {}
                 Err(e) => log::warn!("meeting finalize: failed to read {:?}: {}", path, e),
@@ -802,6 +944,22 @@ impl MeetingManager {
             log::warn!(
                 "meeting finalize: full re-transcription yielded no text; keeping live transcript"
             );
+        }
+
+        // Every window failing is a FAILURE, not a silent meeting. Record it so
+        // `persist_session` keeps the recording instead of discarding it, and
+        // tell the UI why the transcript is empty rather than failing silently.
+        if !has_text && errors.count > 0 {
+            let reason = errors
+                .first
+                .unwrap_or_else(|| "transcription failed".to_string());
+            log::error!(
+                "meeting finalize: all {} window(s) failed; first error: {}",
+                errors.count,
+                reason
+            );
+            *self.last_finalize_error.lock().unwrap() = Some(reason.clone());
+            self.emit_error(&reason);
         }
 
         // Restore the user's normal model so dictation / subsequent meetings use
@@ -909,6 +1067,7 @@ impl MeetingManager {
         windows: &[(usize, usize)],
         source: TranscriptSource,
         out: &mut Vec<TranscriptSegment>,
+        errors: &mut FinalizeErrors,
     ) {
         use crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE;
         // Tail text of the previous window for this source, used to de-dup the
@@ -943,37 +1102,37 @@ impl MeetingManager {
                         }
                     }
                 }
-                Err(e) => log::warn!(
-                    "meeting finalize: transcription failed for {:?} window [{}..{}]: {}",
-                    source,
-                    start,
-                    end,
-                    e
-                ),
+                Err(e) => {
+                    log::warn!(
+                        "meeting finalize: transcription failed for {:?} window [{}..{}]: {}",
+                        source,
+                        start,
+                        end,
+                        e
+                    );
+                    errors.record(e.to_string());
+                }
             }
         }
     }
 
-    /// AUDIO SAVE (Feature 4). Persist the mixed 16 kHz mono audio to
-    /// `{app_data_dir}/meetings/{id}.wav` and record its path on the meeting
-    /// row. Requires a saved row id (set by `persist_session`). Best-effort:
-    /// failures are logged, never propagated.
+    /// Write the session's mixed 16 kHz mono audio to
+    /// `{app_data_dir}/meetings/{id}.wav` and record the path on row `id`.
+    /// Leaves the temp buffers alone — the caller decides whether they are still
+    /// needed. Returns whether the WAV was written. Best-effort: failures are
+    /// logged, never propagated.
     #[cfg(target_os = "macos")]
-    fn save_session_audio(&self) {
-        let id = match self.last_saved_meeting_id() {
-            Some(id) => id,
-            None => return,
-        };
+    fn write_playback_wav(&self, id: i64) -> bool {
         let buffers = match self.buffer_paths.lock().unwrap().clone() {
             Some(b) => b,
-            None => return,
+            None => return false,
         };
         let mixed = match read_f32_raw(&buffers.mixed) {
             Ok(m) if !m.is_empty() => m,
-            Ok(_) => return,
+            Ok(_) => return false,
             Err(e) => {
                 log::warn!("meeting: failed to read mixed buffer: {}", e);
-                return;
+                return false;
             }
         };
 
@@ -981,30 +1140,50 @@ impl MeetingManager {
             Ok(d) => d.join("meetings"),
             Err(e) => {
                 log::error!("meeting: cannot resolve app data dir for audio save: {}", e);
-                return;
+                return false;
             }
         };
         if let Err(e) = std::fs::create_dir_all(&dir) {
             log::error!("meeting: failed to create meetings dir {:?}: {}", dir, e);
-            return;
+            return false;
         }
         let wav_path = dir.join(format!("{}.wav", id));
         use crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE;
         if let Err(e) = write_f32_wav(&wav_path, &mixed, WHISPER_SAMPLE_RATE) {
             log::error!("meeting: failed to write audio WAV {:?}: {}", wav_path, e);
-            return;
+            return false;
         }
         let path_str = wav_path.to_string_lossy().to_string();
         if let Err(e) = self.store.update_audio_path(id, &path_str) {
             log::error!("meeting: failed to record audio path: {}", e);
-            return;
+            return false;
         }
         *self.last_saved_audio_path.lock().unwrap() = Some(path_str);
+        log::info!("meeting: saved playback audio to {:?}", wav_path);
+        true
+    }
+
+    /// AUDIO SAVE (Feature 4). Persist the mixed audio for the meeting saved by
+    /// `persist_session`, then drop the temp buffers now that the session is
+    /// fully on disk. Does nothing when the session was not saved (nothing
+    /// captured, or kept for recovery — that path keeps its buffers).
+    #[cfg(target_os = "macos")]
+    fn save_session_audio(&self) {
+        let id = match self.last_saved_meeting_id() {
+            Some(id) => id,
+            None => return,
+        };
+        if !self.write_playback_wav(id) {
+            return;
+        }
+        let buffers = match self.buffer_paths.lock().unwrap().clone() {
+            Some(b) => b,
+            None => return,
+        };
         // Clean up the temp buffer files now that everything is persisted.
         let _ = std::fs::remove_file(&buffers.mic);
         let _ = std::fs::remove_file(&buffers.system);
         let _ = std::fs::remove_file(&buffers.mixed);
-        log::info!("meeting: saved playback audio to {:?}", wav_path);
     }
 
     /// AUTO-SUMMARIZE (Feature 3). If `meeting_auto_summarize` is enabled, run
@@ -1103,6 +1282,33 @@ impl MeetingManager {
         {
             log::error!("meeting: failed incremental persist of row {}: {}", id, e);
         }
+    }
+
+    /// Bump the in-progress row's `ended_at`/`duration_ms` to "now" so the saved
+    /// length of a running meeting stays truthful without rewriting the
+    /// transcript. No-op before the row exists. Best-effort: failures are logged.
+    fn update_progress_clock(&self) {
+        let id = match *self.current_meeting_id.lock().unwrap() {
+            Some(id) => id,
+            None => return,
+        };
+        let now = now_epoch_ms();
+        let started_at = self.session_started_at_ms.lock().unwrap().unwrap_or(now);
+        let duration_ms = (now - started_at).max(0);
+        if let Err(e) = self.store.update_progress_timestamp(id, now, duration_ms) {
+            log::warn!(
+                "meeting: failed to update progress clock of row {}: {}",
+                id,
+                e
+            );
+        }
+    }
+
+    /// Emit a `"meeting-error"` signal so the UI can surface a transcription
+    /// failure instead of just showing an empty transcript. Best-effort.
+    fn emit_error(&self, message: &str) {
+        use tauri::Emitter;
+        let _ = self.app_handle.emit("meeting-error", message.to_string());
     }
 
     /// Emit a `"meeting-finalizing"` signal so the UI can show progress while
@@ -1536,6 +1742,14 @@ impl MeetingManager {
         let mut last_silence_check = Instant::now();
         let mut last_settings_refresh = Instant::now();
 
+        // Keep the in-progress row's clock ticking. `maybe_persist_incremental`
+        // only writes once transcript segments accumulate, so a session that
+        // produces no live segments (cloud models skip the live pass entirely)
+        // would otherwise sit at duration_ms = 0 for its whole length — and a
+        // crash would leave it looking like a zero-second meeting.
+        const PROGRESS_CLOCK_INTERVAL: Duration = Duration::from_secs(5);
+        let mut last_progress_clock = Instant::now();
+
         loop {
             if self.stop_signal.load(Ordering::Relaxed) {
                 break;
@@ -1546,6 +1760,11 @@ impl MeetingManager {
             // meeting if no speech has been seen for the configured timeout.
             // `request_auto_end` owns the grace timer + stop and is idempotent
             // while a prompt is pending, so calling it every second is fine.
+            if last_progress_clock.elapsed() >= PROGRESS_CLOCK_INTERVAL {
+                last_progress_clock = Instant::now();
+                self.update_progress_clock();
+            }
+
             if last_silence_check.elapsed() >= SILENCE_CHECK_INTERVAL {
                 last_silence_check = Instant::now();
                 if last_settings_refresh.elapsed() >= SILENCE_SETTINGS_REFRESH {
@@ -2569,6 +2788,26 @@ fn now_epoch_ms() -> i64 {
 /// configured prolonged-silence timeout. Extracted as a pure function so the
 /// threshold logic is unit-testable without a running capture loop.
 #[cfg(target_os = "macos")]
+/// What to do with a session that ended with an empty transcript.
+#[derive(Debug, PartialEq, Eq)]
+enum EmptySessionOutcome {
+    /// Nothing worth keeping — drop the row.
+    Discard,
+    /// Audio was captured but transcription failed wholesale. Keep the row (in
+    /// `recording` status) plus its buffers so the recovery flow can retry.
+    PreserveForRecovery,
+}
+
+/// Decide the fate of an empty-transcript session. Preserving requires BOTH a
+/// transcription failure and captured audio: without a failure the meeting was
+/// simply silent, and without audio there is nothing a retry could read.
+fn empty_session_outcome(failure: Option<&str>, captured_samples: u64) -> EmptySessionOutcome {
+    match (failure, captured_samples) {
+        (Some(_), samples) if samples > 0 => EmptySessionOutcome::PreserveForRecovery,
+        _ => EmptySessionOutcome::Discard,
+    }
+}
+
 fn silence_exceeded(anchor_elapsed: std::time::Duration, timeout_secs: u32) -> bool {
     anchor_elapsed > std::time::Duration::from_secs(timeout_secs as u64)
 }
@@ -2588,7 +2827,10 @@ fn default_meeting_title(started_at_ms: i64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{downsample_wave, TranscriptSegment, TranscriptSource};
+    use super::{
+        downsample_wave, empty_session_outcome, EmptySessionOutcome, TranscriptSegment,
+        TranscriptSource,
+    };
 
     #[test]
     fn transcript_source_serializes_as_you_and_others() {
@@ -2788,6 +3030,32 @@ mod tests {
         // Just past the threshold: exceeded.
         assert!(silence_exceeded(Duration::from_millis(180_001), 180));
         assert!(silence_exceeded(Duration::from_secs(300), 180));
+    }
+
+    #[test]
+    fn empty_session_with_failed_transcription_is_kept_for_recovery() {
+        // The regression this guards: a meeting whose every transcription call
+        // failed (e.g. no API balance) used to be deleted outright, throwing
+        // away audio the user could not recapture.
+        assert_eq!(
+            empty_session_outcome(Some("402 Payment Required"), 5_968_320),
+            EmptySessionOutcome::PreserveForRecovery
+        );
+    }
+
+    #[test]
+    fn empty_session_without_audio_or_failure_is_discarded() {
+        // A genuinely silent meeting: nothing to keep, and no dangling row.
+        assert_eq!(
+            empty_session_outcome(None, 5_968_320),
+            EmptySessionOutcome::Discard
+        );
+        // A failure with no captured audio: a retry would have nothing to read.
+        assert_eq!(
+            empty_session_outcome(Some("model unavailable"), 0),
+            EmptySessionOutcome::Discard
+        );
+        assert_eq!(empty_session_outcome(None, 0), EmptySessionOutcome::Discard);
     }
 
     #[test]

@@ -466,6 +466,7 @@ pub fn run(cli_args: CliArgs) {
             commands::meeting::stop_meeting,
             commands::meeting::get_meeting_transcript,
             commands::meeting::get_meeting_status,
+            commands::meeting::get_meeting_started_at,
             commands::meeting::summarize_meeting,
             commands::meeting::summarize_meeting_with,
             commands::meeting::regenerate_meeting_summary,

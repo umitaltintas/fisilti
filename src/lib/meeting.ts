@@ -21,6 +21,12 @@ export interface TranscriptSegment {
   /** Which captured source produced this segment (mic = "you",
    * system = "others"). */
   source: TranscriptSource;
+  /** Translation of `text`, present only for segments produced by the Gemini
+   * Live translation path. */
+  translation?: string | null;
+  /** Display label of the speaker who said this ("Speaker 1"), present only for
+   * segments produced by the Gemini batch finalize pass with diarization on. */
+  speaker?: string | null;
 }
 
 /** Payload of the `"meeting-transcript-update"` event. Mirrors Rust
@@ -382,6 +388,113 @@ export function getMeetingAutoDetectSettings(): Promise<MeetingAutoDetectSetting
         MEETING_AUTO_DETECT_DEFAULTS.autoEndGraceSecs,
     }))
     .catch(() => ({ ...MEETING_AUTO_DETECT_DEFAULTS }));
+}
+
+/** What a running meeting streams to the Gemini Live API, if anything. */
+export type MeetingLiveMode = "off" | "translate" | "transcribe";
+
+/** Every Gemini meeting setting, read together for the settings UI. */
+export interface MeetingGeminiSettings {
+  /** Live streaming mode for a running meeting. */
+  liveMode: MeetingLiveMode;
+  /** BCP-47 code to translate INTO, e.g. "en". Only used in "translate" mode. */
+  targetLanguage: string;
+  /** Run the on-stop finalize pass through Gemini batch transcription. */
+  finalizeWithGemini: boolean;
+  /** Ask the finalize pass to attribute speech to individual speakers. */
+  diarize: boolean;
+  /** Clean disfluencies and format, rather than transcribe verbatim. */
+  smart: boolean;
+  /** Domain terms Gemini should prefer, one per line. */
+  customVocabulary: string;
+  /** Whether a Gemini API key is stored. The key itself is never read back. */
+  hasApiKey: boolean;
+}
+
+const MEETING_GEMINI_DEFAULTS: MeetingGeminiSettings = {
+  liveMode: "off",
+  targetLanguage: "en",
+  finalizeWithGemini: false,
+  diarize: true,
+  smart: true,
+  customVocabulary: "",
+  hasApiKey: false,
+};
+
+/** Read the Gemini meeting settings. The API key is reported only as
+ * "present or not" — the UI never displays a stored key. */
+export function getMeetingGeminiSettings(): Promise<MeetingGeminiSettings> {
+  return invoke<{
+    meeting_live_mode?: string;
+    meeting_live_translate_target?: string;
+    meeting_gemini_finalize?: boolean;
+    meeting_gemini_diarize?: boolean;
+    meeting_gemini_smart?: boolean;
+    meeting_custom_vocabulary?: string;
+    gemini_api_key?: string;
+  }>("get_app_settings")
+    .then((s) => ({
+      liveMode: isLiveMode(s?.meeting_live_mode)
+        ? s.meeting_live_mode
+        : MEETING_GEMINI_DEFAULTS.liveMode,
+      targetLanguage:
+        s?.meeting_live_translate_target || MEETING_GEMINI_DEFAULTS.targetLanguage,
+      finalizeWithGemini:
+        s?.meeting_gemini_finalize ?? MEETING_GEMINI_DEFAULTS.finalizeWithGemini,
+      diarize: s?.meeting_gemini_diarize ?? MEETING_GEMINI_DEFAULTS.diarize,
+      smart: s?.meeting_gemini_smart ?? MEETING_GEMINI_DEFAULTS.smart,
+      customVocabulary:
+        s?.meeting_custom_vocabulary ?? MEETING_GEMINI_DEFAULTS.customVocabulary,
+      hasApiKey: (s?.gemini_api_key ?? "").trim().length > 0,
+    }))
+    .catch(() => ({ ...MEETING_GEMINI_DEFAULTS }));
+}
+
+function isLiveMode(value: unknown): value is MeetingLiveMode {
+  return value === "off" || value === "translate" || value === "transcribe";
+}
+
+/** Pick what a running meeting streams to Gemini (`meeting_live_mode`). */
+export function changeMeetingLiveMode(mode: MeetingLiveMode): Promise<void> {
+  return invoke<void>("change_meeting_live_mode_setting", { mode });
+}
+
+/** Set the language live translation translates into (BCP-47). */
+export function changeMeetingLiveTranslateTarget(
+  language: string,
+): Promise<void> {
+  return invoke<void>("change_meeting_live_translate_target_setting", {
+    language,
+  });
+}
+
+/** Run the on-stop finalize pass through Gemini batch transcription. */
+export function changeMeetingGeminiFinalize(enabled: boolean): Promise<void> {
+  return invoke<void>("change_meeting_gemini_finalize_setting", { enabled });
+}
+
+/** Turn speaker attribution on or off for the Gemini finalize pass. */
+export function changeMeetingGeminiDiarize(enabled: boolean): Promise<void> {
+  return invoke<void>("change_meeting_gemini_diarize_setting", { enabled });
+}
+
+/** Cleaned-up ("smart") vs. verbatim Gemini transcription. */
+export function changeMeetingGeminiSmart(enabled: boolean): Promise<void> {
+  return invoke<void>("change_meeting_gemini_smart_setting", { enabled });
+}
+
+/** Store the custom vocabulary Gemini should prefer (one term per line). */
+export function changeMeetingCustomVocabulary(
+  vocabulary: string,
+): Promise<void> {
+  return invoke<void>("change_meeting_custom_vocabulary_setting", {
+    vocabulary,
+  });
+}
+
+/** Store (or, with an empty string, clear) the Gemini API key. */
+export function changeGeminiApiKey(apiKey: string): Promise<void> {
+  return invoke<void>("change_gemini_api_key_setting", { apiKey });
 }
 
 /** Subscribe to live transcript updates. Returns a promise resolving to the

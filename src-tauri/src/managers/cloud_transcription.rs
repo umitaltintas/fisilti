@@ -70,7 +70,7 @@ const BOUNDARY_SEARCH_SECS: f32 = 4.0;
 const MAX_CONCURRENT_CHUNKS: usize = 4;
 
 /// Encode 16-bit PCM WAV (mono) from `f32` samples in `[-1.0, 1.0]`, in memory.
-fn encode_wav(samples: &[f32], sample_rate: u32) -> Result<Vec<u8>> {
+pub(crate) fn encode_wav(samples: &[f32], sample_rate: u32) -> Result<Vec<u8>> {
     let spec = hound::WavSpec {
         channels: 1,
         sample_rate,

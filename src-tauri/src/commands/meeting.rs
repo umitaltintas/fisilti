@@ -550,9 +550,12 @@ fn render_meeting_markdown(record: &MeetingRecord) -> String {
             if text.is_empty() {
                 continue;
             }
-            let label = match seg.source {
-                TranscriptSource::Mic => "You",
-                TranscriptSource::System => "Others",
+            // A resolved speaker is strictly more informative than "Others",
+            // so it wins when the finalize pass managed to attribute the line.
+            let label = match (&seg.speaker, seg.source) {
+                (Some(speaker), _) if !speaker.trim().is_empty() => speaker.trim(),
+                (_, TranscriptSource::Mic) => "You",
+                (_, TranscriptSource::System) => "Others",
             };
             let ts = seg.timestamp_ms / 1000;
             let _ = writeln!(
@@ -687,11 +690,15 @@ mod tests {
                 text: "Hello team.".to_string(),
                 timestamp_ms: 0,
                 source: TranscriptSource::Mic,
+                translation: None,
+                speaker: None,
             },
             TranscriptSegment {
                 text: "Hi there.".to_string(),
                 timestamp_ms: 5000,
                 source: TranscriptSource::System,
+                translation: None,
+                speaker: None,
             },
         ];
         let md = render_meeting_markdown(&record_with(segments, "Hello team. Hi there."));

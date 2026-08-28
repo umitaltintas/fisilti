@@ -52,6 +52,18 @@ pub struct TranscriptSegment {
     /// system = "others").
     #[serde(default = "default_transcript_source")]
     pub source: TranscriptSource,
+    /// Translation of `text`, when the segment came from the Gemini Live
+    /// translation path. `None` for the normal transcription paths and for
+    /// records saved before live translation existed.
+    #[serde(default)]
+    pub translation: Option<String>,
+    /// Which speaker said this, when the transcript came from a path that can
+    /// tell participants apart (the Gemini batch finalize pass with diarization
+    /// on). Holds a display label like `"Speaker 1"`, already resolved from the
+    /// API's raw `spk_1`. `None` everywhere else — `source` remains the only
+    /// attribution the local paths can offer.
+    #[serde(default)]
+    pub speaker: Option<String>,
 }
 
 /// Default source for segments deserialized from older records that predate the
@@ -167,11 +179,21 @@ pub struct MeetingManager {
     /// `meeting_silence_timeout_secs`. Reset to "now" at session start and via
     /// `reset_silence_timer` when the user keeps a meeting going.
     silence_anchor: Arc<Mutex<Instant>>,
+    /// True while a session is streaming to the Gemini Live API in ANY mode.
+    /// The stream produces the transcript itself, so the normal per-segment
+    /// live transcription stands down.
+    live_gemini_active: Arc<AtomicBool>,
+    /// True while that stream is a TRANSLATION. Narrower than
+    /// `live_gemini_active` because the two modes differ in what may replace
+    /// their output: a translated transcript is final (re-transcribing would
+    /// throw the translation away), whereas a live-transcribed one may still be
+    /// upgraded by the Gemini batch pass, which can attribute speakers.
+    live_translate_active: Arc<AtomicBool>,
     /// Error surfaced by the most recent finalize pass when EVERY transcription
     /// window failed (no balance, network down, model unavailable). Distinct
-    /// from "the meeting was genuinely silent": `persist_session` keeps the row
-    /// + audio in this case and the UI shows the reason instead of failing
-    /// silently. Cleared at the start of every session.
+    /// from "the meeting was genuinely silent": in this case `persist_session`
+    /// keeps both the row and the audio, and the UI shows the reason instead of
+    /// failing silently. Cleared at the start of every session.
     last_finalize_error: Arc<Mutex<Option<String>>>,
     /// Explicit title for the CURRENT session resolved from the calendar or
     /// the meeting app's window title (`meeting_naming`), `None` until (and
@@ -192,6 +214,48 @@ struct FinalizeErrors {
     first: Option<String>,
 }
 
+/// How a Gemini batch finalize pass ended. All three variants stop the finalize
+/// pass — none of them fall through to the local Whisper path, because the user
+/// asked for Gemini and silently substituting a different (slow, minutes-long)
+/// transcription would be worse than reporting what went wrong.
+#[cfg(target_os = "macos")]
+enum GeminiFinalizeOutcome {
+    /// A transcript was produced (or the audio was genuinely silent).
+    Done,
+    /// Every request failed; the reason is recorded and surfaced.
+    Failed,
+    /// The capture buffers were empty, so there was nothing to transcribe.
+    NoAudio,
+}
+
+/// Turns the API's raw speaker tags into display labels, numbered by the order
+/// each speaker first talks.
+///
+/// Deliberately ignores whatever number the tag itself carries. The documented
+/// shape is `spk_1`, but the API actually returns `spk:0` — different separator
+/// AND zero-based — so any attempt to reuse its numbering is a guess that has
+/// already been wrong once. Order of first appearance is derived from data we
+/// can see, always starts at 1, and survives whatever the tag looks like next.
+#[cfg(target_os = "macos")]
+#[derive(Default)]
+struct SpeakerLabels {
+    seen: Vec<String>,
+}
+
+#[cfg(target_os = "macos")]
+impl SpeakerLabels {
+    fn label(&mut self, raw: &str) -> String {
+        let index = match self.seen.iter().position(|s| s == raw) {
+            Some(i) => i,
+            None => {
+                self.seen.push(raw.to_string());
+                self.seen.len() - 1
+            }
+        };
+        format!("Speaker {}", index + 1)
+    }
+}
+
 #[cfg(target_os = "macos")]
 impl FinalizeErrors {
     fn record(&mut self, err: String) {
@@ -199,6 +263,84 @@ impl FinalizeErrors {
         if self.first.is_none() {
             self.first = Some(err);
         }
+    }
+}
+
+/// The per-source Gemini Live sessions owned by a running capture loop.
+#[cfg(target_os = "macos")]
+struct LiveSessions {
+    mic: crate::gemini_live::LiveSession,
+    system: crate::gemini_live::LiveSession,
+}
+
+#[cfg(target_os = "macos")]
+impl LiveSessions {
+    fn stop(&self) {
+        self.mic.stop();
+        self.system.stop();
+    }
+}
+
+/// Accumulates streamed Live API fragments into one finished segment.
+///
+/// The API emits the original and the translation as separate partial strings,
+/// so both are concatenated until the turn closes. The timestamp is taken from
+/// the FIRST fragment of a turn, so a segment is ordered by when its speech
+/// started rather than when the model finished translating it.
+#[cfg(target_os = "macos")]
+#[derive(Default)]
+struct LiveSegmentBuilder {
+    original: String,
+    translation: String,
+    timestamp_ms: Option<u64>,
+}
+
+#[cfg(target_os = "macos")]
+struct LiveSegment {
+    original: String,
+    translation: Option<String>,
+    timestamp_ms: u64,
+}
+
+#[cfg(target_os = "macos")]
+impl LiveSegmentBuilder {
+    fn absorb(&mut self, fragment: &crate::gemini_live::LiveTranscript, elapsed_ms: u64) {
+        if fragment.original.is_some() || fragment.translation.is_some() {
+            self.timestamp_ms.get_or_insert(elapsed_ms);
+        }
+        if let Some(text) = &fragment.original {
+            self.original.push_str(text);
+        }
+        if let Some(text) = &fragment.translation {
+            self.translation.push_str(text);
+        }
+    }
+
+    /// Take the accumulated segment, resetting for the next turn. Returns `None`
+    /// for a turn that produced no text (the model emitted only audio).
+    fn take(&mut self) -> Option<LiveSegment> {
+        let original = std::mem::take(&mut self.original).trim().to_string();
+        let translation = std::mem::take(&mut self.translation).trim().to_string();
+        let timestamp_ms = self.timestamp_ms.take().unwrap_or(0);
+        if original.is_empty() && translation.is_empty() {
+            return None;
+        }
+        // When only the translation came through, it IS the transcript — better
+        // than dropping the turn entirely.
+        let (original, translation) = if original.is_empty() {
+            (translation, String::new())
+        } else {
+            (original, translation)
+        };
+        Some(LiveSegment {
+            original,
+            translation: if translation.is_empty() {
+                None
+            } else {
+                Some(translation)
+            },
+            timestamp_ms,
+        })
     }
 }
 
@@ -239,6 +381,8 @@ impl MeetingManager {
             current_meeting_id: Arc::new(Mutex::new(None)),
             persisted_segment_count: Arc::new(Mutex::new(0)),
             silence_anchor: Arc::new(Mutex::new(Instant::now())),
+            live_gemini_active: Arc::new(AtomicBool::new(false)),
+            live_translate_active: Arc::new(AtomicBool::new(false)),
             last_finalize_error: Arc::new(Mutex::new(None)),
             session_title: Arc::new(Mutex::new(None)),
         }
@@ -330,6 +474,8 @@ impl MeetingManager {
             *self.buffer_paths.lock().unwrap() = None;
             *self.current_meeting_id.lock().unwrap() = None;
             *self.persisted_segment_count.lock().unwrap() = 0;
+            self.live_gemini_active.store(false, Ordering::Relaxed);
+            self.live_translate_active.store(false, Ordering::Relaxed);
             *self.last_finalize_error.lock().unwrap() = None;
             *self.session_title.lock().unwrap() = None;
             // Start the prolonged-silence timer fresh so it never inherits a
@@ -873,12 +1019,48 @@ impl MeetingManager {
     /// transcript untouched.
     #[cfg(target_os = "macos")]
     fn finalize_session(&self) {
+        // Gemini batch transcription, when configured, replaces the local window
+        // pass entirely — it is the only path that can attribute speech to
+        // individual participants.
+        let gemini = self.gemini_finalize_config();
+
+        // A Gemini Live stream already produced a transcript, so the question is
+        // only what may overwrite it. The batch pass may: it re-reads the same
+        // audio with a stronger model and adds speaker attribution, which is a
+        // strict upgrade. The local Whisper pass may not — that would swap a
+        // cloud transcript for a weaker local one the user did not ask for. And
+        // a TRANSLATED transcript is final either way: any re-transcription
+        // loses the translation.
+        if self.live_gemini_active.load(Ordering::Relaxed)
+            && (self.live_translate_active.load(Ordering::Relaxed) || gemini.is_none())
+        {
+            log::info!("meeting finalize: skipped (gemini live produced the transcript)");
+            return;
+        }
+
         let buffers = match self.buffer_paths.lock().unwrap().clone() {
             Some(b) => b,
             None => return,
         };
 
         self.emit_finalizing(true);
+
+        // It reports its own failure through `last_finalize_error`, so a failed
+        // run still preserves the recording.
+        if let Some(config) = gemini {
+            let outcome = self.finalize_via_gemini(&buffers, &config);
+            self.emit_finalizing(false);
+            match outcome {
+                GeminiFinalizeOutcome::Done => return,
+                // Nothing usable came back and the reason is already recorded;
+                // falling through to Whisper would re-run minutes of work for a
+                // transcript the user did not ask for.
+                GeminiFinalizeOutcome::Failed => return,
+                // The audio never made it into the buffers, so there is nothing
+                // for either path to transcribe.
+                GeminiFinalizeOutcome::NoAudio => return,
+            }
+        }
 
         // Swap in the stronger FINAL model (default "turbo") for the duration of
         // the finalize pass, then restore the user's normal selected model. The
@@ -967,6 +1149,158 @@ impl MeetingManager {
         self.restore_model(restore_model);
 
         self.emit_finalizing(false);
+    }
+
+    /// Build the batch-transcription config from settings, or `None` when the
+    /// Gemini finalize pass is off or unconfigured.
+    #[cfg(target_os = "macos")]
+    fn gemini_finalize_config(&self) -> Option<crate::gemini_transcribe::BatchTranscribeConfig> {
+        use crate::gemini_transcribe::{
+            BatchTranscribeConfig, TranscriptionMode, DEFAULT_BATCH_TRANSCRIBE_MODEL,
+        };
+        let settings = crate::settings::get_settings(&self.app_handle);
+        if !settings.meeting_gemini_finalize {
+            return None;
+        }
+        let api_key = settings.gemini_api_key.trim().to_string();
+        if api_key.is_empty() {
+            log::warn!("meeting: Gemini finalize is enabled but no Gemini API key is set");
+            return None;
+        }
+        let model = {
+            let m = settings.meeting_gemini_finalize_model.trim();
+            if m.is_empty() {
+                DEFAULT_BATCH_TRANSCRIBE_MODEL.to_string()
+            } else {
+                m.to_string()
+            }
+        };
+        Some(BatchTranscribeConfig {
+            api_key,
+            model,
+            language_codes: self.meeting_language_hints(&settings),
+            custom_vocabulary: crate::gemini_transcribe::parse_vocabulary(
+                &settings.meeting_custom_vocabulary,
+            ),
+            mode: if settings.meeting_gemini_smart {
+                TranscriptionMode::Smart
+            } else {
+                TranscriptionMode::Verbatim
+            },
+            diarize: settings.meeting_gemini_diarize,
+        })
+    }
+
+    /// Re-transcribe the session through Gemini's batch model.
+    ///
+    /// The mic and system buffers go up as SEPARATE requests, which is what
+    /// keeps the existing "you" / "others" labeling intact — a single mixed
+    /// upload would come back as anonymous `spk_N` with no way to tell which
+    /// one is the user. It also means diarization is only worth asking for on
+    /// the system stream: the mic stream is one person by definition, and
+    /// leaving it off there lifts that stream past the API's 30-minute
+    /// diarization ceiling.
+    #[cfg(target_os = "macos")]
+    fn finalize_via_gemini(
+        &self,
+        buffers: &SessionBuffers,
+        config: &crate::gemini_transcribe::BatchTranscribeConfig,
+    ) -> GeminiFinalizeOutcome {
+        use crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE;
+
+        let mut segments: Vec<TranscriptSegment> = Vec::new();
+        let mut errors = FinalizeErrors::default();
+        let mut had_audio = false;
+
+        for (path, source, label) in [
+            (&buffers.mic, TranscriptSource::Mic, "you"),
+            (&buffers.system, TranscriptSource::System, "others"),
+        ] {
+            let audio = match read_f32_raw(path) {
+                Ok(audio) if !audio.is_empty() => audio,
+                Ok(_) => continue,
+                Err(e) => {
+                    log::warn!("meeting finalize: failed to read {:?}: {}", path, e);
+                    continue;
+                }
+            };
+            had_audio = true;
+
+            let duration_secs = audio.len() as u64 / WHISPER_SAMPLE_RATE as u64;
+            let mut request = config.clone();
+            // The mic is a single known speaker; attributing it is meaningless
+            // and would only cost us the length limit.
+            request.diarize = config.diarize
+                && source == TranscriptSource::System
+                && crate::gemini_transcribe::supports_diarization(duration_secs);
+            if config.diarize && source == TranscriptSource::System && !request.diarize {
+                log::info!(
+                    "meeting finalize: {} min of audio exceeds the diarization limit; \
+                     transcribing without speaker attribution",
+                    duration_secs / 60
+                );
+            }
+
+            // Numbering restarts per source, which is right: the mic stream is
+            // never diarized, so only the system stream ever produces labels.
+            let mut speakers = SpeakerLabels::default();
+            match crate::gemini_transcribe::transcribe_samples(
+                &request,
+                &audio,
+                WHISPER_SAMPLE_RATE,
+                &format!("meeting-{}", label),
+            ) {
+                Ok(diarized) => {
+                    for segment in diarized {
+                        let text = segment.text.trim();
+                        if text.is_empty() {
+                            continue;
+                        }
+                        segments.push(TranscriptSegment {
+                            text: text.to_string(),
+                            timestamp_ms: segment.start_ms,
+                            source,
+                            translation: None,
+                            speaker: segment.speaker.as_deref().map(|raw| speakers.label(raw)),
+                        });
+                    }
+                }
+                Err(e) => {
+                    log::warn!("meeting finalize: gemini {} stream failed: {}", label, e);
+                    errors.record(e.to_string());
+                }
+            }
+        }
+
+        if !had_audio {
+            log::warn!("meeting finalize: no captured audio to send to Gemini");
+            return GeminiFinalizeOutcome::NoAudio;
+        }
+
+        if segments.iter().any(|s| !s.text.trim().is_empty()) {
+            segments.sort_by_key(|s| s.timestamp_ms);
+            log::info!(
+                "meeting finalize: gemini produced {} segment(s)",
+                segments.len()
+            );
+            self.replace_transcript(segments);
+            return GeminiFinalizeOutcome::Done;
+        }
+
+        // Same rule as the local path: every request failing is a FAILURE, not
+        // a silent meeting, and `persist_session` must keep the recording.
+        if errors.count > 0 {
+            let reason = errors
+                .first
+                .unwrap_or_else(|| "Gemini transcription failed".to_string());
+            log::error!("meeting finalize: gemini failed: {}", reason);
+            *self.last_finalize_error.lock().unwrap() = Some(reason.clone());
+            self.emit_error(&reason);
+            return GeminiFinalizeOutcome::Failed;
+        }
+
+        log::warn!("meeting finalize: gemini returned no text; keeping live transcript");
+        GeminiFinalizeOutcome::Done
     }
 
     /// Whether the user's selected transcription model is a cloud (OpenRouter)
@@ -1098,6 +1432,8 @@ impl MeetingManager {
                                 text: deduped,
                                 timestamp_ms,
                                 source,
+                                translation: None,
+                                speaker: None,
                             });
                         }
                     }
@@ -1217,6 +1553,19 @@ impl MeetingManager {
 
     /// Append a transcribed segment and emit an update event.
     fn push_segment(&self, text: String, timestamp_ms: u64, source: TranscriptSource) {
+        self.push_segment_with(text, None, None, timestamp_ms, source);
+    }
+
+    /// Append a segment that may carry a translation alongside the original
+    /// text (the Gemini Live path) and emit an update event.
+    fn push_segment_with(
+        &self,
+        text: String,
+        translation: Option<String>,
+        speaker: Option<String>,
+        timestamp_ms: u64,
+        source: TranscriptSource,
+    ) {
         if text.trim().is_empty() {
             return;
         }
@@ -1224,6 +1573,8 @@ impl MeetingManager {
             text,
             timestamp_ms,
             source,
+            translation,
+            speaker,
         };
         {
             let mut segs = self.transcript.lock().unwrap();
@@ -1301,6 +1652,159 @@ impl MeetingManager {
                 id,
                 e
             );
+        }
+    }
+
+    /// Build the Gemini Live config from settings, or `None` when the feature
+    /// is off or unconfigured. A missing API key is worth a log line: the user
+    /// turned the feature on and would otherwise see silence.
+    #[cfg(target_os = "macos")]
+    fn live_config(&self) -> Option<crate::gemini_live::LiveConfig> {
+        use crate::gemini_live::LiveMode;
+        let settings = crate::settings::get_settings(&self.app_handle);
+
+        let (mode, configured_model) = match settings.meeting_live_mode.as_str() {
+            "translate" => {
+                let target = settings.meeting_live_translate_target.trim();
+                (
+                    LiveMode::Translate {
+                        target_language: if target.is_empty() {
+                            "en".to_string()
+                        } else {
+                            target.to_string()
+                        },
+                    },
+                    settings.meeting_live_translate_model.clone(),
+                )
+            }
+            "transcribe" => (
+                LiveMode::Transcribe {
+                    // Hints come from the meeting language when the user pinned
+                    // one; otherwise let the model detect, which is what a
+                    // mixed-language call needs.
+                    language_codes: self.meeting_language_hints(&settings),
+                    smart: settings.meeting_gemini_smart,
+                },
+                settings.meeting_live_transcribe_model.clone(),
+            ),
+            _ => return None,
+        };
+
+        let api_key = settings.gemini_api_key.trim().to_string();
+        if api_key.is_empty() {
+            log::warn!(
+                "meeting: live mode '{}' is enabled but no Gemini API key is set",
+                settings.meeting_live_mode
+            );
+            return None;
+        }
+
+        let model = {
+            let m = configured_model.trim();
+            if m.is_empty() {
+                mode.default_model().to_string()
+            } else {
+                m.to_string()
+            }
+        };
+        Some(crate::gemini_live::LiveConfig {
+            api_key,
+            model,
+            mode,
+        })
+    }
+
+    /// BCP-47 hints for the Gemini paths: the pinned meeting language, or empty
+    /// (auto-detect) when the user left it on automatic.
+    #[cfg(target_os = "macos")]
+    fn meeting_language_hints(&self, settings: &crate::settings::AppSettings) -> Vec<String> {
+        let language = settings.meeting_language.trim();
+        if language.is_empty() || language == "auto" {
+            Vec::new()
+        } else {
+            vec![language.to_string()]
+        }
+    }
+
+    /// Open one Gemini Live session per capture source, so the resulting
+    /// segments keep their "you" / "others" label. Returns `None` when live
+    /// mode is off, leaving the normal transcription paths in charge.
+    #[cfg(target_os = "macos")]
+    fn start_live_sessions(&self) -> Option<LiveSessions> {
+        let config = self.live_config()?;
+        log::info!(
+            "meeting: gemini live on (model={}, mode={:?})",
+            config.model,
+            config.mode
+        );
+        self.live_gemini_active.store(true, Ordering::Relaxed);
+        self.live_translate_active.store(
+            matches!(config.mode, crate::gemini_live::LiveMode::Translate { .. }),
+            Ordering::Relaxed,
+        );
+        Some(LiveSessions {
+            mic: self.open_live_source(config.clone(), TranscriptSource::Mic, "mic"),
+            system: self.open_live_source(config, TranscriptSource::System, "system"),
+        })
+    }
+
+    /// Start a live session for one source, accumulating streamed fragments into
+    /// whole segments.
+    #[cfg(target_os = "macos")]
+    fn open_live_source(
+        &self,
+        config: crate::gemini_live::LiveConfig,
+        source: TranscriptSource,
+        label: &str,
+    ) -> crate::gemini_live::LiveSession {
+        let manager = self.clone();
+        // Transcripts arrive as partial fragments; accumulate until the API
+        // marks the turn complete, then emit one segment.
+        let pending = Arc::new(Mutex::new(LiveSegmentBuilder::default()));
+        // Log the detected source language once per source. Worth having when a
+        // user reports the wrong language being translated.
+        let language_logged = Arc::new(AtomicBool::new(false));
+        let source_label = label.to_string();
+        crate::gemini_live::LiveSession::start(config, label, move |fragment| {
+            if let Some(language) = &fragment.source_language {
+                if !language_logged.swap(true, Ordering::Relaxed) {
+                    log::info!(
+                        "gemini-live[{}]: detected source language {}",
+                        source_label,
+                        language
+                    );
+                }
+            }
+            let finished = {
+                let mut builder = pending.lock().unwrap();
+                builder.absorb(&fragment, manager.elapsed_ms());
+                if fragment.turn_complete {
+                    builder.take()
+                } else {
+                    None
+                }
+            };
+            if let Some(segment) = finished {
+                manager.push_segment_with(
+                    segment.original,
+                    segment.translation,
+                    None,
+                    segment.timestamp_ms,
+                    source,
+                );
+            }
+        })
+    }
+
+    /// Milliseconds since this session started, for timestamping live segments.
+    /// The Live API runs a few seconds behind the speaker, so this is the
+    /// arrival time rather than the exact moment the words were said — close
+    /// enough to keep segments in order, which is what the timestamp is for.
+    fn elapsed_ms(&self) -> u64 {
+        let started = *self.session_started_at_ms.lock().unwrap();
+        match started {
+            Some(started) => (now_epoch_ms() - started).max(0) as u64,
+            None => 0,
         }
     }
 
@@ -1730,6 +2234,13 @@ impl MeetingManager {
         let mut mic_highpass = HighPass::new(MIC_HIGHPASS_HZ, WHISPER_SAMPLE_RATE as f32);
         let mut mic_norm = MicLoudnessNorm::new(WHISPER_SAMPLE_RATE);
 
+        // --- Gemini Live streaming (opt-in) ---
+        // Streams the same 16 kHz frames the buffers get to the Gemini Live
+        // API. Sessions connect in the background, so a slow or failing connect
+        // never delays capture; if it is off this is `None` and every push
+        // below is a no-op.
+        let live_sessions = self.start_live_sessions();
+
         // --- Prolonged-silence auto-end tracking ---
         // Run the silence check about once a second (not per 30 ms frame), and
         // refresh the cached auto-end settings only every few seconds:
@@ -1863,11 +2374,17 @@ impl MeetingManager {
                     }
                     let _ = mic_buf_writer.write(&mic_frames);
                     mic_proc.feed(&mic_frames, &seg_cfg, self);
+                    if let Some(live) = &live_sessions {
+                        live.mic.push_audio(&mic_frames);
+                    }
                 }
             }
             if !sys_frames.is_empty() {
                 let _ = system_buf_writer.write(&sys_frames);
                 system_proc.feed(&sys_frames, &seg_cfg, self);
+                if let Some(live) = &live_sessions {
+                    live.system.push_audio(&sys_frames);
+                }
             }
 
             // --- Mixed stream: level meter + playback buffer ONLY ---
@@ -1889,6 +2406,11 @@ impl MeetingManager {
         }
 
         // --- Teardown: stop mic + system, flush resamplers + mixer + final ---
+        // Close the live sessions first so the API flushes any in-flight turn
+        // while the rest of the teardown runs.
+        if let Some(live) = &live_sessions {
+            live.stop();
+        }
         mic_stop.store(true, Ordering::Relaxed);
         let _ = mic_handle.join();
         sys_stop.store(true, Ordering::Relaxed);
@@ -1968,7 +2490,10 @@ impl MeetingManager {
         // to disk, and the on-stop finalize re-transcribes it with the cloud
         // model in bounded windows. `audio` was already taken above, so the
         // segment buffer is cleared either way.
-        if self.selected_model_is_cloud() {
+        //
+        // Live translation likewise produces its own segments from the same
+        // audio; running this pass too would duplicate every utterance.
+        if self.live_gemini_active.load(Ordering::Relaxed) || self.selected_model_is_cloud() {
             return;
         }
 
@@ -2827,6 +3352,8 @@ fn default_meeting_title(started_at_ms: i64) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(target_os = "macos")]
+    use super::LiveSegmentBuilder;
     use super::{
         downsample_wave, empty_session_outcome, EmptySessionOutcome, TranscriptSegment,
         TranscriptSource,
@@ -2936,12 +3463,16 @@ mod tests {
                 text: system_text.to_string(),
                 timestamp_ms: 1_000,
                 source: TranscriptSource::System,
+                translation: None,
+                speaker: None,
             },
             // Mic picked up the same remote speech (slight ASR drift) ~2 s later.
             TranscriptSegment {
                 text: "bu çeyrekte gelirimiz beklentilerin üzerinde gerçekleşti ve büyümeye devam ediyoruz".to_string(),
                 timestamp_ms: 3_000,
                 source: TranscriptSource::Mic,
+                translation: None,
+                speaker: None,
             },
         ];
         let out = drop_cross_channel_echo(segs);
@@ -2958,12 +3489,16 @@ mod tests {
                 text: "satış rakamlarını üçüncü çeyrek için paylaşabilir misin lütfen".to_string(),
                 timestamp_ms: 1_000,
                 source: TranscriptSource::System,
+                translation: None,
+                speaker: None,
             },
             // Distinct local reply — not an echo, must be kept.
             TranscriptSegment {
                 text: "tabii hemen ekranı paylaşıp grafikleri gösteriyorum".to_string(),
                 timestamp_ms: 4_000,
                 source: TranscriptSource::Mic,
+                translation: None,
+                speaker: None,
             },
         ];
         let out = drop_cross_channel_echo(segs);
@@ -2979,12 +3514,16 @@ mod tests {
                 text: "evet kesinlikle".to_string(),
                 timestamp_ms: 1_000,
                 source: TranscriptSource::System,
+                translation: None,
+                speaker: None,
             },
             // Short agreement on both sides is below the token floor → kept.
             TranscriptSegment {
                 text: "evet kesinlikle".to_string(),
                 timestamp_ms: 2_000,
                 source: TranscriptSource::Mic,
+                translation: None,
+                speaker: None,
             },
         ];
         let out = drop_cross_channel_echo(segs);
@@ -3002,6 +3541,8 @@ mod tests {
                 text: text.to_string(),
                 timestamp_ms: 1_000,
                 source: TranscriptSource::System,
+                translation: None,
+                speaker: None,
             },
             // Same words but far apart in time (>35 s) → treated as a real repeat,
             // not acoustic echo, so kept.
@@ -3009,6 +3550,8 @@ mod tests {
                 text: text.to_string(),
                 timestamp_ms: 90_000,
                 source: TranscriptSource::Mic,
+                translation: None,
+                speaker: None,
             },
         ];
         let out = drop_cross_channel_echo(segs);
@@ -3017,6 +3560,30 @@ mod tests {
             2,
             "matches outside the echo time window are kept"
         );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn speakers_are_numbered_by_when_they_first_talk() {
+        use super::SpeakerLabels;
+        let mut labels = SpeakerLabels::default();
+        // The API's own numbering is ignored: these arrive zero-based and with
+        // a colon, and the first one to speak must still read "Speaker 1".
+        assert_eq!(labels.label("spk:0"), "Speaker 1");
+        assert_eq!(labels.label("spk:1"), "Speaker 2");
+        // A speaker returning later keeps the label they were given.
+        assert_eq!(labels.label("spk:0"), "Speaker 1");
+        assert_eq!(labels.label("spk:5"), "Speaker 3");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn speaker_numbering_survives_an_unfamiliar_tag_format() {
+        use super::SpeakerLabels;
+        let mut labels = SpeakerLabels::default();
+        assert_eq!(labels.label("spk_1"), "Speaker 1");
+        assert_eq!(labels.label("SPEAKER_B"), "Speaker 2");
+        assert_eq!(labels.label("spk_1"), "Speaker 1");
     }
 
     #[cfg(target_os = "macos")]
@@ -3030,6 +3597,63 @@ mod tests {
         // Just past the threshold: exceeded.
         assert!(silence_exceeded(Duration::from_millis(180_001), 180));
         assert!(silence_exceeded(Duration::from_secs(300), 180));
+    }
+
+    #[cfg(target_os = "macos")]
+    fn fragment(
+        original: Option<&str>,
+        translation: Option<&str>,
+        turn_complete: bool,
+    ) -> crate::gemini_live::LiveTranscript {
+        crate::gemini_live::LiveTranscript {
+            original: original.map(str::to_string),
+            translation: translation.map(str::to_string),
+            source_language: None,
+            turn_complete,
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn live_fragments_accumulate_into_one_segment_per_turn() {
+        // The Live API streams a sentence as several partial fragments. Emitting
+        // each one would litter the meeting with word-sized segments.
+        let mut builder = LiveSegmentBuilder::default();
+        builder.absorb(&fragment(Some("Merhaba "), None, false), 1_000);
+        builder.absorb(&fragment(Some("dünya"), Some("Hello "), false), 1_500);
+        builder.absorb(&fragment(None, Some("world"), true), 2_000);
+
+        let segment = builder.take().expect("a turn with text yields a segment");
+        assert_eq!(segment.original, "Merhaba dünya");
+        assert_eq!(segment.translation.as_deref(), Some("Hello world"));
+        // The timestamp comes from the FIRST fragment, so segments order by when
+        // the speech started rather than when translation finished.
+        assert_eq!(segment.timestamp_ms, 1_000);
+
+        // The builder resets for the next turn.
+        assert!(builder.take().is_none());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn live_turn_without_text_produces_nothing() {
+        // Audio-only turns arrive routinely; they must not create empty segments.
+        let mut builder = LiveSegmentBuilder::default();
+        builder.absorb(&fragment(None, None, true), 500);
+        assert!(builder.take().is_none());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn live_translation_alone_becomes_the_transcript() {
+        // If only the translated side came through, using it as the transcript
+        // beats dropping the utterance.
+        let mut builder = LiveSegmentBuilder::default();
+        builder.absorb(&fragment(None, Some("Hello"), true), 250);
+        let segment = builder.take().expect("segment");
+        assert_eq!(segment.original, "Hello");
+        assert!(segment.translation.is_none());
+        assert_eq!(segment.timestamp_ms, 250);
     }
 
     #[test]

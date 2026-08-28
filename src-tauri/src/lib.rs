@@ -6,6 +6,8 @@ pub mod audio_toolkit;
 pub mod cli;
 mod clipboard;
 mod commands;
+mod gemini_live;
+mod gemini_transcribe;
 mod helpers;
 mod input;
 mod llm_client;
@@ -382,6 +384,13 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_extra_recording_buffer_setting,
             shortcut::change_meeting_auto_summarize_setting,
             shortcut::change_meeting_auto_detect_setting,
+            shortcut::change_meeting_live_mode_setting,
+            shortcut::change_meeting_live_translate_target_setting,
+            shortcut::change_meeting_gemini_finalize_setting,
+            shortcut::change_meeting_gemini_diarize_setting,
+            shortcut::change_meeting_gemini_smart_setting,
+            shortcut::change_meeting_custom_vocabulary_setting,
+            shortcut::change_gemini_api_key_setting,
             shortcut::change_meeting_auto_end_setting,
             shortcut::change_meeting_calendar_names_setting,
             shortcut::change_meeting_silence_timeout_setting,

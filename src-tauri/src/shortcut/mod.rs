@@ -696,6 +696,96 @@ pub fn change_meeting_auto_summarize_setting(app: AppHandle, enabled: bool) -> R
     Ok(())
 }
 
+/// Meeting mode: pick the Gemini Live mode — `"off"`, `"translate"` or
+/// `"transcribe"`. Rejects anything else rather than persisting a value the
+/// backend would silently read as "off".
+#[tauri::command]
+#[specta::specta]
+pub fn change_meeting_live_mode_setting(app: AppHandle, mode: String) -> Result<(), String> {
+    let mode = mode.trim().to_lowercase();
+    if !matches!(mode.as_str(), "off" | "translate" | "transcribe") {
+        return Err(format!("Unknown live mode: {}", mode));
+    }
+    let mut settings = settings::get_settings(&app);
+    settings.meeting_live_mode = mode;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+/// Meeting mode: run the on-stop finalize pass through Gemini batch
+/// transcription (speaker attribution) instead of local Whisper windows.
+#[tauri::command]
+#[specta::specta]
+pub fn change_meeting_gemini_finalize_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.meeting_gemini_finalize = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+/// Meeting mode: turn speaker attribution on or off for the Gemini finalize pass.
+#[tauri::command]
+#[specta::specta]
+pub fn change_meeting_gemini_diarize_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.meeting_gemini_diarize = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+/// Meeting mode: cleaned-up ("smart") vs. verbatim Gemini transcription.
+#[tauri::command]
+#[specta::specta]
+pub fn change_meeting_gemini_smart_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.meeting_gemini_smart = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+/// Meeting mode: store the custom vocabulary Gemini should prefer. Kept as the
+/// raw text the user typed so the settings field round-trips exactly; parsing
+/// into terms happens where it is used.
+#[tauri::command]
+#[specta::specta]
+pub fn change_meeting_custom_vocabulary_setting(
+    app: AppHandle,
+    vocabulary: String,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.meeting_custom_vocabulary = vocabulary;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+/// Meeting mode: set the BCP-47 language live translation translates INTO.
+#[tauri::command]
+#[specta::specta]
+pub fn change_meeting_live_translate_target_setting(
+    app: AppHandle,
+    language: String,
+) -> Result<(), String> {
+    let language = language.trim().to_string();
+    if language.is_empty() {
+        return Err("Target language cannot be empty.".to_string());
+    }
+    let mut settings = settings::get_settings(&app);
+    settings.meeting_live_translate_target = language;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+/// Store the Gemini API key used by every Gemini meeting path. An empty
+/// string clears it.
+#[tauri::command]
+#[specta::specta]
+pub fn change_gemini_api_key_setting(app: AppHandle, api_key: String) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.gemini_api_key = api_key.trim().to_string();
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn change_meeting_auto_detect_setting(app: AppHandle, enabled: bool) -> Result<(), String> {

@@ -50,12 +50,25 @@ export const PlainTranscript: React.FC<{
 }> = ({ segments }) => (
   <div className="space-y-2">
     {segments.map((seg, i) => (
-      <p
-        key={i}
-        className="text-sm whitespace-pre-wrap break-words select-text text-text/90"
-      >
-        {seg.text}
-      </p>
+      <div key={i} className="space-y-0.5">
+        {/* Only the Gemini finalize pass can attribute speech, so most
+            transcripts have no label here at all. */}
+        {seg.speaker && seg.speaker.trim().length > 0 && (
+          <p className="text-[11px] font-medium uppercase tracking-wide text-mid-gray select-text">
+            {seg.speaker}
+          </p>
+        )}
+        <p className="text-sm whitespace-pre-wrap break-words select-text text-text/90">
+          {seg.text}
+        </p>
+        {/* Live-translated segments carry both directions; the translation sits
+            under the original so the original stays the primary reading. */}
+        {seg.translation && seg.translation.trim().length > 0 && (
+          <p className="text-sm whitespace-pre-wrap break-words select-text text-logo-primary/80 ps-3 border-s border-logo-primary/30">
+            {seg.translation}
+          </p>
+        )}
+      </div>
     ))}
   </div>
 );
@@ -67,7 +80,15 @@ export const plainTranscriptText = (
   fallback: string,
 ): string => {
   if (segments.length === 0) return fallback;
-  return segments.map((seg) => seg.text).join("\n");
+  return segments
+    .map((seg) => {
+      const speaker = seg.speaker?.trim();
+      const line = speaker ? `${speaker}: ${seg.text}` : seg.text;
+      return seg.translation && seg.translation.trim().length > 0
+        ? `${line}\n${seg.translation}`
+        : line;
+    })
+    .join("\n");
 };
 
 // Persistent "100% on-device transcription" trust badge.

@@ -450,6 +450,75 @@ pub struct AppSettings {
     /// session is ended automatically.
     #[serde(default = "default_meeting_auto_end_grace_secs")]
     pub meeting_auto_end_grace_secs: u32,
+    /// Meeting mode: stream the meeting audio to the Gemini Live API instead of
+    /// waiting for the on-stop finalize pass. One of `"off"`, `"translate"`
+    /// (speech-to-speech translation, reports original + translation) or
+    /// `"transcribe"` (transcription only, several times cheaper). Opt-in,
+    /// needs `gemini_api_key`. macOS only (it rides the meeting capture loop).
+    #[serde(default = "default_meeting_live_mode")]
+    pub meeting_live_mode: String,
+    /// BCP-47 code live translation translates INTO (e.g. "en", "tr", "de").
+    #[serde(default = "default_meeting_live_translate_target")]
+    pub meeting_live_translate_target: String,
+    /// Live API model id used for live translation. Overridable so a newer
+    /// preview can be selected without a rebuild.
+    #[serde(default = "default_meeting_live_translate_model")]
+    pub meeting_live_translate_model: String,
+    /// Live API model id used for live transcription (no translation).
+    #[serde(default = "default_meeting_live_transcribe_model")]
+    pub meeting_live_transcribe_model: String,
+    /// Meeting mode: run the on-stop finalize pass through Gemini's batch
+    /// transcription model instead of the local Whisper windows. Slower to
+    /// start (the audio is uploaded first) but it is the only path that can
+    /// attribute speech to individual speakers.
+    #[serde(default)]
+    pub meeting_gemini_finalize: bool,
+    /// Batch transcription model id for the Gemini finalize pass.
+    #[serde(default = "default_meeting_gemini_finalize_model")]
+    pub meeting_gemini_finalize_model: String,
+    /// Ask the batch finalize pass to attribute speech to distinct speakers.
+    /// Automatically skipped for audio past the API's 30-minute diarization
+    /// limit.
+    #[serde(default = "default_true")]
+    pub meeting_gemini_diarize: bool,
+    /// Ask Gemini to clean disfluencies and format the transcript ("smart"
+    /// mode) rather than transcribe verbatim. Applies to both the batch
+    /// finalize pass and live transcription.
+    #[serde(default = "default_true")]
+    pub meeting_gemini_smart: bool,
+    /// Domain terms, names and product names Gemini should prefer, one per line
+    /// (commas also accepted). Used by both Gemini transcription paths.
+    #[serde(default)]
+    pub meeting_custom_vocabulary: String,
+    /// API key for Google's Gemini API, used by every Gemini meeting path.
+    /// Separate from `post_process_api_keys` because that map is keyed by
+    /// post-processing provider, and this is not one.
+    #[serde(default)]
+    pub gemini_api_key: String,
+}
+
+fn default_meeting_live_mode() -> String {
+    "off".to_string()
+}
+
+fn default_meeting_live_translate_target() -> String {
+    "en".to_string()
+}
+
+fn default_meeting_live_translate_model() -> String {
+    crate::gemini_live::DEFAULT_LIVE_TRANSLATE_MODEL.to_string()
+}
+
+fn default_meeting_live_transcribe_model() -> String {
+    crate::gemini_live::DEFAULT_LIVE_TRANSCRIBE_MODEL.to_string()
+}
+
+fn default_meeting_gemini_finalize_model() -> String {
+    crate::gemini_transcribe::DEFAULT_BATCH_TRANSCRIBE_MODEL.to_string()
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn default_meeting_auto_end() -> bool {
@@ -949,6 +1018,16 @@ pub fn get_default_settings() -> AppSettings {
         meeting_calendar_names: false,
         meeting_silence_timeout_secs: default_meeting_silence_timeout_secs(),
         meeting_auto_end_grace_secs: default_meeting_auto_end_grace_secs(),
+        meeting_live_mode: default_meeting_live_mode(),
+        meeting_live_translate_target: default_meeting_live_translate_target(),
+        meeting_live_translate_model: default_meeting_live_translate_model(),
+        meeting_live_transcribe_model: default_meeting_live_transcribe_model(),
+        meeting_gemini_finalize: false,
+        meeting_gemini_finalize_model: default_meeting_gemini_finalize_model(),
+        meeting_gemini_diarize: true,
+        meeting_gemini_smart: true,
+        meeting_custom_vocabulary: String::new(),
+        gemini_api_key: String::new(),
     }
 }
 

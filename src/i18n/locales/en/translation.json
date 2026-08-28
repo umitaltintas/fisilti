@@ -739,7 +739,10 @@
     "customVocabularyLabel": "Custom vocabulary",
     "customVocabularyPlaceholder": "One term per line: names, products, jargon",
     "customVocabularyDescription": "Words Gemini should expect to hear. Up to 100 terms are sent; the rest are ignored.",
-    "transcriptSpeakerUnknown": "Speaker"
+    "transcriptSpeakerUnknown": "Speaker",
+    "subtitlesToggle": "Show live subtitles on screen",
+    "subtitlesDescription": "Float what the other participants are saying near the bottom of your screen while the meeting runs, so you can read along without leaving the call. Click-through, and hidden from screen sharing and recordings. Needs a live mode above.",
+    "stillProcessing": "Transcribing"
   },
   "meetingPrompt": {
     "startTitle": "Meeting detected",

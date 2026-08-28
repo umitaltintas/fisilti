@@ -10,6 +10,7 @@ import { MeetingPreferences } from "./MeetingPreferences";
 import { NOTES_AUTOSAVE_MS, SEARCH_DEBOUNCE_MS } from "./shared";
 import {
   deleteMeeting,
+  discardInterruptedMeeting,
   getMeeting,
   getMeetingStartedAt,
   getMeetingStatus,
@@ -468,10 +469,21 @@ export const MeetingSettings: React.FC = () => {
     }
   };
 
-  const handleDiscardInterrupted = (id: number) => {
-    // Discarding just dismisses the banner item; the row stays for now and
-    // delete is available from the list once it appears as completed.
+  const handleDiscardInterrupted = async (id: number) => {
+    // Actually delete the row and the capture buffers it owned. Dismissing the
+    // card in the UI alone left the row in the database, so it came straight
+    // back on the next load — and its audio buffers were unreachable but still
+    // on disk.
     setInterrupted((prev) => prev.filter((m) => m.id !== id));
+    try {
+      await discardInterruptedMeeting(id);
+      await loadPastMeetings(searchQuery);
+    } catch (e) {
+      // Put the card back: it still exists, and silently losing the only way
+      // to act on it is worse than showing the error.
+      setRecoverError(String(e));
+      void loadInterrupted();
+    }
   };
 
   const copyText = (text: string) => {

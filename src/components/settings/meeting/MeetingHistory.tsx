@@ -198,6 +198,16 @@ const PastMeetingRow: React.FC<PastMeetingRowProps> = ({
               aria-label={t("meeting.hasSummary")}
             />
           )}
+          {/* A row that is still transcribing (or was interrupted) stays in the
+              list rather than vanishing — a session that takes minutes to
+              finalize should not look like it was lost. The badge is what keeps
+              it from reading as a finished meeting with a suspiciously short
+              transcript. */}
+          {meeting.status !== "completed" && (
+            <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide bg-logo-primary/15 text-logo-primary">
+              {t("meeting.stillProcessing")}
+            </span>
+          )}
         </div>
         <div className="mt-0.5 flex items-center gap-2 text-xs text-text/50">
           <span className="tabular-nums">

@@ -19,6 +19,7 @@ import {
   changeMeetingGeminiSmart,
   changeMeetingLiveMode,
   changeMeetingLiveTranslateTarget,
+  changeMeetingSubtitles,
   changeMeetingSilenceTimeout,
   getMeetingAutoDetectSettings,
   getMeetingAutoSummarize,
@@ -66,6 +67,7 @@ export const MeetingPreferences: React.FC = () => {
   const [geminiDiarize, setGeminiDiarize] = useState(true);
   const [geminiSmart, setGeminiSmart] = useState(true);
   const [vocabulary, setVocabulary] = useState("");
+  const [subtitles, setSubtitles] = useState(true);
   const [hasGeminiKey, setHasGeminiKey] = useState(false);
   // Kept separate from `hasGeminiKey`: a stored key is never read back, so the
   // field starts empty and only its edits are persisted.
@@ -95,6 +97,7 @@ export const MeetingPreferences: React.FC = () => {
       setGeminiDiarize(s.diarize);
       setGeminiSmart(s.smart);
       setVocabulary(s.customVocabulary);
+      setSubtitles(s.subtitles);
       setHasGeminiKey(s.hasApiKey);
     });
     return () => {
@@ -412,6 +415,21 @@ export const MeetingPreferences: React.FC = () => {
               {t(`meeting.liveModeNote.${liveMode}`)}
             </p>
           </div>
+
+          {liveMode !== "off" && (
+            <MeetingToggle
+              checked={subtitles}
+              onToggle={() =>
+                void toggleGeminiSetting(
+                  subtitles,
+                  changeMeetingSubtitles,
+                  setSubtitles,
+                )
+              }
+              label={t("meeting.subtitlesToggle")}
+              description={t("meeting.subtitlesDescription")}
+            />
+          )}
 
           {liveMode === "translate" && (
             <div className="space-y-1">

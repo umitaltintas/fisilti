@@ -743,6 +743,16 @@ pub fn change_meeting_gemini_smart_setting(app: AppHandle, enabled: bool) -> Res
     Ok(())
 }
 
+/// Meeting mode: show or hide the live subtitle strip.
+#[tauri::command]
+#[specta::specta]
+pub fn change_meeting_subtitles_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.meeting_subtitles = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
 /// Meeting mode: store the custom vocabulary Gemini should prefer. Kept as the
 /// raw text the user typed so the settings field round-trips exactly; parsing
 /// into terms happens where it is used.

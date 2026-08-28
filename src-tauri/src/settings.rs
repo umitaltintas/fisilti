@@ -486,6 +486,13 @@ pub struct AppSettings {
     /// finalize pass and live transcription.
     #[serde(default = "default_true")]
     pub meeting_gemini_smart: bool,
+    /// Show a click-through subtitle strip near the bottom of the screen while
+    /// a Gemini Live stream is running. Defaults ON because it only ever
+    /// appears once a live mode is already explicitly enabled — the text is the
+    /// thing that mode was turned on to produce, and the app window is not
+    /// where anyone is looking during a call.
+    #[serde(default = "default_true")]
+    pub meeting_subtitles: bool,
     /// Domain terms, names and product names Gemini should prefer, one per line
     /// (commas also accepted). Used by both Gemini transcription paths.
     #[serde(default)]
@@ -1026,6 +1033,7 @@ pub fn get_default_settings() -> AppSettings {
         meeting_gemini_finalize_model: default_meeting_gemini_finalize_model(),
         meeting_gemini_diarize: true,
         meeting_gemini_smart: true,
+        meeting_subtitles: true,
         meeting_custom_vocabulary: String::new(),
         gemini_api_key: String::new(),
     }

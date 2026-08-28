@@ -106,6 +106,13 @@ pub struct LiveTranscript {
     pub original: Option<String>,
     /// Transcript of the model's translated speech, in the target language.
     pub translation: Option<String>,
+    /// Speculative, still-changing hypothesis of the utterance being spoken
+    /// right now. Each message carries the model's current best guess at the
+    /// WHOLE in-progress utterance, not a delta, so consumers replace rather
+    /// than append — and must never write it into the stored transcript, which
+    /// takes only the finalized text. Exists for live subtitles, where showing
+    /// words as they are spoken beats showing them correctly a second later.
+    pub interim: Option<String>,
     /// BCP-47 code the model detected for the input, when reported.
     pub source_language: Option<String>,
     /// True on the message that closes a turn. Transcripts stream in as partial
@@ -117,7 +124,10 @@ pub struct LiveTranscript {
 impl LiveTranscript {
     /// Nothing to accumulate AND no turn boundary to act on.
     fn is_empty(&self) -> bool {
-        self.original.is_none() && self.translation.is_none() && !self.turn_complete
+        self.original.is_none()
+            && self.translation.is_none()
+            && self.interim.is_none()
+            && !self.turn_complete
     }
 }
 
@@ -168,16 +178,25 @@ impl LiveConfig {
         });
 
         match &self.mode {
+            // NOTE the SPLIT nesting, which is not guessable and was arrived
+            // at from the server's own rejection messages: `translationConfig`
+            // belongs INSIDE `generationConfig`, while the two transcription
+            // flags belong at the TOP LEVEL of `setup`. Putting the latter in
+            // `generationConfig` is answered with `Unknown name
+            // "inputAudioTranscription" ... Cannot find field`. Getting either
+            // wrong is not a warning — the socket opens and is then closed.
             LiveMode::Translate { target_language } => {
-                setup["generationConfig"] = json!({ "responseModalities": ["AUDIO"] });
+                setup["generationConfig"] = json!({
+                    "responseModalities": ["AUDIO"],
+                    "translationConfig": {
+                        "targetLanguageCode": target_language,
+                        // Keep translating even when the speaker already uses
+                        // the target language, so the transcript never gaps.
+                        "echoTargetLanguage": true,
+                    },
+                });
                 setup["inputAudioTranscription"] = json!({});
                 setup["outputAudioTranscription"] = json!({});
-                setup["translationConfig"] = json!({
-                    "targetLanguageCode": target_language,
-                    // Keep translating even when the speaker already uses the
-                    // target language, so the transcript never silently gaps.
-                    "echoTargetLanguage": true,
-                });
             }
             LiveMode::Transcribe {
                 language_codes,
@@ -274,6 +293,33 @@ impl Drop for LiveSession {
     }
 }
 
+/// What one connection achieved, so the reconnect loop can tell a session that
+/// simply reached its lifetime limit from one the server refused.
+struct ConnectionOutcome {
+    /// Most recent resumption handle, for the next connection.
+    handle: Option<String>,
+    /// True when the socket closed almost immediately having produced nothing.
+    ///
+    /// This is what a REJECTED SETUP looks like: the handshake succeeds, then
+    /// the server hangs up. Without the distinction the loop reconnects with no
+    /// delay and hammers the endpoint several times a second, forever, while
+    /// logging a cheerful "connected" each time.
+    rejected: bool,
+}
+
+/// A connection this short with nothing to show for it was not a real session.
+const REJECTED_CONNECTION_SECS: u64 = 5;
+
+impl ConnectionOutcome {
+    fn new(handle: Option<String>, opened_at: std::time::Instant, transcripts_seen: u64) -> Self {
+        Self {
+            rejected: transcripts_seen == 0
+                && opened_at.elapsed().as_secs() < REJECTED_CONNECTION_SECS,
+            handle,
+        }
+    }
+}
+
 /// Reconnect loop: keeps a session alive across the API's connection lifetime
 /// limits by resuming from the last handle the server issued.
 async fn run_session_loop<F>(
@@ -299,17 +345,29 @@ async fn run_session_loop<F>(
         )
         .await
         {
-            Ok(next_handle) => {
-                consecutive_failures = 0;
+            Ok(outcome) => {
                 // Keep the previous handle when the server didn't issue a new
                 // one, so a clean close still resumes rather than restarting.
-                if next_handle.is_some() {
-                    resumption_handle = next_handle;
+                if outcome.handle.is_some() {
+                    resumption_handle = outcome.handle;
                 }
                 if stop.load(Ordering::Relaxed) {
                     break;
                 }
-                log::info!("gemini-live[{}]: reconnecting to continue session", label);
+                if outcome.rejected {
+                    consecutive_failures += 1;
+                    log::warn!(
+                        "gemini-live[{}]: server closed immediately with no output \
+                         (attempt {}); the setup is probably being rejected",
+                        label,
+                        consecutive_failures
+                    );
+                    let delay = RECONNECT_DELAY_MS * u64::from(consecutive_failures.min(8));
+                    tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+                } else {
+                    consecutive_failures = 0;
+                    log::info!("gemini-live[{}]: reconnecting to continue session", label);
+                }
             }
             Err(e) => {
                 consecutive_failures += 1;
@@ -338,7 +396,7 @@ async fn run_one_connection<F>(
     stop: &Arc<AtomicBool>,
     on_transcript: &Arc<F>,
     resumption_handle: Option<&str>,
-) -> Result<Option<String>>
+) -> Result<ConnectionOutcome>
 where
     F: Fn(LiveTranscript) + Send + Sync + 'static,
 {
@@ -364,6 +422,8 @@ where
         resumption_handle.is_some()
     );
 
+    let opened_at = std::time::Instant::now();
+    let mut transcripts_seen: u64 = 0;
     let mut handle: Option<String> = resumption_handle.map(str::to_string);
     // Set when the server warns it is about to close, so we stop feeding audio
     // into a socket that is going away and reconnect promptly.
@@ -381,7 +441,7 @@ where
                 ))
                 .await;
             let _ = writer.send(Message::Close(None)).await;
-            return Ok(handle);
+            return Ok(ConnectionOutcome::new(handle, opened_at, transcripts_seen));
         }
 
         tokio::select! {
@@ -404,7 +464,7 @@ where
                     // The sender was dropped: the meeting ended.
                     None => {
                         let _ = writer.send(Message::Close(None)).await;
-                        return Ok(handle);
+                        return Ok(ConnectionOutcome::new(handle, opened_at, transcripts_seen));
                     }
                 }
             }
@@ -413,7 +473,7 @@ where
             incoming = reader.next() => {
                 let Some(message) = incoming else {
                     // Stream ended — reconnect and resume.
-                    return Ok(handle);
+                    return Ok(ConnectionOutcome::new(handle, opened_at, transcripts_seen));
                 };
                 let message = message.map_err(|e| anyhow!("read: {}", e))?;
                 let text = match message {
@@ -423,7 +483,21 @@ where
                         Ok(t) => t,
                         Err(_) => continue,
                     },
-                    Message::Close(_) => return Ok(handle),
+                    Message::Close(frame) => {
+                        // The server explains a rejected setup here. Dropping
+                        // this frame is what turned a precise error message
+                        // into a silent reconnect loop.
+                        match &frame {
+                            Some(f) => log::info!(
+                                "gemini-live[{}]: server closed ({}): {}",
+                                label,
+                                f.code,
+                                f.reason
+                            ),
+                            None => log::info!("gemini-live[{}]: server closed", label),
+                        }
+                        return Ok(ConnectionOutcome::new(handle, opened_at, transcripts_seen));
+                    }
                     _ => continue,
                 };
                 let Ok(value) = serde_json::from_str::<Value>(&text) else {
@@ -444,12 +518,13 @@ where
 
                 let transcript = transcript_of(&value, &config.mode);
                 if !transcript.is_empty() {
+                    transcripts_seen += 1;
                     on_transcript(transcript);
                 }
 
                 if going_away {
                     let _ = writer.send(Message::Close(None)).await;
-                    return Ok(handle);
+                    return Ok(ConnectionOutcome::new(handle, opened_at, transcripts_seen));
                 }
             }
         }
@@ -492,10 +567,13 @@ fn transcript_of(value: &Value, mode: &LiveMode) -> LiveTranscript {
         || content["generationComplete"].as_bool().unwrap_or(false);
 
     match mode {
+        // Translation already streams in incrementally, fragment by fragment,
+        // so it needs no separate interim channel.
         LiveMode::Translate { .. } => LiveTranscript {
             translation: non_empty(content["outputTranscription"]["text"].as_str()),
             original: input,
             source_language,
+            interim: None,
             turn_complete: boundary,
         },
         LiveMode::Transcribe { .. } => LiveTranscript {
@@ -503,6 +581,7 @@ fn transcript_of(value: &Value, mode: &LiveMode) -> LiveTranscript {
             original: input,
             translation: None,
             source_language,
+            interim: non_empty(content["interimInputTranscription"]["text"].as_str()),
         },
     }
 }
@@ -571,14 +650,56 @@ mod tests {
             s["generationConfig"]["responseModalities"],
             json!(["AUDIO"])
         );
-        assert_eq!(s["translationConfig"]["targetLanguageCode"], json!("tr"));
-        // Both transcription flags must be present, or the session returns only
-        // audio and the meeting transcript stays empty.
-        assert!(s["inputAudioTranscription"].is_object());
-        assert!(s["outputAudioTranscription"].is_object());
+        // Config placement is covered by
+        // `translate_setup_splits_config_the_way_the_server_demands`.
         // Without these two a long meeting dies at the session limit.
         assert!(s["sessionResumption"].is_object());
         assert!(s["contextWindowCompression"]["slidingWindow"].is_object());
+    }
+
+    #[test]
+    fn translate_setup_splits_config_the_way_the_server_demands() {
+        // Each half of this was learned from a distinct server rejection.
+        // Neither placement is guessable, and both fail identically at runtime:
+        // the socket opens and is then closed, which reads as a network problem
+        // rather than a malformed request.
+        let config = LiveConfig {
+            api_key: "key".into(),
+            model: DEFAULT_LIVE_TRANSLATE_MODEL.into(),
+            mode: translate_mode(),
+        };
+        let setup = config.setup_message(None);
+        let s = &setup["setup"];
+
+        // translationConfig: inside generationConfig, and only there.
+        assert_eq!(
+            s["generationConfig"]["translationConfig"]["targetLanguageCode"],
+            json!("tr")
+        );
+        assert!(s.get("translationConfig").is_none());
+
+        // The transcription flags: top level, and NOT in generationConfig — the
+        // server rejects them there by name ("Unknown name
+        // \"inputAudioTranscription\" at 'setup.generation_config'").
+        assert!(s["inputAudioTranscription"].is_object());
+        assert!(s["outputAudioTranscription"].is_object());
+        assert!(s["generationConfig"]
+            .get("inputAudioTranscription")
+            .is_none());
+        assert!(s["generationConfig"]
+            .get("outputAudioTranscription")
+            .is_none());
+    }
+
+    #[test]
+    fn a_short_silent_connection_is_treated_as_a_rejected_setup() {
+        // Guards the reconnect loop: without this the loop cannot tell a
+        // refused setup from a session that ran its course, and retries with no
+        // delay several times a second for the length of a meeting.
+        let now = std::time::Instant::now();
+        assert!(ConnectionOutcome::new(None, now, 0).rejected);
+        // Producing anything at all means the session was real.
+        assert!(!ConnectionOutcome::new(None, now, 1).rejected);
     }
 
     #[test]
@@ -684,15 +805,21 @@ mod tests {
     }
 
     #[test]
-    fn transcribe_mode_ignores_speculative_partials() {
-        // Interim hypotheses are rewritten as the speaker keeps talking; taking
-        // them would duplicate text into the transcript.
+    fn speculative_partials_stay_out_of_the_transcript_fields() {
+        // Interim hypotheses are rewritten as the speaker keeps talking, so
+        // treating one as transcript text would duplicate it. It is reported on
+        // its own field, for subtitles, and never as `original`.
         let message = json!({
             "serverContent": {
                 "interimInputTranscription": { "text": "merh" }
             }
         });
-        assert!(transcript_of(&message, &transcribe_mode()).is_empty());
+        let parsed = transcript_of(&message, &transcribe_mode());
+        assert_eq!(parsed.interim.as_deref(), Some("merh"));
+        assert!(parsed.original.is_none());
+        // A partial closes nothing — the utterance is still being spoken.
+        assert!(!parsed.turn_complete);
+        assert!(!parsed.is_empty());
     }
 
     #[test]

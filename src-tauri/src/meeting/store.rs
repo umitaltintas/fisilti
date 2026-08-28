@@ -416,10 +416,9 @@ impl MeetingStore {
                 let mut stmt = conn.prepare(
                     "SELECT id, started_at, ended_at, duration_ms, title, transcript, summary, status
                      FROM meetings
-                     WHERE status = 'completed'
-                       AND (title LIKE ?1 ESCAPE '\\'
+                     WHERE title LIKE ?1 ESCAPE '\\'
                         OR transcript LIKE ?1 ESCAPE '\\'
-                        OR IFNULL(summary, '') LIKE ?1 ESCAPE '\\')
+                        OR IFNULL(summary, '') LIKE ?1 ESCAPE '\\' 
                      ORDER BY started_at DESC, id DESC",
                 )?;
                 let rows: Vec<MeetingListItem> = stmt
@@ -431,7 +430,6 @@ impl MeetingStore {
                 let mut stmt = conn.prepare(
                     "SELECT id, started_at, ended_at, duration_ms, title, transcript, summary, status
                      FROM meetings
-                     WHERE status = 'completed'
                      ORDER BY started_at DESC, id DESC",
                 )?;
                 let rows: Vec<MeetingListItem> = stmt
@@ -544,8 +542,8 @@ mod tests {
     }
 
     #[test]
-    fn list_meetings_hides_in_progress_rows() {
-        let store = temp_store("hides_in_progress");
+    fn list_meetings_reports_in_progress_rows_with_their_status() {
+        let store = temp_store("in_progress_status");
         let running = store
             .start_meeting(1_000, "Running meeting", &buffers())
             .expect("insert in-progress");
@@ -556,17 +554,19 @@ mod tests {
             .finalize_meeting(done, "hello there", &[], 5_000, 3_000)
             .expect("finalize");
 
+        // A meeting that is still recording or still finalizing must remain
+        // visible — hiding it makes a session that takes minutes to transcribe
+        // look like it was lost. The status is what lets the UI mark it.
         let all = store.list_meetings(None).expect("list");
-        let ids: Vec<i64> = all.iter().map(|m| m.id).collect();
-        assert_eq!(ids, vec![done], "only completed meetings belong in history");
-        assert!(!ids.contains(&running));
+        let by_id = |id: i64| all.iter().find(|m| m.id == id).expect("row present");
+        assert_eq!(by_id(running).status, "recording");
+        assert_eq!(by_id(done).status, "completed");
 
         // The same must hold for the search path, not just the unfiltered list.
         let searched = store.list_meetings(Some("meeting")).expect("search");
-        assert_eq!(
-            searched.iter().map(|m| m.id).collect::<Vec<_>>(),
-            vec![done]
-        );
+        let mut ids: Vec<i64> = searched.iter().map(|m| m.id).collect();
+        ids.sort();
+        assert_eq!(ids, vec![running, done]);
     }
 
     #[test]

@@ -294,6 +294,12 @@ export function deleteMeeting(id: number): Promise<void> {
   return invoke<void>("delete_meeting", { id });
 }
 
+/** Discard an interrupted meeting: delete the row AND the capture buffers only
+ * it referenced. Distinct from `deleteMeeting`, which leaves those files. */
+export function discardInterruptedMeeting(id: number): Promise<void> {
+  return invoke<void>("discard_interrupted_meeting", { id });
+}
+
 /** Get the absolute path to a meeting's saved mixed-audio file. Rejects if the
  * meeting has no saved audio. Pass the result through Tauri's
  * `convertFileSrc()` before using it as an `<audio>` `src`. */
@@ -407,6 +413,8 @@ export interface MeetingGeminiSettings {
   smart: boolean;
   /** Domain terms Gemini should prefer, one per line. */
   customVocabulary: string;
+  /** Float live subtitles near the bottom of the screen during a meeting. */
+  subtitles: boolean;
   /** Whether a Gemini API key is stored. The key itself is never read back. */
   hasApiKey: boolean;
 }
@@ -418,6 +426,7 @@ const MEETING_GEMINI_DEFAULTS: MeetingGeminiSettings = {
   diarize: true,
   smart: true,
   customVocabulary: "",
+  subtitles: true,
   hasApiKey: false,
 };
 
@@ -431,6 +440,7 @@ export function getMeetingGeminiSettings(): Promise<MeetingGeminiSettings> {
     meeting_gemini_diarize?: boolean;
     meeting_gemini_smart?: boolean;
     meeting_custom_vocabulary?: string;
+    meeting_subtitles?: boolean;
     gemini_api_key?: string;
   }>("get_app_settings")
     .then((s) => ({
@@ -445,6 +455,7 @@ export function getMeetingGeminiSettings(): Promise<MeetingGeminiSettings> {
       smart: s?.meeting_gemini_smart ?? MEETING_GEMINI_DEFAULTS.smart,
       customVocabulary:
         s?.meeting_custom_vocabulary ?? MEETING_GEMINI_DEFAULTS.customVocabulary,
+      subtitles: s?.meeting_subtitles ?? MEETING_GEMINI_DEFAULTS.subtitles,
       hasApiKey: (s?.gemini_api_key ?? "").trim().length > 0,
     }))
     .catch(() => ({ ...MEETING_GEMINI_DEFAULTS }));
@@ -481,6 +492,11 @@ export function changeMeetingGeminiDiarize(enabled: boolean): Promise<void> {
 /** Cleaned-up ("smart") vs. verbatim Gemini transcription. */
 export function changeMeetingGeminiSmart(enabled: boolean): Promise<void> {
   return invoke<void>("change_meeting_gemini_smart_setting", { enabled });
+}
+
+/** Show or hide the live subtitle strip. */
+export function changeMeetingSubtitles(enabled: boolean): Promise<void> {
+  return invoke<void>("change_meeting_subtitles_setting", { enabled });
 }
 
 /** Store the custom vocabulary Gemini should prefer (one term per line). */

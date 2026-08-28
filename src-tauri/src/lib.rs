@@ -21,6 +21,7 @@ pub mod portable;
 mod settings;
 mod shortcut;
 mod signal_handle;
+mod subtitle_overlay;
 mod transcription_coordinator;
 mod tray;
 mod tray_i18n;
@@ -335,6 +336,11 @@ fn initialize_core_logic(app_handle: &AppHandle) {
 
     // Create the recording overlay window (hidden by default)
     utils::create_recording_overlay(app_handle);
+
+    // Same for the live subtitle strip. Built up front even when the feature is
+    // off: a hidden panel costs nothing, and it means the first subtitle of a
+    // meeting is not waiting on window creation.
+    subtitle_overlay::create_subtitle_overlay(app_handle);
 }
 
 #[tauri::command]
@@ -390,6 +396,7 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_meeting_gemini_diarize_setting,
             shortcut::change_meeting_gemini_smart_setting,
             shortcut::change_meeting_custom_vocabulary_setting,
+            shortcut::change_meeting_subtitles_setting,
             shortcut::change_gemini_api_key_setting,
             shortcut::change_meeting_auto_end_setting,
             shortcut::change_meeting_calendar_names_setting,
@@ -483,6 +490,7 @@ pub fn run(cli_args: CliArgs) {
             commands::meeting::get_meeting,
             commands::meeting::get_meeting_audio_path,
             commands::meeting::delete_meeting,
+            commands::meeting::discard_interrupted_meeting,
             commands::meeting::update_meeting_title,
             commands::meeting::update_meeting_notes,
             commands::meeting::export_meeting_markdown,

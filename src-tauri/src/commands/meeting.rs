@@ -456,6 +456,58 @@ pub fn delete_meeting(meeting_manager: State<Arc<MeetingManager>>, id: i64) -> R
         .map_err(|e| format!("Failed to delete meeting: {}", e))
 }
 
+/// Discard an interrupted meeting: delete the row AND the files only it
+/// referenced.
+///
+/// Distinct from [`delete_meeting`] because an interrupted row still owns its
+/// raw capture buffers, which exist purely so the row can be re-finalized.
+/// Dropping the row without them would strand hundreds of megabytes per
+/// meeting with nothing left in the database pointing at the files.
+///
+/// File removal is best-effort: a missing or unreadable file must not stop the
+/// user from clearing a card they have decided they do not want.
+#[tauri::command]
+#[specta::specta]
+pub fn discard_interrupted_meeting(
+    meeting_manager: State<Arc<MeetingManager>>,
+    id: i64,
+) -> Result<(), String> {
+    let store = meeting_manager.store();
+
+    let mut paths: Vec<String> = Vec::new();
+    match store.get_buffers(id) {
+        Ok(buffers) => {
+            paths.extend(
+                [buffers.mic, buffers.system, buffers.mixed]
+                    .into_iter()
+                    .flatten(),
+            );
+        }
+        Err(e) => log::warn!("discard: could not read buffers for meeting {}: {}", id, e),
+    }
+    if let Ok(Some(audio)) = store.get_audio_path(id) {
+        paths.push(audio);
+    }
+
+    for path in &paths {
+        match std::fs::remove_file(path) {
+            Ok(()) => log::debug!("discard: removed {}", path),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => log::warn!("discard: could not remove {}: {}", path, e),
+        }
+    }
+
+    store
+        .delete_meeting(id)
+        .map_err(|e| format!("Failed to discard meeting: {}", e))?;
+    log::info!(
+        "discard: removed interrupted meeting {} and {} file(s)",
+        id,
+        paths.len()
+    );
+    Ok(())
+}
+
 /// Manually rename a meeting (Phase 2 item 2). Overwrites the `title` column.
 #[tauri::command]
 #[specta::specta]

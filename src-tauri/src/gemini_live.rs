@@ -32,7 +32,7 @@
 //! and supplies a Gemini API key.
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use anyhow::{anyhow, Result};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
@@ -222,6 +222,8 @@ pub struct LiveSession {
     /// Reported once at shutdown rather than logged per drop.
     dropped: Arc<AtomicU64>,
     label: String,
+    /// Tokens the API reported for this session, read after `stop()`.
+    usage: Arc<Mutex<crate::ai_usage::UsageAccumulator>>,
 }
 
 impl LiveSession {
@@ -235,6 +237,8 @@ impl LiveSession {
     where
         F: Fn(LiveTranscript) + Send + Sync + 'static,
     {
+        let usage = Arc::new(Mutex::new(crate::ai_usage::UsageAccumulator::default()));
+        let worker_usage = usage.clone();
         let label = label.into();
         let (audio_tx, audio_rx) = mpsc::channel::<Vec<f32>>(AUDIO_QUEUE_CHUNKS);
         let stop = Arc::new(AtomicBool::new(false));
@@ -249,6 +253,7 @@ impl LiveSession {
                 audio_rx,
                 worker_stop,
                 Arc::new(on_transcript),
+                worker_usage,
             )
             .await;
         });
@@ -258,6 +263,7 @@ impl LiveSession {
             stop,
             dropped,
             label,
+            usage,
         }
     }
 
@@ -284,6 +290,13 @@ impl LiveSession {
                 dropped
             );
         }
+    }
+}
+
+impl LiveSession {
+    /// `(input_tokens, output_tokens)` the API reported for this session.
+    pub fn usage_totals(&self) -> (u64, u64) {
+        self.usage.lock().unwrap().totals()
     }
 }
 
@@ -328,6 +341,7 @@ async fn run_session_loop<F>(
     mut audio_rx: mpsc::Receiver<Vec<f32>>,
     stop: Arc<AtomicBool>,
     on_transcript: Arc<F>,
+    usage: Arc<Mutex<crate::ai_usage::UsageAccumulator>>,
 ) where
     F: Fn(LiveTranscript) + Send + Sync + 'static,
 {
@@ -342,6 +356,7 @@ async fn run_session_loop<F>(
             &stop,
             &on_transcript,
             resumption_handle.as_deref(),
+            &usage,
         )
         .await
         {
@@ -396,6 +411,7 @@ async fn run_one_connection<F>(
     stop: &Arc<AtomicBool>,
     on_transcript: &Arc<F>,
     resumption_handle: Option<&str>,
+    usage: &Arc<Mutex<crate::ai_usage::UsageAccumulator>>,
 ) -> Result<ConnectionOutcome>
 where
     F: Fn(LiveTranscript) + Send + Sync + 'static,
@@ -504,6 +520,9 @@ where
                     continue;
                 };
 
+                if let Some((input, output)) = crate::ai_usage::usage_of(&value) {
+                    usage.lock().unwrap().record(input, output);
+                }
                 if let Some(new_handle) = resumption_handle_of(&value) {
                     handle = Some(new_handle);
                 }

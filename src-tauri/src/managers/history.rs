@@ -68,6 +68,12 @@ pub(crate) static MIGRATIONS: &[M] = &[
     // Phase 2 editable user notes: the user's own notes for a meeting, distinct
     // from the AI-generated `summary`. APPENDED; never reorder/edit earlier ones.
     M::up("ALTER TABLE meetings ADD COLUMN notes TEXT;"),
+    // Token counts reported by the Gemini APIs, as JSON. Deliberately NOT a
+    // cost: prices move (every model involved is a preview), and a stored
+    // figure would become a lie about a past meeting. The estimate is computed
+    // at display time from these counts. APPENDED; never reorder/edit earlier
+    // ones.
+    M::up("ALTER TABLE meetings ADD COLUMN usage_json TEXT;"),
 ];
 
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]

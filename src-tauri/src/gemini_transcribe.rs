@@ -59,6 +59,15 @@ pub fn supports_diarization(duration_secs: u64) -> bool {
     duration_secs <= DIARIZATION_MAX_SECS
 }
 
+/// A completed batch transcription: what was said, and what it cost.
+pub struct BatchTranscribeResult {
+    pub segments: Vec<DiarizedSegment>,
+    /// `(input_tokens, output_tokens)` the API reported, or zeros when it
+    /// reported nothing. Usage is strictly an extra on top of the transcript
+    /// and must never be able to fail the call that produced it.
+    pub usage: (u64, u64),
+}
+
 /// One contiguous run of speech attributed to a single speaker.
 #[derive(Clone, Debug, PartialEq)]
 pub struct DiarizedSegment {
@@ -168,7 +177,7 @@ pub fn transcribe_samples(
     samples: &[f32],
     sample_rate: u32,
     display_name: &str,
-) -> Result<Vec<DiarizedSegment>> {
+) -> Result<BatchTranscribeResult> {
     let config = config.clone();
     let samples = samples.to_vec();
     let display_name = display_name.to_string();
@@ -185,7 +194,7 @@ fn run_exchange(
     config: &BatchTranscribeConfig,
     wav: Vec<u8>,
     display_name: &str,
-) -> Result<Vec<DiarizedSegment>> {
+) -> Result<BatchTranscribeResult> {
     const MIME: &str = "audio/wav";
 
     let client = reqwest::blocking::Client::builder()
@@ -223,7 +232,12 @@ fn run_exchange(
 
     let value: Value = serde_json::from_str(&body)
         .map_err(|e| anyhow!("malformed transcription response: {}", e))?;
-    Ok(parse_response(&value))
+    Ok(BatchTranscribeResult {
+        segments: parse_response(&value),
+        // A batch call is one request, so there is no cumulative-vs-incremental
+        // ambiguity to resolve here: whatever it reports is the whole cost.
+        usage: crate::ai_usage::usage_of(&value).unwrap_or((0, 0)),
+    })
 }
 
 /// Files API resumable upload. Returns the `uri` the Interactions API expects.

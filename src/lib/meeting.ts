@@ -90,6 +90,56 @@ export interface MeetingRecord {
   notes?: string | null;
   /** Lifecycle status: `"recording"` or `"completed"`. */
   status?: string;
+  /** Tokens the Gemini paths reported, or null when no cloud model ran (or the
+   * meeting predates usage tracking). Absent is NOT the same as zero. */
+  usage?: MeetingUsage | null;
+}
+
+/** Tokens spent on one model. Mirrors Rust `ModelUsage`. */
+export interface ModelUsage {
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+}
+
+/** Everything a meeting spent. Mirrors Rust `MeetingUsage`. */
+export interface MeetingUsage {
+  entries: ModelUsage[];
+}
+
+/** US dollars per million tokens, mirroring the Rust price table.
+ *
+ * Kept as an ESTIMATE and labelled as one in the UI: these models are previews,
+ * prices move, and free-tier quota and billing discounts are invisible here. */
+const PRICES: Array<{ prefix: string; input: number; output: number }> = [
+  // Longest prefix first: "…-transcribe-live" must not be priced by the
+  // cheaper "…-transcribe" entry.
+  { prefix: "gemini-3.5-live-translate", input: 3.5, output: 21.0 },
+  { prefix: "gemini-3.5-transcribe-live", input: 3.5, output: 21.0 },
+  { prefix: "gemini-3.5-transcribe", input: 2.0, output: 12.0 },
+];
+
+/** Estimated cost of a meeting in USD, and whether every model was priced.
+ * Returns null when there is nothing to price at all. */
+export function estimateMeetingCost(
+  usage: MeetingUsage | null | undefined,
+): { usd: number; complete: boolean } | null {
+  if (!usage || usage.entries.length === 0) return null;
+  let usd = 0;
+  let complete = true;
+  for (const entry of usage.entries) {
+    const model = entry.model.replace(/^models\//, "");
+    const price = PRICES.find((p) => model.startsWith(p.prefix));
+    if (!price) {
+      // Contribute nothing rather than a guess, but say the total is partial —
+      // a confidently low number is worse than an openly incomplete one.
+      complete = false;
+      continue;
+    }
+    usd += (entry.input_tokens / 1_000_000) * price.input;
+    usd += (entry.output_tokens / 1_000_000) * price.output;
+  }
+  return { usd, complete };
 }
 
 /** A preset summary prompt template. Mirrors Rust `MeetingSummaryTemplate`

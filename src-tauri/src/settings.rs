@@ -750,6 +750,16 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
             supports_structured_output: true,
         },
         PostProcessProvider {
+            id: "google".to_string(),
+            label: "Google Gemini".to_string(),
+            // Google's OpenAI-compatible layer, so this rides the existing
+            // chat-completions path rather than needing a second client.
+            base_url: "https://generativelanguage.googleapis.com/v1beta/openai".to_string(),
+            allow_base_url_edit: false,
+            models_endpoint: Some("/models".to_string()),
+            supports_structured_output: true,
+        },
+        PostProcessProvider {
             id: "anthropic".to_string(),
             label: "Anthropic".to_string(),
             base_url: "https://api.anthropic.com/v1".to_string(),
@@ -1040,6 +1050,29 @@ pub fn get_default_settings() -> AppSettings {
 }
 
 impl AppSettings {
+    /// API key for a post-processing provider.
+    ///
+    /// Google is special-cased: the Gemini key is already stored once for
+    /// meeting transcription, and making the user paste the same key a second
+    /// time under a different label — then wonder why post-processing is silent
+    /// when they don't — is a worse experience than a two-line fallback. An
+    /// explicit per-provider key still wins, so anyone wanting to bill
+    /// post-processing to a separate key can.
+    pub fn post_process_key_for(&self, provider_id: &str) -> String {
+        let explicit = self
+            .post_process_api_keys
+            .get(provider_id)
+            .map(|k| k.trim())
+            .unwrap_or_default();
+        if !explicit.is_empty() {
+            return explicit.to_string();
+        }
+        if provider_id == "google" {
+            return self.gemini_api_key.trim().to_string();
+        }
+        String::new()
+    }
+
     pub fn active_post_process_provider(&self) -> Option<&PostProcessProvider> {
         self.post_process_providers
             .iter()
@@ -1172,6 +1205,47 @@ pub fn get_recording_retention_period(app: &AppHandle) -> RecordingRetentionPeri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn google_provider_falls_back_to_the_meeting_gemini_key() {
+        let mut settings = get_default_settings();
+        settings.gemini_api_key = "meeting-key".to_string();
+
+        // Pasting the same Gemini key twice under two labels is the kind of
+        // thing users do not do, and then post-processing is silently dead.
+        assert_eq!(settings.post_process_key_for("google"), "meeting-key");
+        // The fallback is Google-only; nothing else may borrow that key.
+        assert_eq!(settings.post_process_key_for("openai"), "");
+    }
+
+    #[test]
+    fn an_explicit_google_key_wins_over_the_fallback() {
+        let mut settings = get_default_settings();
+        settings.gemini_api_key = "meeting-key".to_string();
+        settings
+            .post_process_api_keys
+            .insert("google".to_string(), "billing-key".to_string());
+        assert_eq!(settings.post_process_key_for("google"), "billing-key");
+
+        // A blank explicit key is not a choice, it is an empty field.
+        settings
+            .post_process_api_keys
+            .insert("google".to_string(), "   ".to_string());
+        assert_eq!(settings.post_process_key_for("google"), "meeting-key");
+    }
+
+    #[test]
+    fn existing_installs_gain_the_google_provider_on_load() {
+        // The provider list is PERSISTED, so adding one to the defaults does
+        // nothing for existing users without this reconciliation.
+        let mut settings = get_default_settings();
+        settings.post_process_providers.retain(|p| p.id != "google");
+        assert!(ensure_post_process_defaults(&mut settings));
+        assert!(settings
+            .post_process_providers
+            .iter()
+            .any(|p| p.id == "google"));
+    }
 
     #[test]
     fn default_settings_disable_auto_submit() {

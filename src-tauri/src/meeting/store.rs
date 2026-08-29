@@ -72,6 +72,10 @@ pub struct MeetingRecord {
     pub notes: Option<String>,
     /// Lifecycle status: `"recording"` or `"completed"`.
     pub status: String,
+    /// Tokens the Gemini paths reported for this meeting. `None` for meetings
+    /// that used no cloud model, or that predate usage tracking — which is why
+    /// the UI must say "no data" rather than "$0.00".
+    pub usage: Option<crate::ai_usage::MeetingUsage>,
 }
 
 /// An interrupted meeting (status still `"recording"`) detected at startup, with
@@ -264,6 +268,19 @@ impl MeetingStore {
     /// CRASH-RECOVERY: finalize an in-progress row to `completed`, writing the
     /// final transcript/segments/timestamps and clearing the temp-buffer paths.
     /// Used by both the normal stop() path and the recovery path.
+    /// Record the token usage a meeting accumulated. Separate from
+    /// `finalize_meeting` because the recovery path finalizes a row whose usage
+    /// was spent in an earlier process, and overwriting it with the current
+    /// session's zero would erase what the first attempt actually cost.
+    pub fn update_usage(&self, id: i64, usage_json: &str) -> Result<()> {
+        let conn = self.get_connection()?;
+        conn.execute(
+            "UPDATE meetings SET usage_json = ?2 WHERE id = ?1",
+            params![id, usage_json],
+        )?;
+        Ok(())
+    }
+
     pub fn finalize_meeting(
         &self,
         id: i64,
@@ -476,7 +493,7 @@ impl MeetingStore {
         let conn = self.get_connection()?;
         let record = conn
             .query_row(
-                "SELECT id, started_at, ended_at, duration_ms, title, transcript, segments_json, summary, created_at, audio_path, notes, status
+                "SELECT id, started_at, ended_at, duration_ms, title, transcript, segments_json, summary, created_at, audio_path, notes, status, usage_json
                  FROM meetings WHERE id = ?1",
                 params![id],
                 |row| {
@@ -495,6 +512,11 @@ impl MeetingStore {
                             audio_path: row.get("audio_path")?,
                             notes: row.get("notes")?,
                             status: row.get("status")?,
+                            // Usage is decorative: a malformed blob must not
+                            // stop a meeting from opening.
+                            usage: row
+                                .get::<_, Option<String>>("usage_json")?
+                                .and_then(|j| serde_json::from_str(&j).ok()),
                         },
                         segments_json,
                     ))

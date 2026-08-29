@@ -194,6 +194,9 @@ pub struct MeetingManager {
     /// streams onto one strip reads as gibberish.
     #[cfg(target_os = "macos")]
     subtitles: Arc<Mutex<SubtitleFeed>>,
+    /// Tokens this session has spent across every Gemini path, so the finished
+    /// meeting can show what it cost. Cleared at session start.
+    session_usage: Arc<Mutex<crate::ai_usage::MeetingUsage>>,
     /// Error surfaced by the most recent finalize pass when EVERY transcription
     /// window failed (no balance, network down, model unavailable). Distinct
     /// from "the meeting was genuinely silent": in this case `persist_session`
@@ -276,6 +279,8 @@ impl FinalizeErrors {
 struct LiveSessions {
     mic: crate::gemini_live::LiveSession,
     system: crate::gemini_live::LiveSession,
+    /// Model both sessions run on, needed to price their tokens.
+    model: String,
 }
 
 #[cfg(target_os = "macos")]
@@ -493,6 +498,7 @@ impl MeetingManager {
             live_translate_active: Arc::new(AtomicBool::new(false)),
             #[cfg(target_os = "macos")]
             subtitles: Arc::new(Mutex::new(SubtitleFeed::default())),
+            session_usage: Arc::new(Mutex::new(crate::ai_usage::MeetingUsage::default())),
             last_finalize_error: Arc::new(Mutex::new(None)),
             session_title: Arc::new(Mutex::new(None)),
         }
@@ -587,6 +593,7 @@ impl MeetingManager {
             self.live_gemini_active.store(false, Ordering::Relaxed);
             self.live_translate_active.store(false, Ordering::Relaxed);
             *self.last_finalize_error.lock().unwrap() = None;
+            *self.session_usage.lock().unwrap() = crate::ai_usage::MeetingUsage::default();
             *self.session_title.lock().unwrap() = None;
             // Start the prolonged-silence timer fresh so it never inherits a
             // stale anchor from a previous session.
@@ -754,6 +761,7 @@ impl MeetingManager {
                 {
                     Ok(()) => {
                         log::info!("Finalized meeting row {} (completed)", id);
+                        self.persist_usage(id);
                         *self.last_saved_meeting_id.lock().unwrap() = Some(id);
                         *self.current_meeting_id.lock().unwrap() = None;
                     }
@@ -1016,6 +1024,8 @@ impl MeetingManager {
                 duration_ms,
             )
             .map_err(|e| format!("Failed to finalize recovered meeting: {}", e))?;
+        // The recovery pass ran real cloud transcription; charge it too.
+        self.persist_usage(id);
         log::info!("meeting: recovered interrupted row {} (completed)", id);
         Ok(final_transcript)
     }
@@ -1360,8 +1370,9 @@ impl MeetingManager {
                 WHISPER_SAMPLE_RATE,
                 &format!("meeting-{}", label),
             ) {
-                Ok(diarized) => {
-                    for segment in diarized {
+                Ok(result) => {
+                    self.record_usage(&request.model, result.usage.0, result.usage.1);
+                    for segment in result.segments {
                         let text = segment.text.trim();
                         if text.is_empty() {
                             continue;
@@ -1852,10 +1863,74 @@ impl MeetingManager {
             matches!(config.mode, crate::gemini_live::LiveMode::Translate { .. }),
             Ordering::Relaxed,
         );
+        let model = config.model.clone();
         Some(LiveSessions {
             mic: self.open_live_source(config.clone(), TranscriptSource::Mic, "mic"),
             system: self.open_live_source(config, TranscriptSource::System, "system"),
+            model,
         })
+    }
+
+    /// Write the session's token usage onto row `id`.
+    ///
+    /// Skipped when nothing was spent, so a purely local meeting keeps a NULL
+    /// column and the UI can tell "no cloud model was used" apart from "a cloud
+    /// model was used and cost nothing", which would be a lie.
+    fn persist_usage(&self, id: i64) {
+        let usage = self.session_usage.lock().unwrap().clone();
+        if usage.is_empty() {
+            return;
+        }
+        let estimate = usage.estimate_usd();
+        log::info!(
+            "usage: meeting {} used {} model(s), estimated ${:.4}{}",
+            id,
+            usage.entries.len(),
+            estimate.usd,
+            if estimate.complete {
+                ""
+            } else {
+                " (partial: unpriced model)"
+            }
+        );
+        // Merge rather than overwrite. A recovered meeting was already charged
+        // once by the session that crashed; replacing that with only what the
+        // re-finalize cost would under-report it.
+        let mut merged = self
+            .store
+            .get_meeting(id)
+            .ok()
+            .and_then(|record| record.usage)
+            .unwrap_or_default();
+        for entry in &usage.entries {
+            merged.add(&entry.model, entry.input_tokens, entry.output_tokens);
+        }
+
+        match serde_json::to_string(&merged) {
+            Ok(json) => {
+                if let Err(e) = self.store.update_usage(id, &json) {
+                    log::warn!("usage: failed to record for meeting {}: {}", id, e);
+                }
+            }
+            Err(e) => log::warn!("usage: could not serialize: {}", e),
+        }
+    }
+
+    /// Fold one call's token usage into the session total.
+    fn record_usage(&self, model: &str, input_tokens: u64, output_tokens: u64) {
+        if input_tokens == 0 && output_tokens == 0 {
+            return;
+        }
+        log::debug!(
+            "usage: {} +{} in / +{} out tokens",
+            model,
+            input_tokens,
+            output_tokens
+        );
+        self.session_usage
+            .lock()
+            .unwrap()
+            .add(model, input_tokens, output_tokens);
     }
 
     /// Update the subtitle strip: `live` is the utterance still being spoken,
@@ -2592,6 +2667,11 @@ impl MeetingManager {
         // while the rest of the teardown runs.
         if let Some(live) = &live_sessions {
             live.stop();
+            // Read the meters AFTER stopping, so the final usage report the
+            // server sends on close is included.
+            let (mic_in, mic_out) = live.mic.usage_totals();
+            let (sys_in, sys_out) = live.system.usage_totals();
+            self.record_usage(&live.model, mic_in + sys_in, mic_out + sys_out);
         }
         // Take the strip down with the stream that fed it, before the (possibly
         // minutes-long) finalize pass, so it never outlives the meeting.

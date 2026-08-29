@@ -21,6 +21,7 @@ import {
   plainTranscriptText,
 } from "./shared";
 import {
+  estimateMeetingCost,
   exportMeetingMarkdown,
   getMeetingAudioPath,
   regenerateMeetingSummary,
@@ -44,6 +45,11 @@ interface MeetingDetailProps {
 }
 
 // Full-page detail view of a saved meeting (takes over the History tab).
+/** Sub-cent meetings are the common case for a short transcription, and
+ * "$0.00" reads as "free" rather than "too small to show". */
+const formatCost = (usd: number): string =>
+  usd > 0 && usd < 0.01 ? "<0.01" : usd.toFixed(2);
+
 export const MeetingDetail: React.FC<MeetingDetailProps> = ({
   detail,
   loading,
@@ -65,6 +71,9 @@ export const MeetingDetail: React.FC<MeetingDetailProps> = ({
   const labeledSegments = detail?.segments ?? [];
   const hasLabeledSegments = labeledSegments.length > 0;
   const summary = detail?.summary?.trim() ?? "";
+  // Null when no cloud model ran, which must read differently from "$0.00" —
+  // the latter would claim a paid path was free.
+  const cost = estimateMeetingCost(detail?.usage);
 
   // Inline title rename.
   const [editingTitle, setEditingTitle] = useState(false);
@@ -209,6 +218,25 @@ export const MeetingDetail: React.FC<MeetingDetailProps> = ({
               <span className="tabular-nums">
                 {formatDuration(detail.duration_ms)}
               </span>
+              {cost && (
+                <>
+                  <span aria-hidden>•</span>
+                  {/* Labelled as an estimate on purpose: the price table is a
+                      snapshot of preview pricing, and free-tier quota and
+                      billing discounts are invisible from here. Someone
+                      comparing this to an invoice should already know it will
+                      not match to the cent. */}
+                  <span
+                    className="tabular-nums"
+                    title={t("meeting.costTooltip")}
+                  >
+                    {t("meeting.costEstimate", {
+                      amount: formatCost(cost.usd),
+                    })}
+                    {!cost.complete && "+"}
+                  </span>
+                </>
+              )}
             </div>
           )}
           {detail && (

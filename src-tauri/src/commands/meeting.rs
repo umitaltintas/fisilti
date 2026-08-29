@@ -289,11 +289,7 @@ pub(crate) async fn summarize_transcript_ext(
         ));
     }
 
-    let api_key = settings
-        .post_process_api_keys
-        .get(&provider.id)
-        .cloned()
-        .unwrap_or_default();
+    let api_key = settings.post_process_key_for(&provider.id);
 
     // Resolve the system prompt: template id → custom prompt → default.
     let system_prompt = match template.map(str::trim).filter(|t| !t.is_empty()) {
@@ -359,11 +355,7 @@ pub(crate) async fn generate_title(app: &AppHandle, transcript: &str) -> Result<
             provider.id
         ));
     }
-    let api_key = settings
-        .post_process_api_keys
-        .get(&provider.id)
-        .cloned()
-        .unwrap_or_default();
+    let api_key = settings.post_process_key_for(&provider.id);
 
     // Cap the transcript fed to the title prompt: the opening is plenty for a
     // title and keeps the request small.
@@ -732,6 +724,7 @@ mod tests {
             audio_path: None,
             notes: Some("My own notes".to_string()),
             status: "completed".to_string(),
+            usage: None,
         }
     }
 

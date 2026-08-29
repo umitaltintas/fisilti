@@ -97,6 +97,11 @@ function App() {
         event.preventDefault();
         const currentDebugMode = settings?.debug_mode ?? false;
         updateSetting("debug_mode", !currentDebugMode);
+        // Debug settings are a group inside Advanced rather than their own
+        // sidebar entry, so jump there to show what the shortcut revealed.
+        if (!currentDebugMode) {
+          setCurrentSection("advanced");
+        }
       }
     };
 

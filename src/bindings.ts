@@ -141,9 +141,117 @@ async changeMeetingAutoDetectSetting(enabled: boolean) : Promise<Result<null, st
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Meeting mode: pick the Gemini Live mode — `"off"`, `"translate"` or
+ * `"transcribe"`. Rejects anything else rather than persisting a value the
+ * backend would silently read as "off".
+ */
+async changeMeetingLiveModeSetting(mode: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_meeting_live_mode_setting", { mode }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Meeting mode: set the BCP-47 language live translation translates INTO.
+ */
+async changeMeetingLiveTranslateTargetSetting(language: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_meeting_live_translate_target_setting", { language }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Meeting mode: run the on-stop finalize pass through Gemini batch
+ * transcription (speaker attribution) instead of local Whisper windows.
+ * Meeting mode: turn speaker attribution on or off for the Gemini finalize pass.
+ */
+async changeMeetingGeminiDiarizeSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_meeting_gemini_diarize_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Meeting mode: cleaned-up ("smart") vs. verbatim Gemini transcription.
+ */
+async changeMeetingGeminiSmartSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_meeting_gemini_smart_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Meeting mode: store the custom vocabulary Gemini should prefer. Kept as the
+ * raw text the user typed so the settings field round-trips exactly; parsing
+ * into terms happens where it is used.
+ */
+async changeMeetingCustomVocabularySetting(vocabulary: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_meeting_custom_vocabulary_setting", { vocabulary }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Meeting mode: show or hide the live subtitle strip.
+ */
+async changeMeetingSubtitlesSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_meeting_subtitles_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Meeting mode: choose which model transcribes meetings. An empty string
+ * means "follow the dictation model", which is the default.
+ * 
+ * Rejects unknown ids so a typo cannot leave meetings pointing at a model that
+ * does not exist — the live pass would then fail on every segment with nothing
+ * on screen explaining why.
+ */
+async changeMeetingSelectedModelSetting(modelId: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_meeting_selected_model_setting", { modelId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Store the Gemini API key used by every Gemini meeting path. An empty
+ * string clears it.
+ */
+async changeGeminiApiKeySetting(apiKey: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_gemini_api_key_setting", { apiKey }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeMeetingAutoEndSetting(enabled: boolean) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_meeting_auto_end_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeMeetingCalendarNamesSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_meeting_calendar_names_setting", { enabled }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -845,6 +953,20 @@ async getMeetingStatus() : Promise<Result<string, string>> {
 }
 },
 /**
+ * Return the running session's start time as epoch milliseconds, or `null`
+ * when no session is running. The UI uses it to render a truthful elapsed
+ * timer when it attaches to a session that was started elsewhere (tray, global
+ * shortcut, or the meeting auto-detect prompt).
+ */
+async getMeetingStartedAt() : Promise<Result<number | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_meeting_started_at") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Summarize the accumulated meeting transcript into meeting notes using the
  * SAME LLM provider/model/api-key the user already configured for dictation
  * post-processing (reads `settings::get_settings`). Does NOT modify or depend
@@ -935,6 +1057,34 @@ async getMeetingAudioPath(id: number) : Promise<Result<string, string>> {
 async deleteMeeting(id: number) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("delete_meeting", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Discard an interrupted meeting: delete the row AND the files only it
+ * referenced.
+ * 
+ * Distinct from [`delete_meeting`] because an interrupted row still owns its
+ * raw capture buffers, which exist purely so the row can be re-finalized.
+ * Dropping the row without them would strand hundreds of megabytes per
+ * meeting with nothing left in the database pointing at the files.
+ * 
+ * File removal is best-effort: a missing or unreadable file must not stop the
+ * user from clearing a card they have decided they do not want.
+ */
+async discardInterruptedMeeting(id: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("discard_interrupted_meeting", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getTranscriptionLocation() : Promise<Result<TranscriptionLocation, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_transcription_location") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1051,6 +1201,31 @@ async respondMeetingAutoEnd(continueMeeting: boolean) : Promise<Result<null, str
 async getMeetingDetectionStatus() : Promise<Result<MeetingDetectionStatus, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_meeting_detection_status") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Authorization status of macOS calendar access for meeting naming:
+ * `"authorized"` | `"denied"` | `"notDetermined"` | `"unavailable"`.
+ */
+async getCalendarAccessStatus() : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_calendar_access_status") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Request macOS calendar access for meeting naming, showing the system prompt
+ * on first call. Resolves `true` when full access is granted. Runs on a
+ * blocking thread — the system prompt can stay open for a while.
+ */
+async requestCalendarAccess() : Promise<Result<boolean, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("request_calendar_access") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1175,10 +1350,23 @@ openrouter_custom_model?: string; mute_while_recording?: boolean; append_trailin
  */
 meeting_auto_summarize?: boolean; 
 /**
+ * Meeting mode: which model transcribes meetings, independent of the model
+ * dictation uses.
+ * 
+ * Empty (the default) means "whatever dictation uses", which is both the
+ * old behaviour and a sensible default — it keeps following
+ * [`Self::selected_model`] when the user changes that. Set it to run
+ * meetings on something else: an accurate cloud model for meetings while
+ * push-to-talk dictation stays local and free.
+ * 
+ * Read through [`Self::meeting_model_id`], never directly.
+ */
+meeting_selected_model?: string; 
+/**
  * Meeting mode: the model used for the high-quality FINAL (on-stop)
- * re-transcription pass. Swapped in for finalize only, then the user's
- * normal `selected_model` is restored. Defaults to "turbo"
- * (large-v3-turbo). The LIVE preview path keeps using `selected_model`.
+ * re-transcription pass. Swapped in for finalize only, then the meeting
+ * model is restored. Defaults to "turbo" (large-v3-turbo). The LIVE
+ * preview path uses [`Self::meeting_model_id`].
  */
 meeting_final_model?: string; 
 /**
@@ -1213,10 +1401,84 @@ meeting_auto_end?: boolean;
  */
 meeting_silence_timeout_secs?: number; 
 /**
+ * Meeting mode: name new sessions after the calendar event in progress at
+ * start time (macOS EventKit). Opt-in: enabling prompts for the Calendars
+ * permission. Window-title naming and the LLM auto-title stay available
+ * regardless.
+ */
+meeting_calendar_names?: boolean; 
+/**
  * Seconds the "end meeting?" prompt waits for a response before the
  * session is ended automatically.
  */
-meeting_auto_end_grace_secs?: number }
+meeting_auto_end_grace_secs?: number; 
+/**
+ * Meeting mode: stream the meeting audio to the Gemini Live API instead of
+ * waiting for the on-stop finalize pass. One of `"off"`, `"translate"`
+ * (speech-to-speech translation, reports original + translation) or
+ * `"transcribe"` (transcription only, several times cheaper). Opt-in,
+ * needs `gemini_api_key`. macOS only (it rides the meeting capture loop).
+ */
+meeting_live_mode?: string; 
+/**
+ * BCP-47 code live translation translates INTO (e.g. "en", "tr", "de").
+ */
+meeting_live_translate_target?: string; 
+/**
+ * Live API model id used for live translation. Overridable so a newer
+ * preview can be selected without a rebuild.
+ */
+meeting_live_translate_model?: string; 
+/**
+ * Live API model id used for live transcription (no translation).
+ */
+meeting_live_transcribe_model?: string; 
+/**
+ * DEPRECATED, kept only so [`migrate_gemini_finalize_to_meeting_model`]
+ * can read it off existing installs.
+ * 
+ * This used to be a toggle: "run the on-stop finalize through Gemini
+ * instead of the local Whisper windows". Choosing Gemini as the meeting
+ * model now says the same thing in one place, and having both meant two
+ * Gemini paths of different quality selected by a hidden boolean. Nothing
+ * reads this field any more; the migration clears it.
+ */
+meeting_gemini_finalize?: boolean; 
+/**
+ * Batch transcription model id for the Gemini finalize pass.
+ */
+meeting_gemini_finalize_model?: string; 
+/**
+ * Ask the batch finalize pass to attribute speech to distinct speakers.
+ * Automatically skipped for audio past the API's 30-minute diarization
+ * limit.
+ */
+meeting_gemini_diarize?: boolean; 
+/**
+ * Ask Gemini to clean disfluencies and format the transcript ("smart"
+ * mode) rather than transcribe verbatim. Applies to both the batch
+ * finalize pass and live transcription.
+ */
+meeting_gemini_smart?: boolean; 
+/**
+ * Show a click-through subtitle strip near the bottom of the screen while
+ * a Gemini Live stream is running. Defaults ON because it only ever
+ * appears once a live mode is already explicitly enabled — the text is the
+ * thing that mode was turned on to produce, and the app window is not
+ * where anyone is looking during a call.
+ */
+meeting_subtitles?: boolean; 
+/**
+ * Domain terms, names and product names Gemini should prefer, one per line
+ * (commas also accepted). Used by both Gemini transcription paths.
+ */
+meeting_custom_vocabulary?: string; 
+/**
+ * API key for Google's Gemini API, used by every Gemini meeting path.
+ * Separate from `post_process_api_keys` because that map is keyed by
+ * post-processing provider, and this is not one.
+ */
+gemini_api_key?: string }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AvailableAccelerators = { whisper: string[]; ort: string[] }
@@ -1238,7 +1500,17 @@ export type EngineType = "Whisper" | "Parakeet" | "Moonshine" | "MoonshineStream
  * `/audio/transcriptions` endpoint — verbatim speech-to-text. Same
  * not-downloaded/`filename`-as-slug conventions as [`EngineType::OpenRouter`].
  */
-"OpenRouterAsr"
+"OpenRouterAsr" | 
+/**
+ * Cloud transcription straight from Google's Gemini API (not through
+ * OpenRouter), using the same batch endpoint the meeting finalize pass
+ * uses. Authenticated with `gemini_api_key` rather than the OpenRouter
+ * key; `filename` carries the bare Gemini model id.
+ * 
+ * This is the only cloud engine that can attribute speakers and stream
+ * live, which is why meetings can drive it beyond plain transcription.
+ */
+"Gemini"
 export type HistoryEntry = { id: number; file_name: string; timestamp: number; saved: boolean; title: string; transcription_text: string; post_processed_text: string | null; post_process_prompt: string | null; post_process_requested: boolean }
 export type HistoryUpdatePayload = { action: "added"; entry: HistoryEntry } | { action: "updated"; entry: HistoryEntry } | { action: "deleted"; id: number } | { action: "toggled"; id: number }
 /**
@@ -1307,7 +1579,13 @@ notes: string | null;
 /**
  * Lifecycle status: `"recording"` or `"completed"`.
  */
-status: string }
+status: string; 
+/**
+ * Tokens the Gemini paths reported for this meeting. `None` for meetings
+ * that used no cloud model, or that predate usage tracking — which is why
+ * the UI must say "no data" rather than "$0.00".
+ */
+usage: MeetingUsage | null }
 /**
  * A preset summary prompt template for meeting mode. `id` is a stable key the
  * frontend passes to `summarize_meeting_with`; `name` is the display label;
@@ -1316,9 +1594,43 @@ status: string }
  * language).
  */
 export type MeetingSummaryTemplate = { id: string; name: string; prompt: string }
+/**
+ * Everything a meeting spent, one entry per model involved.
+ */
+export type MeetingUsage = { entries: ModelUsage[] }
 export type ModelInfo = { id: string; name: string; description: string; filename: string; url: string | null; sha256: string | null; size_mb: number; is_downloaded: boolean; is_downloading: boolean; partial_size: number; is_directory: boolean; engine_type: EngineType; accuracy_score: number; speed_score: number; supports_translation: boolean; is_recommended: boolean; supported_languages: string[]; supports_language_selection: boolean; is_custom: boolean }
 export type ModelLoadStatus = { is_loaded: boolean; current_model: string | null }
 export type ModelUnloadTimeout = "never" | "immediately" | "min_2" | "min_5" | "min_10" | "min_15" | "hour_1" | "sec_15"
+/**
+ * Tokens consumed by one model, split by direction.
+ * 
+ * The modality split is kept even though current pricing does not vary by it
+ * within a single model: it costs nothing to record, and it is the difference
+ * between "we can explain this number" and "trust us" when a translate session
+ * (audio out) and a transcribe session (text out) sit side by side.
+ */
+export type ModelUsage = { 
+/**
+ * Bare model id the work was spent on.
+ */
+model: string; 
+/**
+ * Tokens the model consumed, when it reported them.
+ */
+input_tokens: number; 
+/**
+ * Tokens the model produced, when it reported them.
+ */
+output_tokens: number; 
+/**
+ * Seconds of audio streamed to this model.
+ * 
+ * Measured on our side, and for the Live API it is the ONLY basis
+ * available: `gemini-3.5-transcribe-live` sends no `usageMetadata` at all
+ * — verified by enumerating every distinct message shape across whole
+ * meetings — so a token-only design silently reported nothing.
+ */
+audio_seconds?: number }
 export type OrtAcceleratorSetting = "auto" | "cpu" | "cuda" | "directml" | "rocm"
 export type OverlayPosition = "none" | "top" | "bottom"
 export type PaginatedHistory = { entries: HistoryEntry[]; has_more: boolean }
@@ -1344,7 +1656,21 @@ timestamp_ms: number;
  * Which captured source produced this segment (mic = "you",
  * system = "others").
  */
-source?: TranscriptSource }
+source?: TranscriptSource; 
+/**
+ * Translation of `text`, when the segment came from the Gemini Live
+ * translation path. `None` for the normal transcription paths and for
+ * records saved before live translation existed.
+ */
+translation?: string | null; 
+/**
+ * Which speaker said this, when the transcript came from a path that can
+ * tell participants apart (the Gemini batch finalize pass with diarization
+ * on). Holds a display label like `"Speaker 1"`, already resolved from the
+ * API's raw `spk_1`. `None` everywhere else — `source` remains the only
+ * attribution the local paths can offer.
+ */
+speaker?: string | null }
 /**
  * Which captured source a transcript segment came from.
  * 
@@ -1353,6 +1679,21 @@ source?: TranscriptSource }
  * directly without an extra mapping step.
  */
 export type TranscriptSource = "you" | "others"
+/**
+ * Where a meeting's transcription would actually run, for the trust
+ * indicator.
+ * 
+ * The UI showed an unconditional "100% on-device" badge, which stopped being
+ * true the moment a cloud transcription model or any Gemini path could be
+ * selected. A privacy claim that is right most of the time is worse than no
+ * claim: it is exactly the situation where the user stops checking.
+ */
+export type TranscriptionLocation = { 
+/**
+ * Names of the cloud services audio would be sent to. Empty means the
+ * meeting really is fully on-device.
+ */
+cloud_providers: string[] }
 export type TypingTool = "auto" | "wtype" | "kwtype" | "dotool" | "ydotool" | "xdotool"
 export type WhisperAcceleratorSetting = "auto" | "cpu" | "gpu"
 export type WindowsMicrophonePermissionStatus = { supported: boolean; overall_access: PermissionAccess; device_access: PermissionAccess; app_access: PermissionAccess; desktop_app_access: PermissionAccess }

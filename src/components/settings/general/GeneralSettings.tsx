@@ -1,26 +1,49 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { MicrophoneSelector } from "../MicrophoneSelector";
-import { ShortcutInput } from "../ShortcutInput";
+import { type } from "@tauri-apps/plugin-os";
 import { SettingsGroup } from "../../ui/SettingsGroup";
-import { OutputDeviceSelector } from "../OutputDeviceSelector";
-import { PushToTalk } from "../PushToTalk";
-import { AudioFeedback } from "../AudioFeedback";
 import { useSettings } from "../../../hooks/useSettings";
-import { VolumeSlider } from "../VolumeSlider";
+import { ShortcutInput } from "../ShortcutInput";
+import { PushToTalk } from "../PushToTalk";
+import { ShowOverlay } from "../ShowOverlay";
+import { MicrophoneSelector } from "../MicrophoneSelector";
 import { MuteWhileRecording } from "../MuteWhileRecording";
-import { ModelSettingsCard } from "./ModelSettingsCard";
+import { AudioFeedback } from "../AudioFeedback";
+import { OutputDeviceSelector } from "../OutputDeviceSelector";
+import { VolumeSlider } from "../VolumeSlider";
+import { SoundPicker } from "../SoundPicker";
+import { AppLanguageSelector } from "../AppLanguageSelector";
+import { AutostartToggle } from "../AutostartToggle";
+import { StartHidden } from "../StartHidden";
+import { ShowTrayIcon } from "../ShowTrayIcon";
+import { UpdateChecksToggle } from "../UpdateChecksToggle";
 
+// The everyday page: how you record, what it sounds like, and how the app
+// behaves. Model-specific options live on the Models page; anything you set
+// once and forget lives under Advanced.
 export const GeneralSettings: React.FC = () => {
   const { t } = useTranslation();
-  const { audioFeedbackEnabled } = useSettings();
+  const { audioFeedbackEnabled, getSetting } = useSettings();
+  const pushToTalk = getSetting("push_to_talk");
+  // Dynamic shortcut registration is unstable on Linux, so the cancel binding
+  // stays hidden there.
+  const isLinux = type() === "linux";
+
   return (
-    <div className="max-w-3xl w-full mx-auto space-y-6">
-      <SettingsGroup title={t("settings.general.title")}>
+    <div className="mx-auto w-full max-w-3xl space-y-6">
+      <SettingsGroup title={t("settings.general.groups.recording")}>
         <ShortcutInput shortcutId="transcribe" grouped={true} />
+        {!isLinux && (
+          <ShortcutInput
+            shortcutId="cancel"
+            grouped={true}
+            disabled={pushToTalk}
+          />
+        )}
         <PushToTalk descriptionMode="tooltip" grouped={true} />
+        <ShowOverlay descriptionMode="tooltip" grouped={true} />
       </SettingsGroup>
-      <ModelSettingsCard />
+
       <SettingsGroup title={t("settings.sound.title")}>
         <MicrophoneSelector descriptionMode="tooltip" grouped={true} />
         <MuteWhileRecording descriptionMode="tooltip" grouped={true} />
@@ -30,7 +53,19 @@ export const GeneralSettings: React.FC = () => {
           grouped={true}
           disabled={!audioFeedbackEnabled}
         />
+        <SoundPicker
+          label={t("settings.debug.soundTheme.label")}
+          description={t("settings.debug.soundTheme.description")}
+        />
         <VolumeSlider disabled={!audioFeedbackEnabled} />
+      </SettingsGroup>
+
+      <SettingsGroup title={t("settings.general.groups.app")}>
+        <AppLanguageSelector descriptionMode="tooltip" grouped={true} />
+        <AutostartToggle descriptionMode="tooltip" grouped={true} />
+        <StartHidden descriptionMode="tooltip" grouped={true} />
+        <ShowTrayIcon descriptionMode="tooltip" grouped={true} />
+        <UpdateChecksToggle descriptionMode="tooltip" grouped={true} />
       </SettingsGroup>
     </div>
   );

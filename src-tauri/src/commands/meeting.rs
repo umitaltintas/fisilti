@@ -468,19 +468,31 @@ pub fn get_transcription_location(app: AppHandle) -> Result<TranscriptionLocatio
     let settings = crate::settings::get_settings(&app);
     let mut cloud_providers: Vec<String> = Vec::new();
 
-    // Gemini: live streaming and/or the batch finalize pass.
-    let gemini = settings.meeting_live_mode != "off" || settings.meeting_gemini_finalize;
-    if gemini {
+    // Gemini Live streaming. The batch finalize pass is no longer a separate
+    // flag — it follows the meeting model, which the check below covers.
+    if settings.meeting_live_mode != "off" {
         cloud_providers.push("Google Gemini".to_string());
     }
 
-    // The selected transcription model may itself be a cloud model.
-    let selected_is_cloud = app
+    // The model transcribing THIS meeting may itself be a cloud model. Name the
+    // provider it actually talks to — a Gemini model does not go through
+    // OpenRouter, and telling the user it does would be a false privacy claim.
+    if let Some(engine) = app
         .try_state::<Arc<crate::managers::model::ModelManager>>()
-        .and_then(|mm| mm.get_model_info(&settings.selected_model))
-        .is_some_and(|m| m.engine_type.is_cloud());
-    if selected_is_cloud {
-        cloud_providers.push("OpenRouter".to_string());
+        .and_then(|mm| mm.get_model_info(settings.meeting_model_id()))
+        .map(|m| m.engine_type)
+    {
+        let provider = match engine {
+            crate::managers::model::EngineType::OpenRouter
+            | crate::managers::model::EngineType::OpenRouterAsr => Some("OpenRouter"),
+            crate::managers::model::EngineType::Gemini => Some("Google Gemini"),
+            _ => None,
+        };
+        if let Some(provider) = provider {
+            if !cloud_providers.iter().any(|p| p == provider) {
+                cloud_providers.push(provider.to_string());
+            }
+        }
     }
 
     Ok(TranscriptionLocation { cloud_providers })

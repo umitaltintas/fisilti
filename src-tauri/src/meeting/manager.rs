@@ -279,9 +279,17 @@ impl FinalizeErrors {
 struct LiveSessions {
     mic: crate::gemini_live::LiveSession,
     system: crate::gemini_live::LiveSession,
+    /// Each source's in-progress accumulator, so the trailing utterance can be
+    /// flushed when the meeting stops rather than stranded.
+    mic_pending: LiveBuilder,
+    system_pending: LiveBuilder,
     /// Model both sessions run on, needed to price their tokens.
     model: String,
 }
+
+/// Shared handle on a source's segment accumulator.
+#[cfg(target_os = "macos")]
+type LiveBuilder = Arc<Mutex<LiveSegmentBuilder>>;
 
 #[cfg(target_os = "macos")]
 impl LiveSessions {
@@ -303,6 +311,14 @@ struct LiveSegmentBuilder {
     original: String,
     translation: String,
     timestamp_ms: Option<u64>,
+    /// Latest speculative hypothesis for the utterance in progress.
+    ///
+    /// Kept as a LAST RESORT for the stored transcript. The API sometimes
+    /// streams an utterance as interim updates and never finalizes it before
+    /// the meeting stops — which produced subtitles the user could read while
+    /// the saved transcript had nothing from that source at all. An
+    /// unfinalized sentence is worth far more than a missing one.
+    last_interim: String,
 }
 
 #[cfg(target_os = "macos")]
@@ -318,6 +334,12 @@ impl LiveSegmentBuilder {
         if fragment.original.is_some() || fragment.translation.is_some() {
             self.timestamp_ms.get_or_insert(elapsed_ms);
         }
+        if let Some(text) = &fragment.interim {
+            // Replaces, never appends: each interim restates the whole
+            // in-progress utterance.
+            self.last_interim = text.clone();
+            self.timestamp_ms.get_or_insert(elapsed_ms);
+        }
         if let Some(text) = &fragment.original {
             self.original.push_str(text);
         }
@@ -326,12 +348,31 @@ impl LiveSegmentBuilder {
         }
     }
 
-    /// Take the accumulated segment, resetting for the next turn. Returns `None`
-    /// for a turn that produced no text (the model emitted only audio).
+    /// Take the accumulated segment, resetting for the next turn. Returns
+    /// `None` for a turn that produced no text (the model emitted only audio).
     fn take(&mut self) -> Option<LiveSegment> {
-        let original = std::mem::take(&mut self.original).trim().to_string();
+        self.take_inner(false)
+    }
+
+    /// As `take`, but allowed to fall back to the unfinalized hypothesis.
+    ///
+    /// Only used when the session is ending. Mid-session the finalized text is
+    /// usually moments away, and emitting the guess first would store the same
+    /// sentence twice; at stop there is no "moments away" left.
+    fn take_final(&mut self) -> Option<LiveSegment> {
+        self.take_inner(true)
+    }
+
+    fn take_inner(&mut self, allow_interim: bool) -> Option<LiveSegment> {
+        let mut original = std::mem::take(&mut self.original).trim().to_string();
         let translation = std::mem::take(&mut self.translation).trim().to_string();
+        let interim = std::mem::take(&mut self.last_interim).trim().to_string();
         let timestamp_ms = self.timestamp_ms.take().unwrap_or(0);
+        // Nothing was ever finalized, but the model told us what it heard.
+        // Storing that beats storing silence.
+        if allow_interim && original.is_empty() && translation.is_empty() && !interim.is_empty() {
+            original = interim;
+        }
         if original.is_empty() && translation.is_empty() {
             return None;
         }
@@ -575,7 +616,9 @@ impl MeetingManager {
             // Ensure the model is loaded (background load, same path as dictation).
             // The capture loop's transcribe() calls will also block-wait on the
             // loading condvar if needed, so this is a best-effort kickstart.
-            self.transcription_manager.initiate_model_load();
+            let settings = crate::settings::get_settings(&self.app_handle);
+            self.transcription_manager
+                .initiate_model_load_for(settings.meeting_model_id());
 
             // Reset session state.
             {
@@ -729,8 +772,9 @@ impl MeetingManager {
         // the playback WAV now so the audio outlives the temp directory.
         if transcript.trim().is_empty() {
             let failure = self.last_finalize_error.lock().unwrap().clone();
+            let spent_tokens = !self.session_usage.lock().unwrap().is_empty();
             let captured_samples = self.captured_sample_count();
-            match empty_session_outcome(failure.as_deref(), captured_samples) {
+            match empty_session_outcome(failure.as_deref(), captured_samples, spent_tokens) {
                 EmptySessionOutcome::PreserveForRecovery => {
                     log::warn!(
                         "meeting: transcription failed on a session with {} samples of audio; \
@@ -1042,7 +1086,11 @@ impl MeetingManager {
     ) -> Result<Option<Vec<TranscriptSegment>>, String> {
         use tauri::Manager;
         // Ensure a transcription model is available for the pass.
-        self.transcription_manager.initiate_model_load();
+        {
+            let settings = crate::settings::get_settings(&self.app_handle);
+            self.transcription_manager
+                .initiate_model_load_for(settings.meeting_model_id());
+        }
         let restore_model = self.swap_in_final_model();
 
         let vad_path = self.app_handle.path().resolve(
@@ -1271,24 +1319,42 @@ impl MeetingManager {
         self.emit_finalizing(false);
     }
 
-    /// Build the batch-transcription config from settings, or `None` when the
-    /// Gemini finalize pass is off or unconfigured.
+    /// Build the batch-transcription config, or `None` when this meeting is not
+    /// running on Gemini.
+    ///
+    /// Keyed off the MEETING MODEL rather than a separate toggle. Picking
+    /// Gemini in Settings → Models is the whole decision, and it routes
+    /// finalize through this per-source path — which preserves the you/others
+    /// labels and can diarize — instead of the generic single-blob cloud path
+    /// that `transcribe_with_opts` would otherwise take.
     #[cfg(target_os = "macos")]
     fn gemini_finalize_config(&self) -> Option<crate::gemini_transcribe::BatchTranscribeConfig> {
         use crate::gemini_transcribe::{
             BatchTranscribeConfig, TranscriptionMode, DEFAULT_BATCH_TRANSCRIBE_MODEL,
         };
+        use tauri::Manager;
+
         let settings = crate::settings::get_settings(&self.app_handle);
-        if !settings.meeting_gemini_finalize {
+        let meeting_model = self
+            .app_handle
+            .try_state::<std::sync::Arc<crate::managers::model::ModelManager>>()
+            .and_then(|mm| mm.get_model_info(settings.meeting_model_id()))?;
+        if !matches!(
+            meeting_model.engine_type,
+            crate::managers::model::EngineType::Gemini
+        ) {
             return None;
         }
+
         let api_key = settings.gemini_api_key.trim().to_string();
         if api_key.is_empty() {
-            log::warn!("meeting: Gemini finalize is enabled but no Gemini API key is set");
+            log::warn!("meeting: the Gemini model is selected but no Gemini API key is set");
             return None;
         }
+        // The catalogue entry carries the bare model id in `filename`, same
+        // slug-in-filename convention every cloud entry uses.
         let model = {
-            let m = settings.meeting_gemini_finalize_model.trim();
+            let m = meeting_model.filename.trim();
             if m.is_empty() {
                 DEFAULT_BATCH_TRANSCRIBE_MODEL.to_string()
             } else {
@@ -1431,18 +1497,18 @@ impl MeetingManager {
     /// windows. (The finalize transcription is already keyed off the selected
     /// model, so a cloud selection routes there automatically.)
     #[cfg(target_os = "macos")]
-    fn selected_model_is_cloud(&self) -> bool {
+    fn meeting_model_is_cloud(&self) -> bool {
         use tauri::Manager;
         let settings = crate::settings::get_settings(&self.app_handle);
         self.app_handle
             .try_state::<std::sync::Arc<crate::managers::model::ModelManager>>()
-            .and_then(|mm| mm.get_model_info(&settings.selected_model))
+            .and_then(|mm| mm.get_model_info(settings.meeting_model_id()))
             .map_or(false, |m| m.engine_type.is_cloud())
     }
 
     /// Load the configured `meeting_final_model` (default "turbo") for the
     /// finalize pass, returning the model id that should be restored afterwards
-    /// (the model that was loaded before, or the user's `selected_model`).
+    /// (the model that was loaded before, or the configured meeting model).
     /// Returns `None` if no swap happened (already on the final model, or the
     /// final model couldn't be loaded — in which case the loaded model is kept).
     #[cfg(target_os = "macos")]
@@ -1451,7 +1517,7 @@ impl MeetingManager {
         // transcription routes to the cloud model (keyed off the selected
         // model), so loading the local final model here would just load a model
         // the cloud path ignores.
-        if self.selected_model_is_cloud() {
+        if self.meeting_model_is_cloud() {
             return None;
         }
 
@@ -1462,11 +1528,11 @@ impl MeetingManager {
         }
 
         // What is loaded right now (used by the LIVE pass). Fall back to the
-        // user's configured selected_model if nothing is loaded.
+        // configured meeting model if nothing is loaded.
         let current = self
             .transcription_manager
             .get_current_model()
-            .unwrap_or_else(|| settings.selected_model.clone());
+            .unwrap_or_else(|| settings.meeting_model_id().to_string());
 
         if current == final_model {
             // Already on the final model; nothing to swap or restore.
@@ -1864,9 +1930,15 @@ impl MeetingManager {
             Ordering::Relaxed,
         );
         let model = config.model.clone();
+        let (mic, mic_pending) =
+            self.open_live_source(config.clone(), TranscriptSource::Mic, "mic");
+        let (system, system_pending) =
+            self.open_live_source(config, TranscriptSource::System, "system");
         Some(LiveSessions {
-            mic: self.open_live_source(config.clone(), TranscriptSource::Mic, "mic"),
-            system: self.open_live_source(config, TranscriptSource::System, "system"),
+            mic,
+            system,
+            mic_pending,
+            system_pending,
             model,
         })
     }
@@ -1903,7 +1975,12 @@ impl MeetingManager {
             .and_then(|record| record.usage)
             .unwrap_or_default();
         for entry in &usage.entries {
-            merged.add(&entry.model, entry.input_tokens, entry.output_tokens);
+            merged.add_with_audio(
+                &entry.model,
+                entry.input_tokens,
+                entry.output_tokens,
+                entry.audio_seconds,
+            );
         }
 
         match serde_json::to_string(&merged) {
@@ -1918,7 +1995,19 @@ impl MeetingManager {
 
     /// Fold one call's token usage into the session total.
     fn record_usage(&self, model: &str, input_tokens: u64, output_tokens: u64) {
-        if input_tokens == 0 && output_tokens == 0 {
+        self.record_usage_with_audio(model, input_tokens, output_tokens, 0);
+    }
+
+    /// As above, but also recording the audio we measured ourselves — the only
+    /// basis for pricing a model that reports no tokens.
+    fn record_usage_with_audio(
+        &self,
+        model: &str,
+        input_tokens: u64,
+        output_tokens: u64,
+        audio_seconds: u64,
+    ) {
+        if input_tokens == 0 && output_tokens == 0 && audio_seconds == 0 {
             return;
         }
         log::debug!(
@@ -1927,10 +2016,12 @@ impl MeetingManager {
             input_tokens,
             output_tokens
         );
-        self.session_usage
-            .lock()
-            .unwrap()
-            .add(model, input_tokens, output_tokens);
+        self.session_usage.lock().unwrap().add_with_audio(
+            model,
+            input_tokens,
+            output_tokens,
+            audio_seconds,
+        );
     }
 
     /// Update the subtitle strip: `live` is the utterance still being spoken,
@@ -1984,11 +2075,12 @@ impl MeetingManager {
         config: crate::gemini_live::LiveConfig,
         source: TranscriptSource,
         label: &str,
-    ) -> crate::gemini_live::LiveSession {
+    ) -> (crate::gemini_live::LiveSession, LiveBuilder) {
         let manager = self.clone();
         // Transcripts arrive as partial fragments; accumulate until the API
         // marks the turn complete, then emit one segment.
-        let pending = Arc::new(Mutex::new(LiveSegmentBuilder::default()));
+        let pending: LiveBuilder = Arc::new(Mutex::new(LiveSegmentBuilder::default()));
+        let drain_handle = pending.clone();
         // Log the detected source language once per source. Worth having when a
         // user reports the wrong language being translated.
         let language_logged = Arc::new(AtomicBool::new(false));
@@ -2004,7 +2096,7 @@ impl MeetingManager {
             label,
             if subtitled { "on" } else { "off" }
         );
-        crate::gemini_live::LiveSession::start(config, label, move |fragment| {
+        let session = crate::gemini_live::LiveSession::start(config, label, move |fragment| {
             if let Some(language) = &fragment.source_language {
                 if !language_logged.swap(true, Ordering::Relaxed) {
                     log::info!(
@@ -2021,7 +2113,15 @@ impl MeetingManager {
                 // under the same lock so it can never lag the fragment that
                 // produced it.
                 let running = builder.translation.trim().to_string();
-                if fragment.turn_complete {
+                // Translate sessions do not appear to send `turnComplete` at
+                // all — waiting for it produced hours of subtitles and an empty
+                // stored transcript. A finalized original with a translation
+                // already attached is a real, observed boundary, so it closes
+                // the segment too. The translation can trail slightly into the
+                // next one; a near-aligned transcript beats no transcript.
+                let ready = fragment.turn_complete
+                    || (translating && fragment.original.is_some() && !running.is_empty());
+                if ready {
                     (builder.take(), running)
                 } else {
                     (None, running)
@@ -2050,7 +2150,33 @@ impl MeetingManager {
                     source,
                 );
             }
-        })
+        });
+        (session, drain_handle)
+    }
+
+    /// Emit whatever each source's builder still holds.
+    ///
+    /// The last utterance of a meeting has no following one to close it, so
+    /// without this it would sit in the accumulator and be lost — which for a
+    /// short meeting means the entire transcript.
+    #[cfg(target_os = "macos")]
+    fn drain_live_builders(&self, sessions: &LiveSessions) {
+        for (builder, source) in [
+            (&sessions.mic_pending, TranscriptSource::Mic),
+            (&sessions.system_pending, TranscriptSource::System),
+        ] {
+            let leftover = builder.lock().unwrap().take_final();
+            if let Some(segment) = leftover {
+                log::info!("gemini-live: flushed a trailing segment on stop");
+                self.push_segment_with(
+                    segment.original,
+                    segment.translation,
+                    None,
+                    segment.timestamp_ms,
+                    source,
+                );
+            }
+        }
     }
 
     /// Milliseconds since this session started, for timestamping live segments.
@@ -2669,9 +2795,23 @@ impl MeetingManager {
             live.stop();
             // Read the meters AFTER stopping, so the final usage report the
             // server sends on close is included.
+            self.drain_live_builders(live);
             let (mic_in, mic_out) = live.mic.usage_totals();
             let (sys_in, sys_out) = live.system.usage_totals();
-            self.record_usage(&live.model, mic_in + sys_in, mic_out + sys_out);
+            // Both sources are separate sessions streaming in parallel, so the
+            // billable audio is their SUM, not the meeting's wall-clock length.
+            let audio_seconds = live.mic.audio_seconds() + live.system.audio_seconds();
+            log::info!(
+                "usage: live sessions streamed {}s of audio, reported {} tokens",
+                audio_seconds,
+                mic_in + sys_in + mic_out + sys_out
+            );
+            self.record_usage_with_audio(
+                &live.model,
+                mic_in + sys_in,
+                mic_out + sys_out,
+                audio_seconds,
+            );
         }
         // Take the strip down with the stream that fed it, before the (possibly
         // minutes-long) finalize pass, so it never outlives the meeting.
@@ -2759,7 +2899,7 @@ impl MeetingManager {
         //
         // Live translation likewise produces its own segments from the same
         // audio; running this pass too would duplicate every utterance.
-        if self.live_gemini_active.load(Ordering::Relaxed) || self.selected_model_is_cloud() {
+        if self.live_gemini_active.load(Ordering::Relaxed) || self.meeting_model_is_cloud() {
             return;
         }
 
@@ -3592,11 +3732,23 @@ enum EmptySessionOutcome {
 /// Decide the fate of an empty-transcript session. Preserving requires BOTH a
 /// transcription failure and captured audio: without a failure the meeting was
 /// simply silent, and without audio there is nothing a retry could read.
-fn empty_session_outcome(failure: Option<&str>, captured_samples: u64) -> EmptySessionOutcome {
-    match (failure, captured_samples) {
-        (Some(_), samples) if samples > 0 => EmptySessionOutcome::PreserveForRecovery,
-        _ => EmptySessionOutcome::Discard,
+fn empty_session_outcome(
+    failure: Option<&str>,
+    captured_samples: u64,
+    spent_tokens: bool,
+) -> EmptySessionOutcome {
+    if captured_samples == 0 {
+        // Nothing was ever captured, so there is nothing to preserve.
+        return EmptySessionOutcome::Discard;
     }
+    // A cloud model that ran and billed us, yet left no transcript, is an
+    // anomaly — not a silent meeting. Discarding it throws away audio the user
+    // has already paid to have processed, which is the worst possible reading
+    // of an ambiguous situation.
+    if failure.is_some() || spent_tokens {
+        return EmptySessionOutcome::PreserveForRecovery;
+    }
+    EmptySessionOutcome::Discard
 }
 
 fn silence_exceeded(anchor_elapsed: std::time::Duration, timeout_secs: u32) -> bool {
@@ -3830,6 +3982,51 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
+    fn an_utterance_that_never_finalized_is_still_saved_at_stop() {
+        // The regression this guards: the system side streamed a whole meeting
+        // as interim updates, never finalized before stop, and the saved
+        // transcript had nothing from it — while the user had been reading it
+        // in the subtitles the entire time.
+        let mut builder = LiveSegmentBuilder::default();
+        builder.absorb(&fragment_interim("duyduğum cümle"), 1_000);
+        assert!(
+            builder.take().is_none(),
+            "mid-session must not emit a guess"
+        );
+
+        let mut builder = LiveSegmentBuilder::default();
+        builder.absorb(&fragment_interim("duyduğum cümle"), 1_000);
+        let segment = builder.take_final().expect("stop must rescue it");
+        assert_eq!(segment.original, "duyduğum cümle");
+        assert_eq!(segment.timestamp_ms, 1_000);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_finalized_utterance_is_never_stored_twice() {
+        let mut builder = LiveSegmentBuilder::default();
+        builder.absorb(&fragment_interim("duydu"), 1_000);
+        builder.absorb(&fragment(Some("duyduğum cümle"), None, true), 1_000);
+        let segment = builder.take().expect("finalized text");
+        assert_eq!(segment.original, "duyduğum cümle");
+        // The guess that preceded it must have been consumed, not left behind
+        // to reappear at stop.
+        assert!(builder.take_final().is_none());
+    }
+
+    #[cfg(target_os = "macos")]
+    fn fragment_interim(text: &str) -> crate::gemini_live::LiveTranscript {
+        crate::gemini_live::LiveTranscript {
+            original: None,
+            translation: None,
+            source_language: None,
+            interim: Some(text.to_string()),
+            turn_complete: false,
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
     fn a_revised_hypothesis_replaces_the_pending_line_rather_than_appending() {
         use super::SubtitleFeed;
         let mut feed = SubtitleFeed::default();
@@ -4028,7 +4225,7 @@ mod tests {
         // failed (e.g. no API balance) used to be deleted outright, throwing
         // away audio the user could not recapture.
         assert_eq!(
-            empty_session_outcome(Some("402 Payment Required"), 5_968_320),
+            empty_session_outcome(Some("402 Payment Required"), 5_968_320, false),
             EmptySessionOutcome::PreserveForRecovery
         );
     }
@@ -4037,15 +4234,34 @@ mod tests {
     fn empty_session_without_audio_or_failure_is_discarded() {
         // A genuinely silent meeting: nothing to keep, and no dangling row.
         assert_eq!(
-            empty_session_outcome(None, 5_968_320),
+            empty_session_outcome(None, 5_968_320, false),
             EmptySessionOutcome::Discard
         );
         // A failure with no captured audio: a retry would have nothing to read.
         assert_eq!(
-            empty_session_outcome(Some("model unavailable"), 0),
+            empty_session_outcome(Some("model unavailable"), 0, false),
             EmptySessionOutcome::Discard
         );
-        assert_eq!(empty_session_outcome(None, 0), EmptySessionOutcome::Discard);
+        assert_eq!(
+            empty_session_outcome(None, 0, false),
+            EmptySessionOutcome::Discard
+        );
+    }
+
+    #[test]
+    fn a_session_that_spent_tokens_is_never_discarded_for_being_empty() {
+        // The regression this guards: live translation billed two minutes of
+        // audio, produced no stored segments, and the meeting was deleted —
+        // audio and all — because an empty transcript read as "silent".
+        assert_eq!(
+            empty_session_outcome(None, 5_968_320, true),
+            EmptySessionOutcome::PreserveForRecovery
+        );
+        // Still nothing to keep when no audio was captured at all.
+        assert_eq!(
+            empty_session_outcome(None, 0, true),
+            EmptySessionOutcome::Discard
+        );
     }
 
     #[test]

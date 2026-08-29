@@ -164,38 +164,6 @@ export const SummaryLocationNote: React.FC<{
   );
 };
 
-// A labeled on/off switch with a supporting description.
-export const MeetingToggle: React.FC<{
-  checked: boolean;
-  onToggle: () => void;
-  label: string;
-  description?: string;
-}> = ({ checked, onToggle, label, description }) => (
-  <div className="flex items-start gap-2.5">
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      onClick={onToggle}
-      className={`relative mt-0.5 inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
-        checked ? "bg-logo-primary" : "bg-mid-gray/30"
-      }`}
-    >
-      <span
-        className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-          checked ? "translate-x-4" : "translate-x-0.5"
-        }`}
-      />
-    </button>
-    <div className="min-w-0 cursor-pointer select-none" onClick={onToggle}>
-      <p className="text-sm text-text/80">{label}</p>
-      {description && (
-        <p className="mt-0.5 text-xs text-text/50">{description}</p>
-      )}
-    </div>
-  </div>
-);
-
 // Small uppercase section heading used across the meeting panels.
 export const SectionHeading: React.FC<{
   children: React.ReactNode;

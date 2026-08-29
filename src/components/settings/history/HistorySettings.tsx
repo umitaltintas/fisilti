@@ -14,6 +14,10 @@ import { useOsType } from "@/hooks/useOsType";
 import { formatDateTime } from "@/utils/dateFormat";
 import { AudioPlayer } from "../../ui/AudioPlayer";
 import { Button } from "../../ui/Button";
+import { CollapsibleGroup } from "../../ui/CollapsibleGroup";
+import { SettingsGroup } from "../../ui/SettingsGroup";
+import { HistoryLimit } from "../HistoryLimit";
+import { RecordingRetentionPeriodSelector } from "../RecordingRetentionPeriod";
 
 const IconButton: React.FC<{
   onClick: () => void;
@@ -272,6 +276,18 @@ export const HistorySettings: React.FC = () => {
 
   return (
     <div className="max-w-3xl w-full mx-auto space-y-6">
+      {/* How much history is kept used to be configured under Advanced, two
+          sections away from the list it governs. */}
+      <CollapsibleGroup title={t("settings.history.retentionSettings")}>
+        <SettingsGroup>
+          <HistoryLimit descriptionMode="tooltip" grouped={true} />
+          <RecordingRetentionPeriodSelector
+            descriptionMode="tooltip"
+            grouped={true}
+          />
+        </SettingsGroup>
+      </CollapsibleGroup>
+
       <div className="space-y-2">
         <div className="px-4 flex items-center justify-between">
           <div>

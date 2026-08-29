@@ -3,10 +3,15 @@
     "settings": "設定...",
     "checkUpdates": "アップデートを確認...",
     "copyLastTranscript": "最新の文字起こしをコピー",
+    "history": "音声入力の履歴...",
     "unloadModel": "モデルをアンロード",
     "model": "モデル",
+    "modelsOnDevice": "このデバイス上",
+    "modelsCloud": "クラウド",
     "quit": "終了",
     "cancel": "キャンセル",
+    "startDictation": "音声入力を開始",
+    "stopDictation": "音声入力を停止",
     "startMeeting": "会議を開始",
     "stopMeeting": "会議を停止",
     "recordingIndicator": "Fısıltı — 録音中…",
@@ -17,10 +22,14 @@
     "models": "モデル",
     "advanced": "詳細設定",
     "postProcessing": "後処理",
-    "history": "履歴",
+    "history": "音声入力の履歴",
     "debug": "デバッグ",
     "about": "概要",
-    "meeting": "Meeting"
+    "meeting": "Meeting",
+    "groups": {
+      "features": "機能",
+      "system": "システム"
+    }
   },
   "onboarding": {
     "subtitle": "開始するには、文字起こしモデルを選択してください",
@@ -184,6 +193,37 @@
         "modelPlaceholder": "例: openai/gpt-4o-mini-transcribe",
         "browseModels": "モデルを見る →",
         "modelRequired": "OpenRouter のモデル名を入力してください（例: google/gemini-2.5-flash）。"
+      },
+      "gemini": {
+        "description": "このモデルは Google に直接接続してクラウドで文字起こしします。音声は Google に送信され、分単位で課金されます。同じ Gemini キーが会議の文字起こしにも使われます。",
+        "apiKeyPlaceholder": "Gemini API キー",
+        "apiKeyStored": "キーが保存されています。置き換えるには新しいキーを貼り付けてください。",
+        "getKey": "API キーを取得 →",
+        "keyRequired": "このモデルを使うには Gemini API キーを入力してください。"
+      },
+      "meetingModel": {
+        "title": "会議用モデル",
+        "description": "会議は音声入力とは別のモデルで動かせます。長い会議には正確なクラウドモデル、プッシュトゥトークにはローカルで即座に動くモデルを。",
+        "label": "会議の文字起こしに使うモデル",
+        "hint": "ライブ文字起こしと最終処理に適用されます。音声入力のモデルは変わりません。",
+        "sameAsDictation": "音声入力と同じ",
+        "sameAsDictationNamed": "音声入力と同じ ({{model}})"
+      },
+      "activeModel": "使用中のモデル",
+      "browse": "すべてのモデル",
+      "searchPlaceholder": "モデルまたは言語を検索",
+      "languageCount": "{{count}} 言語",
+      "badges": {
+        "cloud": "クラウドで実行",
+        "local": "このデバイスで実行"
+      },
+      "groups": {
+        "installed": "ダウンロード済み",
+        "cloud": "クラウド",
+        "multilingual": "多言語",
+        "multilingualShort": "多言語",
+        "english": "英語のみ",
+        "regional": "特定の言語"
       }
     },
     "general": {
@@ -230,6 +270,10 @@
       "pushToTalk": {
         "label": "プッシュトゥトーク",
         "description": "押し続けて録音、離して停止"
+      },
+      "groups": {
+        "recording": "録音",
+        "app": "アプリ"
       }
     },
     "sound": {
@@ -262,7 +306,8 @@
         "output": "出力",
         "transcription": "文字起こし",
         "history": "履歴",
-        "experimental": "実験的"
+        "experimental": "実験的",
+        "developer": "開発者"
       },
       "experimentalToggle": {
         "label": "実験的機能",
@@ -428,10 +473,11 @@
         "cancel": "キャンセル",
         "selectToEdit": "上からプロンプトを選択して、詳細を表示・編集します。",
         "createFirst": "上の「新しいプロンプトを作成」をクリックして、最初の後処理プロンプトを作成してください。"
-      }
+      },
+      "description": "貼り付ける前に、AI モデルで文字起こしを整形・書き換え・翻訳します。"
     },
     "history": {
-      "title": "履歴",
+      "title": "音声入力の履歴",
       "openFolder": "録音フォルダを開く",
       "loading": "履歴を読み込み中...",
       "empty": "まだ文字起こしがありません。録音を開始して履歴を作成しましょう！",
@@ -443,7 +489,8 @@
       "retranscribe": "再文字起こし",
       "retranscribeError": "再文字起こしに失敗しました。もう一度お試しください。",
       "transcribing": "文字起こし中...",
-      "transcriptionFailed": "文字起こしに失敗しました。リトライアイコンを使用して再文字起こしできます。"
+      "transcriptionFailed": "文字起こしに失敗しました。リトライアイコンを使用して再文字起こしできます。",
+      "retentionSettings": "履歴の設定"
     },
     "debug": {
       "title": "デバッグ",
@@ -585,7 +632,8 @@
     "off": "オフ",
     "yes": "はい",
     "no": "いいえ",
-    "noOptionsFound": "オプションが見つかりません"
+    "noOptionsFound": "オプションが見つかりません",
+    "clear": "クリア"
   },
   "accessibility": {
     "permissionsRequired": "アクセシビリティ権限が必要です",
@@ -690,7 +738,9 @@
     "autoEndToggle": "長い無音のあとに終了を提案",
     "autoEndDescription": "選択した時間、音声が検出されない場合、会議を終了するか確認します。応答がない場合は自動的に終了します。",
     "silenceTimeoutLabel": "確認までの無音時間",
+    "silenceTimeoutDescription": "会議を終了するか尋ねられるまでに必要な無音の長さ。",
     "autoEndGraceLabel": "未応答時の自動終了までの時間",
+    "autoEndGraceDescription": "会議が自動的に終了するまで、この確認が応答を待つ時間。",
     "durationMinutes": "{{count}} 分",
     "durationSeconds": "{{count}} 秒",
     "tabSession": "Session",
@@ -711,7 +761,11 @@
     "generalSection": "General",
     "calendarNamesToggle": "カレンダーから会議名を付ける",
     "calendarNamesDescription": "新しいセッションに、進行中のカレンダーイベントの名前を付けます。有効にするとカレンダーへのアクセスを求められます。",
-    "calendarAccessDenied": "カレンダーへのアクセスが拒否されました。システム設定 → プライバシーとセキュリティ → カレンダー で許可できます。"
+    "calendarAccessDenied": "カレンダーへのアクセスが拒否されました。システム設定 → プライバシーとセキュリティ → カレンダー で許可できます。",
+    "liveTranslateTargetDescription": "リアルタイムの音声を翻訳する言語。",
+    "geminiSection": "ライブ文字起こし (Gemini)",
+    "geminiNeedsKey": "ライブ文字起こしと話者の判別には Gemini API キーが必要です。",
+    "geminiOpenModels": "モデルを開く"
   },
   "meetingPrompt": {
     "startTitle": "会議を検出しました",

@@ -100,6 +100,9 @@ export interface ModelUsage {
   model: string;
   input_tokens: number;
   output_tokens: number;
+  /** Seconds of audio streamed. The only basis available for the Live API,
+   * which reports no token counts for these models. */
+  audio_seconds?: number;
 }
 
 /** Everything a meeting spent. Mirrors Rust `MeetingUsage`. */
@@ -111,12 +114,36 @@ export interface MeetingUsage {
  *
  * Kept as an ESTIMATE and labelled as one in the UI: these models are previews,
  * prices move, and free-tier quota and billing discounts are invisible here. */
-const PRICES: Array<{ prefix: string; input: number; output: number }> = [
+const PRICES: Array<{
+  prefix: string;
+  input: number;
+  output: number;
+  inputPerMin: number;
+  outputPerMin: number;
+}> = [
   // Longest prefix first: "…-transcribe-live" must not be priced by the
   // cheaper "…-transcribe" entry.
-  { prefix: "gemini-3.5-live-translate", input: 3.5, output: 21.0 },
-  { prefix: "gemini-3.5-transcribe-live", input: 3.5, output: 21.0 },
-  { prefix: "gemini-3.5-transcribe", input: 2.0, output: 12.0 },
+  {
+    prefix: "gemini-3.5-live-translate",
+    input: 3.5,
+    output: 21.0,
+    inputPerMin: 0.0053,
+    outputPerMin: 0.0315,
+  },
+  {
+    prefix: "gemini-3.5-transcribe-live",
+    input: 3.5,
+    output: 21.0,
+    inputPerMin: 0.005,
+    outputPerMin: 0.004,
+  },
+  {
+    prefix: "gemini-3.5-transcribe",
+    input: 2.0,
+    output: 12.0,
+    inputPerMin: 0.003,
+    outputPerMin: 0.002,
+  },
 ];
 
 /** Estimated cost of a meeting in USD, and whether every model was priced.
@@ -136,8 +163,16 @@ export function estimateMeetingCost(
       complete = false;
       continue;
     }
-    usd += (entry.input_tokens / 1_000_000) * price.input;
-    usd += (entry.output_tokens / 1_000_000) * price.output;
+    // Prefer reported tokens; fall back to the audio we measured ourselves
+    // when the model reports none. Never both, or the same audio is billed
+    // twice.
+    if (entry.input_tokens > 0 || entry.output_tokens > 0) {
+      usd += (entry.input_tokens / 1_000_000) * price.input;
+      usd += (entry.output_tokens / 1_000_000) * price.output;
+    } else {
+      const minutes = (entry.audio_seconds ?? 0) / 60;
+      usd += minutes * (price.inputPerMin + price.outputPerMin);
+    }
   }
   return { usd, complete };
 }
@@ -471,9 +506,8 @@ export interface MeetingGeminiSettings {
   liveMode: MeetingLiveMode;
   /** BCP-47 code to translate INTO, e.g. "en". Only used in "translate" mode. */
   targetLanguage: string;
-  /** Run the on-stop finalize pass through Gemini batch transcription. */
-  finalizeWithGemini: boolean;
-  /** Ask the finalize pass to attribute speech to individual speakers. */
+  /** Ask the finalize pass to attribute speech to individual speakers.
+   * Only has an effect when the meeting model is Gemini. */
   diarize: boolean;
   /** Clean disfluencies and format, rather than transcribe verbatim. */
   smart: boolean;
@@ -488,7 +522,6 @@ export interface MeetingGeminiSettings {
 const MEETING_GEMINI_DEFAULTS: MeetingGeminiSettings = {
   liveMode: "off",
   targetLanguage: "en",
-  finalizeWithGemini: false,
   diarize: true,
   smart: true,
   customVocabulary: "",
@@ -502,7 +535,6 @@ export function getMeetingGeminiSettings(): Promise<MeetingGeminiSettings> {
   return invoke<{
     meeting_live_mode?: string;
     meeting_live_translate_target?: string;
-    meeting_gemini_finalize?: boolean;
     meeting_gemini_diarize?: boolean;
     meeting_gemini_smart?: boolean;
     meeting_custom_vocabulary?: string;
@@ -514,13 +546,13 @@ export function getMeetingGeminiSettings(): Promise<MeetingGeminiSettings> {
         ? s.meeting_live_mode
         : MEETING_GEMINI_DEFAULTS.liveMode,
       targetLanguage:
-        s?.meeting_live_translate_target || MEETING_GEMINI_DEFAULTS.targetLanguage,
-      finalizeWithGemini:
-        s?.meeting_gemini_finalize ?? MEETING_GEMINI_DEFAULTS.finalizeWithGemini,
+        s?.meeting_live_translate_target ||
+        MEETING_GEMINI_DEFAULTS.targetLanguage,
       diarize: s?.meeting_gemini_diarize ?? MEETING_GEMINI_DEFAULTS.diarize,
       smart: s?.meeting_gemini_smart ?? MEETING_GEMINI_DEFAULTS.smart,
       customVocabulary:
-        s?.meeting_custom_vocabulary ?? MEETING_GEMINI_DEFAULTS.customVocabulary,
+        s?.meeting_custom_vocabulary ??
+        MEETING_GEMINI_DEFAULTS.customVocabulary,
       subtitles: s?.meeting_subtitles ?? MEETING_GEMINI_DEFAULTS.subtitles,
       hasApiKey: (s?.gemini_api_key ?? "").trim().length > 0,
     }))
@@ -543,11 +575,6 @@ export function changeMeetingLiveTranslateTarget(
   return invoke<void>("change_meeting_live_translate_target_setting", {
     language,
   });
-}
-
-/** Run the on-stop finalize pass through Gemini batch transcription. */
-export function changeMeetingGeminiFinalize(enabled: boolean): Promise<void> {
-  return invoke<void>("change_meeting_gemini_finalize_setting", { enabled });
 }
 
 /** Turn speaker attribution on or off for the Gemini finalize pass. */
@@ -577,6 +604,14 @@ export function changeMeetingCustomVocabulary(
 /** Store (or, with an empty string, clear) the Gemini API key. */
 export function changeGeminiApiKey(apiKey: string): Promise<void> {
   return invoke<void>("change_gemini_api_key_setting", { apiKey });
+}
+
+/**
+ * Choose which model transcribes meetings. An empty string means "follow the
+ * dictation model", which is the default.
+ */
+export function changeMeetingSelectedModel(modelId: string): Promise<void> {
+  return invoke<void>("change_meeting_selected_model_setting", { modelId });
 }
 
 /** Subscribe to live transcript updates. Returns a promise resolving to the

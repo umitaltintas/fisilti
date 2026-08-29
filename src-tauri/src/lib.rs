@@ -244,6 +244,16 @@ fn initialize_core_logic(app_handle: &AppHandle) {
                 show_main_window(app);
                 let _ = app.emit("navigate-section", "meeting");
             }
+            "history" => {
+                // The dictation counterpart to "meetings".
+                show_main_window(app);
+                let _ = app.emit("navigate-section", "history");
+            }
+            "toggle_dictation" => {
+                // Same path the global shortcut and the CLI take, so a tray
+                // start/stop is indistinguishable from a hotkey one.
+                signal_handle::send_transcription_input(app, "transcribe", "tray");
+            }
             "toggle_meeting" => {
                 // Start/stop a meeting from the tray without opening the window.
                 // The shared helper emits "meeting-state-changed", which the
@@ -393,11 +403,11 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_meeting_auto_detect_setting,
             shortcut::change_meeting_live_mode_setting,
             shortcut::change_meeting_live_translate_target_setting,
-            shortcut::change_meeting_gemini_finalize_setting,
             shortcut::change_meeting_gemini_diarize_setting,
             shortcut::change_meeting_gemini_smart_setting,
             shortcut::change_meeting_custom_vocabulary_setting,
             shortcut::change_meeting_subtitles_setting,
+            shortcut::change_meeting_selected_model_setting,
             shortcut::change_gemini_api_key_setting,
             shortcut::change_meeting_auto_end_setting,
             shortcut::change_meeting_calendar_names_setting,

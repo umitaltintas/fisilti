@@ -1,13 +1,23 @@
 import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { Input } from "../../ui/Input";
-import { Select, type SelectOption } from "../../ui/Select";
-import { Textarea } from "../../ui/Textarea";
-import { ShortcutInput } from "../ShortcutInput";
-import { MeetingToggle, SectionHeading } from "./shared";
 import {
-  changeGeminiApiKey,
+  CollapsibleGroup,
+  Dropdown,
+  SettingContainer,
+  SettingsGroup,
+  Textarea,
+  ToggleSwitch,
+} from "../../ui";
+import type { DropdownOption } from "../../ui/Dropdown";
+import { ShortcutInput } from "../ShortcutInput";
+import { Alert } from "../../ui/Alert";
+import { Button } from "../../ui/Button";
+import { useModelStore } from "@/stores/modelStore";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { cloudProviderOf } from "@/lib/utils/model";
+import { emit } from "@tauri-apps/api/event";
+import {
   changeMeetingAutoDetect,
   changeMeetingAutoEnd,
   changeMeetingAutoEndGrace,
@@ -15,7 +25,6 @@ import {
   changeMeetingCalendarNames,
   changeMeetingCustomVocabulary,
   changeMeetingGeminiDiarize,
-  changeMeetingGeminiFinalize,
   changeMeetingGeminiSmart,
   changeMeetingLiveMode,
   changeMeetingLiveTranslateTarget,
@@ -32,7 +41,7 @@ import {
 // Languages offered for live translation. BCP-47 codes, matching what the
 // Live API expects; it supports many more, so the field stays editable via the
 // dropdown's list rather than being an exhaustive catalogue.
-const LIVE_TRANSLATE_LANGUAGES: SelectOption[] = [
+const LIVE_TRANSLATE_LANGUAGES: DropdownOption[] = [
   { value: "en", label: "English" },
   { value: "tr", label: "Türkçe" },
   { value: "de", label: "Deutsch" },
@@ -50,11 +59,25 @@ const LIVE_TRANSLATE_LANGUAGES: SelectOption[] = [
   { value: "zh", label: "中文" },
 ];
 
-// The "Settings" tab: everything you configure once and rarely revisit —
-// the global shortcut, auto-summarize, and automatic meeting detection.
+// The "Settings" tab: everything you configure once and rarely revisit.
+//
+// It is built from the same primitives as every other settings page
+// (SettingsGroup / SettingContainer / ToggleSwitch) rather than its own local
+// widgets, so a toggle here looks and behaves exactly like a toggle on General
+// or Advanced. The two cloud/automation blocks are collapsed unless they are
+// actually in use, which keeps the page down to three visible rows for someone
+// who only records meetings locally.
 export const MeetingPreferences: React.FC = () => {
   const { t } = useTranslation();
+  // Read-only here: the meeting model is chosen on the Models page. This page
+  // only needs to know whether it is Gemini, to decide which options apply.
+  const { models, currentModel } = useModelStore();
+  const { settings } = useSettingsStore();
 
+  // Every default below is overwritten by the backend in the effect. Until that
+  // lands we render nothing, because the collapsed/expanded state of the groups
+  // is derived from the loaded values and must not flip after the first paint.
+  const [loaded, setLoaded] = useState(false);
   const [autoSummarize, setAutoSummarize] = useState(false);
   const [calendarNames, setCalendarNames] = useState(false);
   const [autoDetect, setAutoDetect] = useState(false);
@@ -63,57 +86,67 @@ export const MeetingPreferences: React.FC = () => {
   const [autoEndGraceSecs, setAutoEndGraceSecs] = useState(60);
   const [liveMode, setLiveMode] = useState<MeetingLiveMode>("off");
   const [liveTarget, setLiveTarget] = useState("en");
-  const [geminiFinalize, setGeminiFinalize] = useState(false);
   const [geminiDiarize, setGeminiDiarize] = useState(true);
   const [geminiSmart, setGeminiSmart] = useState(true);
   const [vocabulary, setVocabulary] = useState("");
   const [subtitles, setSubtitles] = useState(true);
   const [hasGeminiKey, setHasGeminiKey] = useState(false);
-  // Kept separate from `hasGeminiKey`: a stored key is never read back, so the
-  // field starts empty and only its edits are persisted.
-  const [geminiKeyDraft, setGeminiKeyDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    void getMeetingAutoSummarize().then((v) => {
-      if (!cancelled) setAutoSummarize(v);
-    });
-    void getMeetingCalendarNames().then((v) => {
-      if (!cancelled) setCalendarNames(v);
-    });
-    void getMeetingAutoDetectSettings().then((s) => {
-      if (cancelled) return;
-      setAutoDetect(s.autoDetect);
-      setAutoEnd(s.autoEnd);
-      setSilenceTimeoutSecs(s.silenceTimeoutSecs);
-      setAutoEndGraceSecs(s.autoEndGraceSecs);
-    });
-    void getMeetingGeminiSettings().then((s) => {
-      if (cancelled) return;
-      setLiveMode(s.liveMode);
-      setLiveTarget(s.targetLanguage);
-      setGeminiFinalize(s.finalizeWithGemini);
-      setGeminiDiarize(s.diarize);
-      setGeminiSmart(s.smart);
-      setVocabulary(s.customVocabulary);
-      setSubtitles(s.subtitles);
-      setHasGeminiKey(s.hasApiKey);
-    });
+    void Promise.all([
+      getMeetingAutoSummarize().then((v) => {
+        if (!cancelled) setAutoSummarize(v);
+      }),
+      getMeetingCalendarNames().then((v) => {
+        if (!cancelled) setCalendarNames(v);
+      }),
+      getMeetingAutoDetectSettings().then((s) => {
+        if (cancelled) return;
+        setAutoDetect(s.autoDetect);
+        setAutoEnd(s.autoEnd);
+        setSilenceTimeoutSecs(s.silenceTimeoutSecs);
+        setAutoEndGraceSecs(s.autoEndGraceSecs);
+      }),
+      getMeetingGeminiSettings().then((s) => {
+        if (cancelled) return;
+        setLiveMode(s.liveMode);
+        setLiveTarget(s.targetLanguage);
+        setGeminiDiarize(s.diarize);
+        setGeminiSmart(s.smart);
+        setVocabulary(s.customVocabulary);
+        setSubtitles(s.subtitles);
+        setHasGeminiKey(s.hasApiKey);
+      }),
+      // A failed read must not leave the tab blank forever; the groups still
+      // render with their defaults and the error is surfaced at the bottom.
+    ])
+      .catch((e) => {
+        if (!cancelled) setError(String(e));
+      })
+      .finally(() => {
+        if (!cancelled) setLoaded(true);
+      });
     return () => {
       cancelled = true;
     };
   }, []);
 
-  const handleToggleAutoSummarize = async () => {
-    const next = !autoSummarize;
-    setAutoSummarize(next);
+  // Every toggle on this page persists optimistically and reverts on failure,
+  // so they all share one helper instead of repeating the try/catch.
+  const applyToggle = async (
+    current: boolean,
+    apply: (next: boolean) => Promise<void>,
+    set: (value: boolean) => void,
+  ) => {
+    const next = !current;
+    set(next);
     setError(null);
     try {
-      await changeMeetingAutoSummarize(next);
+      await apply(next);
     } catch (e) {
-      // Revert the optimistic toggle on failure.
-      setAutoSummarize(!next);
+      set(current);
       setError(String(e));
     }
   };
@@ -146,30 +179,6 @@ export const MeetingPreferences: React.FC = () => {
     }
   };
 
-  const handleToggleAutoDetect = async () => {
-    const next = !autoDetect;
-    setAutoDetect(next);
-    setError(null);
-    try {
-      await changeMeetingAutoDetect(next);
-    } catch (e) {
-      setAutoDetect(!next);
-      setError(String(e));
-    }
-  };
-
-  const handleToggleAutoEnd = async () => {
-    const next = !autoEnd;
-    setAutoEnd(next);
-    setError(null);
-    try {
-      await changeMeetingAutoEnd(next);
-    } catch (e) {
-      setAutoEnd(!next);
-      setError(String(e));
-    }
-  };
-
   const handleSilenceTimeoutChange = async (secs: number) => {
     const prev = silenceTimeoutSecs;
     setSilenceTimeoutSecs(secs);
@@ -194,17 +203,6 @@ export const MeetingPreferences: React.FC = () => {
     }
   };
 
-  const silenceTimeoutOptions: SelectOption[] = [60, 120, 180, 300, 600].map(
-    (secs) => ({
-      value: String(secs),
-      label: t("meeting.durationMinutes", { count: secs / 60 }),
-    }),
-  );
-  const autoEndGraceOptions: SelectOption[] = [30, 60, 120].map((secs) => ({
-    value: String(secs),
-    label: t("meeting.durationSeconds", { count: secs }),
-  }));
-
   const handleLiveModeChange = async (next: MeetingLiveMode) => {
     const previous = liveMode;
     setLiveMode(next);
@@ -213,35 +211,6 @@ export const MeetingPreferences: React.FC = () => {
       await changeMeetingLiveMode(next);
     } catch (e) {
       setLiveMode(previous);
-      setError(String(e));
-    }
-  };
-
-  // All four Gemini toggles revert optimistically the same way, so they share
-  // one helper rather than repeating the try/catch four times.
-  const toggleGeminiSetting = async (
-    current: boolean,
-    apply: (next: boolean) => Promise<void>,
-    set: (value: boolean) => void,
-  ) => {
-    const next = !current;
-    set(next);
-    setError(null);
-    try {
-      await apply(next);
-    } catch (e) {
-      set(current);
-      setError(String(e));
-    }
-  };
-
-  // Persisted on blur, like the API key: vocabulary is pasted in bulk and
-  // writing settings per keystroke is wasteful.
-  const handleVocabularyCommit = async () => {
-    setError(null);
-    try {
-      await changeMeetingCustomVocabulary(vocabulary);
-    } catch (e) {
       setError(String(e));
     }
   };
@@ -258,136 +227,121 @@ export const MeetingPreferences: React.FC = () => {
     }
   };
 
-  // Persist on blur rather than per keystroke: an API key is pasted, not typed,
-  // and writing settings on every character is wasteful.
-  const handleGeminiKeyCommit = async () => {
-    const key = geminiKeyDraft.trim();
-    if (key.length === 0) return;
+  // Persisted on blur, like the API key: vocabulary is pasted in bulk and
+  // writing settings per keystroke is wasteful.
+  const handleVocabularyCommit = async () => {
     setError(null);
     try {
-      await changeGeminiApiKey(key);
-      setHasGeminiKey(true);
-      setGeminiKeyDraft("");
+      await changeMeetingCustomVocabulary(vocabulary);
     } catch (e) {
       setError(String(e));
     }
   };
 
-  const handleClearGeminiKey = async () => {
-    setError(null);
-    try {
-      await changeGeminiApiKey("");
-      setHasGeminiKey(false);
-      setGeminiKeyDraft("");
-    } catch (e) {
-      setError(String(e));
-    }
-  };
-
-  // A key is only actually required once something is switched on; before that
-  // the empty field is normal, not an error.
-  const needsKey = !hasGeminiKey && (geminiFinalize || liveMode !== "off");
-
-  const liveModeOptions: SelectOption[] = [
+  const silenceTimeoutOptions: DropdownOption[] = [60, 120, 180, 300, 600].map(
+    (secs) => ({
+      value: String(secs),
+      label: t("meeting.durationMinutes", { count: secs / 60 }),
+    }),
+  );
+  const autoEndGraceOptions: DropdownOption[] = [30, 60, 120].map((secs) => ({
+    value: String(secs),
+    label: t("meeting.durationSeconds", { count: secs }),
+  }));
+  const liveModeOptions: DropdownOption[] = [
     { value: "off", label: t("meeting.liveModeOff") },
     { value: "transcribe", label: t("meeting.liveModeTranscribe") },
     { value: "translate", label: t("meeting.liveModeTranslate") },
   ];
 
+  // Whether THIS meeting's model is Gemini. It decides whether the on-stop pass
+  // can attribute speakers, so the diarize toggle only makes sense then.
+  const meetingModelIsGemini =
+    cloudProviderOf(
+      models.find((m) => m.id === (settings?.meeting_selected_model || ""))
+        ?.engine_type ?? models.find((m) => m.id === currentModel)?.engine_type,
+    ) === "gemini";
+
+  // A key is only actually required once something needs it; before that an
+  // empty key is normal, not an error.
+  const needsKey =
+    !hasGeminiKey && (meetingModelIsGemini || liveMode !== "off");
+  // Open the cloud block for anyone already using it, and leave it folded for
+  // the on-device-only case it does not apply to.
+  const geminiInUse =
+    meetingModelIsGemini || liveMode !== "off" || hasGeminiKey;
+
+  if (!loaded) {
+    // Reserve roughly the collapsed height so switching tabs does not jump.
+    return <div className="h-48" />;
+  }
+
   return (
     <div className="space-y-6">
-      {/* General: shortcut + auto-summarize */}
-      <div className="space-y-2">
-        <SectionHeading className="px-1">
-          {t("meeting.generalSection")}
-        </SectionHeading>
-        <div className="bg-background border border-mid-gray/20 rounded-lg p-4 space-y-4">
-          {/* Optional global shortcut to start/stop a meeting without opening
-              the window. Unbound by default; mirrors the tray quick-start. */}
-          <ShortcutInput shortcutId="toggle_meeting" descriptionMode="inline" />
+      <SettingsGroup title={t("meeting.generalSection")}>
+        {/* Optional global shortcut to start/stop a meeting without opening
+            the window. Unbound by default; mirrors the tray quick-start. */}
+        <ShortcutInput
+          shortcutId="toggle_meeting"
+          descriptionMode="tooltip"
+          grouped
+        />
 
-          <MeetingToggle
-            checked={autoSummarize}
-            onToggle={handleToggleAutoSummarize}
-            label={t("meeting.autoSummarize")}
-            description={t("meeting.autoSummarizeDescription")}
-          />
+        <ToggleSwitch
+          checked={autoSummarize}
+          onChange={() =>
+            void applyToggle(
+              autoSummarize,
+              changeMeetingAutoSummarize,
+              setAutoSummarize,
+            )
+          }
+          label={t("meeting.autoSummarize")}
+          description={t("meeting.autoSummarizeDescription")}
+          grouped
+        />
 
-          <MeetingToggle
-            checked={calendarNames}
-            onToggle={handleToggleCalendarNames}
-            label={t("meeting.calendarNamesToggle")}
-            description={t("meeting.calendarNamesDescription")}
-          />
-        </div>
-      </div>
+        <ToggleSwitch
+          checked={calendarNames}
+          onChange={() => void handleToggleCalendarNames()}
+          label={t("meeting.calendarNamesToggle")}
+          description={t("meeting.calendarNamesDescription")}
+          grouped
+        />
+      </SettingsGroup>
 
-      {/* Gemini (cloud transcription, translation and speaker attribution) */}
-      <div className="space-y-2">
-        <SectionHeading className="px-1">
-          {t("meeting.geminiSection")}
-        </SectionHeading>
-        <div className="bg-background border border-mid-gray/20 rounded-lg p-4 space-y-4">
-          {/* The API key comes FIRST and is deliberately never gated on any of
-              the toggles below: you need somewhere to paste it before turning
-              anything on, and enabling a Gemini path without a key just makes
-              the backend skip it silently. */}
-          <div className="space-y-1">
-            <label className="text-[11px] font-medium uppercase tracking-wide text-mid-gray">
-              {t("meeting.geminiApiKeyLabel")}
-            </label>
-            <div className="flex items-center gap-2">
-              <Input
-                type="password"
-                value={geminiKeyDraft}
-                onChange={(e) => setGeminiKeyDraft(e.target.value)}
-                onBlur={() => void handleGeminiKeyCommit()}
-                placeholder={
-                  hasGeminiKey
-                    ? t("meeting.geminiApiKeyStored")
-                    : t("meeting.geminiApiKeyPlaceholder")
-                }
-                className="flex-1"
-              />
-              {hasGeminiKey && (
-                <button
-                  type="button"
-                  onClick={() => void handleClearGeminiKey()}
-                  className="text-xs text-text/50 hover:text-red-400 transition-colors"
-                >
-                  {t("meeting.geminiApiKeyClear")}
-                </button>
-              )}
+      <CollapsibleGroup
+        title={t("meeting.geminiSection")}
+        defaultOpen={geminiInUse}
+      >
+        <SettingsGroup>
+          {/* The key lives on the Models page next to every other credential.
+              Live streaming needs it even when the meeting model is local, so
+              say so here and offer one click to get there rather than growing a
+              second field for the same setting. */}
+          {needsKey && (
+            <div className="px-4 py-3">
+              <Alert variant="warning">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span>{t("meeting.geminiNeedsKey")}</span>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => void emit("navigate-section", "models")}
+                  >
+                    {t("meeting.geminiOpenModels")}
+                  </Button>
+                </div>
+              </Alert>
             </div>
-            {needsKey ? (
-              <p className="text-xs text-red-400">
-                {t("meeting.geminiNeedsKey")}
-              </p>
-            ) : (
-              <p className="text-xs text-text/50">
-                {t("meeting.geminiKeyNote")}
-              </p>
-            )}
-          </div>
+          )}
 
-          {/* On-stop pass: the only path that can tell participants apart. */}
-          <MeetingToggle
-            checked={geminiFinalize}
-            onToggle={() =>
-              void toggleGeminiSetting(
-                geminiFinalize,
-                changeMeetingGeminiFinalize,
-                setGeminiFinalize,
-              )
-            }
-            label={t("meeting.geminiFinalizeToggle")}
-            description={t("meeting.geminiFinalizeDescription")}
-          />
-          {geminiFinalize && (
-            <MeetingToggle
+          {/* Speaker attribution only exists on the Gemini on-stop pass. */}
+          {meetingModelIsGemini && (
+            <ToggleSwitch
               checked={geminiDiarize}
-              onToggle={() =>
-                void toggleGeminiSetting(
+              onChange={() =>
+                void applyToggle(
                   geminiDiarize,
                   changeMeetingGeminiDiarize,
                   setGeminiDiarize,
@@ -395,32 +349,29 @@ export const MeetingPreferences: React.FC = () => {
               }
               label={t("meeting.geminiDiarizeToggle")}
               description={t("meeting.geminiDiarizeDescription")}
+              grouped
             />
           )}
 
           {/* Live streaming: off, translate, or transcribe. */}
-          <div className="space-y-1">
-            <label className="text-[11px] font-medium uppercase tracking-wide text-mid-gray">
-              {t("meeting.liveModeLabel")}
-            </label>
-            <Select
-              value={liveMode}
+          <SettingContainer
+            title={t("meeting.liveModeLabel")}
+            description={t(`meeting.liveModeNote.${liveMode}`)}
+            descriptionMode="tooltip"
+            grouped
+          >
+            <Dropdown
               options={liveModeOptions}
-              onChange={(v) => {
-                if (v != null) void handleLiveModeChange(v as MeetingLiveMode);
-              }}
-              isClearable={false}
+              selectedValue={liveMode}
+              onSelect={(v) => void handleLiveModeChange(v as MeetingLiveMode)}
             />
-            <p className="text-xs text-text/50">
-              {t(`meeting.liveModeNote.${liveMode}`)}
-            </p>
-          </div>
+          </SettingContainer>
 
           {liveMode !== "off" && (
-            <MeetingToggle
+            <ToggleSwitch
               checked={subtitles}
-              onToggle={() =>
-                void toggleGeminiSetting(
+              onChange={() =>
+                void applyToggle(
                   subtitles,
                   changeMeetingSubtitles,
                   setSubtitles,
@@ -428,30 +379,30 @@ export const MeetingPreferences: React.FC = () => {
               }
               label={t("meeting.subtitlesToggle")}
               description={t("meeting.subtitlesDescription")}
+              grouped
             />
           )}
 
           {liveMode === "translate" && (
-            <div className="space-y-1">
-              <label className="text-[11px] font-medium uppercase tracking-wide text-mid-gray">
-                {t("meeting.liveTranslateTargetLabel")}
-              </label>
-              <Select
-                value={liveTarget}
+            <SettingContainer
+              title={t("meeting.liveTranslateTargetLabel")}
+              description={t("meeting.liveTranslateTargetDescription")}
+              descriptionMode="tooltip"
+              grouped
+            >
+              <Dropdown
                 options={LIVE_TRANSLATE_LANGUAGES}
-                onChange={(v) => {
-                  if (v != null) void handleLiveTargetChange(String(v));
-                }}
-                isClearable={false}
+                selectedValue={liveTarget}
+                onSelect={(v) => void handleLiveTargetChange(v)}
               />
-            </div>
+            </SettingContainer>
           )}
 
           {/* Shared by every Gemini path. */}
-          <MeetingToggle
+          <ToggleSwitch
             checked={geminiSmart}
-            onToggle={() =>
-              void toggleGeminiSetting(
+            onChange={() =>
+              void applyToggle(
                 geminiSmart,
                 changeMeetingGeminiSmart,
                 setGeminiSmart,
@@ -459,12 +410,16 @@ export const MeetingPreferences: React.FC = () => {
             }
             label={t("meeting.geminiSmartToggle")}
             description={t("meeting.geminiSmartDescription")}
+            grouped
           />
 
-          <div className="space-y-1">
-            <label className="text-[11px] font-medium uppercase tracking-wide text-mid-gray">
-              {t("meeting.customVocabularyLabel")}
-            </label>
+          <SettingContainer
+            title={t("meeting.customVocabularyLabel")}
+            description={t("meeting.customVocabularyDescription")}
+            descriptionMode="tooltip"
+            layout="stacked"
+            grouped
+          >
             <Textarea
               variant="compact"
               value={vocabulary}
@@ -473,68 +428,67 @@ export const MeetingPreferences: React.FC = () => {
               placeholder={t("meeting.customVocabularyPlaceholder")}
               className="w-full"
             />
-            <p className="text-xs text-text/50">
-              {t("meeting.customVocabularyDescription")}
-            </p>
-          </div>
-        </div>
-      </div>
+          </SettingContainer>
+        </SettingsGroup>
+      </CollapsibleGroup>
 
-      {/* Automatic detection */}
-      <div className="space-y-2">
-        <SectionHeading className="px-1">
-          {t("meeting.autoDetectSection")}
-        </SectionHeading>
-        <div className="bg-background border border-mid-gray/20 rounded-lg p-4 space-y-4">
-          <MeetingToggle
+      <CollapsibleGroup
+        title={t("meeting.autoDetectSection")}
+        defaultOpen={autoDetect}
+      >
+        <SettingsGroup>
+          <ToggleSwitch
             checked={autoDetect}
-            onToggle={handleToggleAutoDetect}
+            onChange={() =>
+              void applyToggle(
+                autoDetect,
+                changeMeetingAutoDetect,
+                setAutoDetect,
+              )
+            }
             label={t("meeting.autoDetectToggle")}
             description={t("meeting.autoDetectDescription")}
+            grouped
           />
-          <MeetingToggle
+          <ToggleSwitch
             checked={autoEnd}
-            onToggle={handleToggleAutoEnd}
+            onChange={() =>
+              void applyToggle(autoEnd, changeMeetingAutoEnd, setAutoEnd)
+            }
             label={t("meeting.autoEndToggle")}
             description={t("meeting.autoEndDescription")}
+            grouped
           />
-
-          <div
-            className={`grid grid-cols-1 gap-3 sm:grid-cols-2 ${
-              autoEnd ? "" : "opacity-50"
-            }`}
+          <SettingContainer
+            title={t("meeting.silenceTimeoutLabel")}
+            description={t("meeting.silenceTimeoutDescription")}
+            descriptionMode="tooltip"
+            grouped
+            disabled={!autoEnd}
           >
-            <div className="space-y-1">
-              <label className="text-[11px] font-medium uppercase tracking-wide text-mid-gray">
-                {t("meeting.silenceTimeoutLabel")}
-              </label>
-              <Select
-                value={String(silenceTimeoutSecs)}
-                options={silenceTimeoutOptions}
-                onChange={(v) => {
-                  if (v != null) void handleSilenceTimeoutChange(Number(v));
-                }}
-                isClearable={false}
-                disabled={!autoEnd}
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[11px] font-medium uppercase tracking-wide text-mid-gray">
-                {t("meeting.autoEndGraceLabel")}
-              </label>
-              <Select
-                value={String(autoEndGraceSecs)}
-                options={autoEndGraceOptions}
-                onChange={(v) => {
-                  if (v != null) void handleAutoEndGraceChange(Number(v));
-                }}
-                isClearable={false}
-                disabled={!autoEnd}
-              />
-            </div>
-          </div>
-        </div>
-      </div>
+            <Dropdown
+              options={silenceTimeoutOptions}
+              selectedValue={String(silenceTimeoutSecs)}
+              onSelect={(v) => void handleSilenceTimeoutChange(Number(v))}
+              disabled={!autoEnd}
+            />
+          </SettingContainer>
+          <SettingContainer
+            title={t("meeting.autoEndGraceLabel")}
+            description={t("meeting.autoEndGraceDescription")}
+            descriptionMode="tooltip"
+            grouped
+            disabled={!autoEnd}
+          >
+            <Dropdown
+              options={autoEndGraceOptions}
+              selectedValue={String(autoEndGraceSecs)}
+              onSelect={(v) => void handleAutoEndGraceChange(Number(v))}
+              disabled={!autoEnd}
+            />
+          </SettingContainer>
+        </SettingsGroup>
+      </CollapsibleGroup>
 
       {error && (
         <p className="text-sm text-red-400 whitespace-pre-wrap break-words">

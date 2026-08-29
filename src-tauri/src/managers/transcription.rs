@@ -109,6 +109,14 @@ struct MeetingTranscribeOpts {
     /// context across them risks propagating a hallucination into later windows.
     /// `None` (live/dictation) preserves default context behavior.
     no_context: Option<bool>,
+    /// Which model to transcribe with. `None` means `settings.selected_model`
+    /// (dictation). Meeting mode sets this from `settings.meeting_model_id()`
+    /// so meetings can run on a different model than push-to-talk dictation.
+    ///
+    /// This only steers cloud routing, slug lookup and language validation —
+    /// for local engines the caller must also have LOADED this model, which is
+    /// what `initiate_model_load_for` is for.
+    model_override: Option<String>,
 }
 
 impl MeetingTranscribeOpts {
@@ -134,6 +142,7 @@ impl MeetingTranscribeOpts {
             entropy_thold: Some(MEETING_ENTROPY_THOLD),
             logprob_thold: Some(MEETING_LOGPROB_THOLD),
             no_context: if finalize { Some(true) } else { None },
+            model_override: Some(settings.meeting_model_id().to_string()),
         }
     }
 
@@ -538,7 +547,7 @@ impl TranscriptionManager {
                 })?;
                 LoadedEngine::Canary(engine)
             }
-            EngineType::OpenRouter | EngineType::OpenRouterAsr => {
+            EngineType::OpenRouter | EngineType::OpenRouterAsr | EngineType::Gemini => {
                 // Unreachable: cloud models return early above. Kept for match
                 // exhaustiveness.
                 let error_msg = "internal error: cloud model reached engine dispatch";
@@ -581,17 +590,50 @@ impl TranscriptionManager {
     }
 
     /// Kicks off the model loading in a background thread if it's not already loaded
+    /// Background-load the DICTATION model.
+    ///
+    /// Skipped entirely while a meeting is running: only one engine is resident
+    /// at a time, and the meeting owns it for the duration. Without this a
+    /// dictation triggered mid-meeting would swap the meeting's model out and
+    /// the next meeting segment would be transcribed by the wrong engine.
     pub fn initiate_model_load(&self) {
+        if self.meeting_is_running() {
+            debug!("Skipping dictation model load: a meeting owns the engine");
+            return;
+        }
+        let settings = get_settings(&self.app_handle);
+        self.initiate_model_load_for(&settings.selected_model);
+    }
+
+    /// Whether a meeting session is currently capturing.
+    fn meeting_is_running(&self) -> bool {
+        self.app_handle
+            .try_state::<Arc<crate::meeting::MeetingManager>>()
+            .map_or(false, |m| m.is_active())
+    }
+
+    /// Background-load a specific model, swapping out whatever is resident if
+    /// it is a different one.
+    ///
+    /// The swap is the point: with dictation and meetings on separate model
+    /// settings, "some model is loaded" is no longer the same question as "the
+    /// right model is loaded". Returning early on the former would let a
+    /// meeting transcribe with the dictation engine while every metadata lookup
+    /// (cloud routing, language validation, slug) described the meeting model.
+    pub fn initiate_model_load_for(&self, model_id: &str) {
         let mut is_loading = self.is_loading.lock().unwrap();
-        if *is_loading || self.is_model_loaded() {
+        if *is_loading {
+            return;
+        }
+        if self.is_model_loaded() && self.get_current_model().as_deref() == Some(model_id) {
             return;
         }
 
         *is_loading = true;
         let self_clone = self.clone();
+        let model_id = model_id.to_string();
         thread::spawn(move || {
-            let settings = get_settings(&self_clone.app_handle);
-            if let Err(e) = self_clone.load_model(&settings.selected_model) {
+            if let Err(e) = self_clone.load_model(&model_id) {
                 error!("Failed to load model: {}", e);
             }
             let mut is_loading = self_clone.is_loading.lock().unwrap();
@@ -697,6 +739,70 @@ impl TranscriptionManager {
         )
     }
 
+    /// Cloud transcription straight from Google, for [`EngineType::Gemini`].
+    ///
+    /// Reuses the batch client the meeting finalize pass uses, with diarization
+    /// off: a dictation clip is one speaker by definition, and speaker labels
+    /// would only have to be stripped again before pasting. Custom-word
+    /// correction is applied by the caller, same as every other path.
+    fn transcribe_via_gemini(
+        &self,
+        audio: &[f32],
+        validated_language: &str,
+        settings: &crate::settings::AppSettings,
+        slug: &str,
+    ) -> Result<String> {
+        let api_key = settings.gemini_api_key.trim();
+        if api_key.is_empty() {
+            return Err(anyhow::anyhow!(
+                "No Gemini API key set. Add one in Settings → Models."
+            ));
+        }
+
+        let model = if slug.trim().is_empty() {
+            crate::gemini_transcribe::DEFAULT_BATCH_TRANSCRIBE_MODEL.to_string()
+        } else {
+            slug.trim().to_string()
+        };
+
+        // "auto" means send no hint and let the model detect; the Chinese
+        // variants collapse to "zh" the same way the other cloud path does.
+        let language_codes: Vec<String> = match validated_language {
+            "auto" => Vec::new(),
+            "zh-Hans" | "zh-Hant" => vec!["zh".to_string()],
+            other => vec![other.to_string()],
+        };
+
+        let config = crate::gemini_transcribe::BatchTranscribeConfig {
+            api_key: api_key.to_string(),
+            model,
+            language_codes,
+            custom_vocabulary: settings.custom_words.clone(),
+            // Dictation is inserted verbatim into whatever the user is typing
+            // in, so cleanup would silently rewrite their words.
+            mode: crate::gemini_transcribe::TranscriptionMode::Verbatim,
+            diarize: false,
+        };
+
+        info!("Transcribing via Gemini cloud model: {}", config.model);
+
+        let result = crate::gemini_transcribe::transcribe_samples(
+            &config,
+            audio,
+            crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE,
+            "dictation",
+        )?;
+
+        Ok(result
+            .segments
+            .into_iter()
+            .map(|segment| segment.text)
+            .collect::<Vec<_>>()
+            .join(" ")
+            .trim()
+            .to_string())
+    }
+
     fn transcribe_with_opts(&self, audio: Vec<f32>, opts: MeetingTranscribeOpts) -> Result<String> {
         #[cfg(debug_assertions)]
         if std::env::var("FISILTI_FORCE_TRANSCRIPTION_FAILURE").is_ok() {
@@ -724,7 +830,14 @@ impl TranscriptionManager {
         // Detect a cloud (OpenRouter) selection up-front. Cloud transcription
         // does not use the local engine machinery at all (no model in memory,
         // no idle-unload race), so it skips the load check below.
-        let selected_model_info = self.model_manager.get_model_info(&settings.selected_model);
+        // Dictation reads `selected_model`; meetings pass their own id through
+        // `opts`. Everything downstream keys off this one resolved value so the
+        // three lookups below can never disagree about which model is running.
+        let active_model_id = opts
+            .model_override
+            .clone()
+            .unwrap_or_else(|| settings.selected_model.clone());
+        let selected_model_info = self.model_manager.get_model_info(&active_model_id);
         let is_cloud = selected_model_info
             .as_ref()
             .map_or(false, |m| m.engine_type.is_cloud());
@@ -759,7 +872,7 @@ impl TranscriptionManager {
         } else {
             let is_supported = self
                 .model_manager
-                .get_model_info(&settings.selected_model)
+                .get_model_info(&active_model_id)
                 .map(|info| {
                     info.supported_languages.is_empty()
                         || info.supported_languages.contains(&requested_language)
@@ -794,10 +907,19 @@ impl TranscriptionManager {
             } else {
                 preset_slug
             };
-            let asr_mode = selected_model_info.as_ref().map_or(false, |m| {
-                matches!(m.engine_type, EngineType::OpenRouterAsr)
-            });
-            self.transcribe_via_cloud(&audio, &validated_language, &settings, &slug, asr_mode)?
+            let is_gemini = selected_model_info
+                .as_ref()
+                .map_or(false, |m| matches!(m.engine_type, EngineType::Gemini));
+            if is_gemini {
+                // Google direct: different endpoint, different key. Shares the
+                // batch client with the meeting finalize pass.
+                self.transcribe_via_gemini(&audio, &validated_language, &settings, &slug)?
+            } else {
+                let asr_mode = selected_model_info.as_ref().map_or(false, |m| {
+                    matches!(m.engine_type, EngineType::OpenRouterAsr)
+                });
+                self.transcribe_via_cloud(&audio, &validated_language, &settings, &slug, asr_mode)?
+            }
         } else {
             let result = {
                 let mut engine_guard = self.lock_engine();

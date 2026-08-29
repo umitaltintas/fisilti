@@ -3,10 +3,15 @@
     "settings": "設定...",
     "checkUpdates": "檢查更新...",
     "copyLastTranscript": "複製最新轉錄",
+    "history": "聽寫記錄...",
     "unloadModel": "卸載模型",
     "model": "模型",
+    "modelsOnDevice": "在本機上",
+    "modelsCloud": "雲端",
     "quit": "結束",
     "cancel": "取消",
+    "startDictation": "開始聽寫",
+    "stopDictation": "停止聽寫",
     "startMeeting": "開始會議",
     "stopMeeting": "停止會議",
     "recordingIndicator": "Fısıltı — 錄製中…",
@@ -17,10 +22,14 @@
     "models": "模型",
     "advanced": "進階",
     "postProcessing": "後處理",
-    "history": "歷史紀錄",
+    "history": "聽寫記錄",
     "debug": "偵錯",
     "about": "關於",
-    "meeting": "Meeting"
+    "meeting": "Meeting",
+    "groups": {
+      "features": "功能",
+      "system": "系統"
+    }
   },
   "onboarding": {
     "subtitle": "首先，請選擇一種模型",
@@ -201,6 +210,10 @@
       "pushToTalk": {
         "label": "按住說話",
         "description": "按住錄製，放開停止"
+      },
+      "groups": {
+        "recording": "錄音",
+        "app": "應用程式"
       }
     },
     "models": {
@@ -230,6 +243,37 @@
         "modelPlaceholder": "例如 openai/gpt-4o-mini-transcribe",
         "browseModels": "瀏覽模型 →",
         "modelRequired": "請輸入 OpenRouter 模型識別碼（例如 google/gemini-2.5-flash）。"
+      },
+      "gemini": {
+        "description": "此模型直接透過 Google 在雲端轉錄。你的音訊會傳送到 Google，並按分鐘計費。會議轉錄使用同一組 Gemini 金鑰。",
+        "apiKeyPlaceholder": "Gemini API 金鑰",
+        "apiKeyStored": "已儲存金鑰。貼上新金鑰即可取代。",
+        "getKey": "取得 API 金鑰 →",
+        "keyRequired": "請輸入你的 Gemini API 金鑰以使用此模型。"
+      },
+      "meetingModel": {
+        "title": "會議模型",
+        "description": "會議可以使用與聽寫不同的模型：長會議用準確的雲端模型，按鍵說話用本機即時的模型。",
+        "label": "轉錄會議所用模型",
+        "hint": "適用於即時轉錄和最終處理。聽寫模型不受影響。",
+        "sameAsDictation": "與聽寫相同",
+        "sameAsDictationNamed": "與聽寫相同（{{model}}）"
+      },
+      "activeModel": "目前模型",
+      "browse": "全部模型",
+      "searchPlaceholder": "搜尋模型或語言",
+      "languageCount": "{{count}} 種語言",
+      "badges": {
+        "cloud": "在雲端執行",
+        "local": "在本機執行"
+      },
+      "groups": {
+        "installed": "已下載",
+        "cloud": "雲端",
+        "multilingual": "多語言",
+        "multilingualShort": "多語言",
+        "english": "僅英文",
+        "regional": "特定語言"
       }
     },
     "sound": {
@@ -262,7 +306,8 @@
         "output": "輸出",
         "transcription": "轉錄",
         "history": "歷史",
-        "experimental": "實驗性"
+        "experimental": "實驗性",
+        "developer": "開發者"
       },
       "experimentalToggle": {
         "label": "實驗性功能",
@@ -428,10 +473,11 @@
         "cancel": "取消",
         "selectToEdit": "選擇上方的提示詞以檢視和編輯其詳細資訊",
         "createFirst": "點選上方的「建立新提示詞」來建立您的第一個後處理提示詞"
-      }
+      },
+      "description": "在貼上之前，讓 AI 模型整理、重新排版或翻譯每一段轉錄。"
     },
     "history": {
-      "title": "歷史紀錄",
+      "title": "聽寫記錄",
       "openFolder": "開啟錄音資料夾",
       "loading": "載入歷史紀錄中...",
       "empty": "還沒有轉錄紀錄。開始錄製以建立您的歷史紀錄！",
@@ -443,7 +489,8 @@
       "retranscribe": "重新轉錄",
       "retranscribeError": "重新轉錄失敗，請重試。",
       "transcribing": "轉錄中...",
-      "transcriptionFailed": "轉錄失敗。您可以使用重試圖示重新轉錄。"
+      "transcriptionFailed": "轉錄失敗。您可以使用重試圖示重新轉錄。",
+      "retentionSettings": "歷史記錄設定"
     },
     "debug": {
       "title": "偵錯",
@@ -585,7 +632,8 @@
     "off": "關",
     "yes": "是",
     "no": "否",
-    "noOptionsFound": "未找到選項"
+    "noOptionsFound": "未找到選項",
+    "clear": "清除"
   },
   "accessibility": {
     "permissionsRequired": "需要輔助使用權限",
@@ -690,7 +738,9 @@
     "autoEndToggle": "長時間靜音後提示結束",
     "autoEndDescription": "如果在所選時間內未偵測到語音,會詢問是否結束會議;若無回應則自動結束。",
     "silenceTimeoutLabel": "詢問前的靜音時間",
+    "silenceTimeoutDescription": "會議需保持靜音多久後才會詢問你是否結束。",
     "autoEndGraceLabel": "無回應時自動結束時間",
+    "autoEndGraceDescription": "該提示在會議自動結束前等待回應的時間。",
     "durationMinutes": "{{count}} 分鐘",
     "durationSeconds": "{{count}} 秒",
     "tabSession": "Session",
@@ -711,7 +761,11 @@
     "generalSection": "General",
     "calendarNamesToggle": "依行事曆命名會議",
     "calendarNamesDescription": "新工作階段會以目前進行中的行事曆行程命名。啟用時會要求行事曆存取權限。",
-    "calendarAccessDenied": "行事曆存取遭拒。您可以在「系統設定 → 隱私權與安全性 → 行事曆」中允許。"
+    "calendarAccessDenied": "行事曆存取遭拒。您可以在「系統設定 → 隱私權與安全性 → 行事曆」中允許。",
+    "liveTranslateTargetDescription": "即時語音翻譯成的目標語言。",
+    "geminiSection": "即時轉錄（Gemini）",
+    "geminiNeedsKey": "即時轉錄和說話者識別需要 Gemini API 金鑰。",
+    "geminiOpenModels": "開啟模型"
   },
   "meetingPrompt": {
     "startTitle": "偵測到會議",

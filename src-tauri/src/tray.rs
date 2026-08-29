@@ -7,7 +7,7 @@ use crate::tray_i18n::get_tray_translations;
 use log::{error, info, warn};
 use std::sync::Arc;
 use tauri::image::Image;
-use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::menu::{CheckMenuItem, IsMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::TrayIcon;
 use tauri::{AppHandle, Manager, Theme};
 use tauri_plugin_clipboard_manager::ClipboardExt;
@@ -160,6 +160,28 @@ pub fn update_tray_menu(app: &AppHandle, state: &TrayIconState, locale: Option<&
     let locale = locale.unwrap_or(&settings.app_language);
     let strings = get_tray_translations(Some(locale.to_string()));
 
+    // Dictation quick-toggle. Dictation is the app's primary feature but used
+    // to be reachable only through the global shortcut — the tray offered
+    // "Cancel" and nothing to start with. Mirrors the meeting item below.
+    //
+    // No accelerator: the binding is user-configurable and lives in the global
+    // shortcut plugin, so hard-coding one here would either lie or fight it.
+    let dictation_label = if *state == TrayIconState::Recording {
+        &strings.stop_dictation
+    } else {
+        &strings.start_dictation
+    };
+    // While a transcription is already running there is nothing to start or
+    // stop — only "Cancel" applies, and it is in the same menu.
+    let toggle_dictation_i = MenuItem::with_id(
+        app,
+        "toggle_dictation",
+        dictation_label,
+        *state != TrayIconState::Transcribing,
+        None::<&str>,
+    )
+    .expect("failed to create toggle dictation item");
+
     // Meeting quick-start item: "Start Meeting" when idle, "Stop Meeting" while
     // a meeting is running. Capture is macOS-only; on other platforms keep the
     // item present but disabled so the menu layout stays cross-platform and the
@@ -186,6 +208,11 @@ pub fn update_tray_menu(app: &AppHandle, state: &TrayIconState, locale: Option<&
     // Opens the main window on the Meeting section (past transcripts list).
     let meetings_i = MenuItem::with_id(app, "meetings", &strings.meetings, true, None::<&str>)
         .expect("failed to create meetings item");
+
+    // The dictation counterpart to "Meetings…". Both archives are one click
+    // from the tray, and both say which archive they are.
+    let history_i = MenuItem::with_id(app, "history", &strings.history, true, None::<&str>)
+        .expect("failed to create history item");
 
     // Platform-specific accelerators
     #[cfg(target_os = "macos")]
@@ -230,36 +257,89 @@ pub fn update_tray_menu(app: &AppHandle, state: &TrayIconState, locale: Option<&
         .expect("failed to create quit item");
     let separator = || PredefinedMenuItem::separator(app).expect("failed to create separator");
 
-    // Build model submenu — label is the active model name
+    // Build the model submenu. Cloud entries report `is_downloaded == true` so
+    // they land here too; since cloud models arrived, a single alphabetical
+    // list interleaved "Gemini 2.5 Flash (Cloud)" with "Whisper Small" and gave
+    // no hint which ones need the network. Split them the same way the Models
+    // page does, under disabled header rows.
     let model_manager = app.state::<Arc<ModelManager>>();
     let models = model_manager.get_available_models();
     let current_model_id = &settings.selected_model;
 
-    let mut downloaded: Vec<_> = models.into_iter().filter(|m| m.is_downloaded).collect();
-    downloaded.sort_by(|a, b| a.name.cmp(&b.name));
+    // The two "Custom OpenRouter model" entries do nothing until a slug is
+    // configured in Settings → Models, so hide them until then — unless one is
+    // already active, which must stay visible and checked.
+    let custom_slug_set = !settings.openrouter_custom_model.trim().is_empty();
+    let mut selectable: Vec<_> = models
+        .into_iter()
+        .filter(|m| m.is_downloaded)
+        .filter(|m| {
+            let is_unconfigured_custom =
+                matches!(m.id.as_str(), "openrouter-custom" | "openrouter-asr-custom")
+                    && !custom_slug_set;
+            !is_unconfigured_custom || m.id == *current_model_id
+        })
+        .collect();
+    selectable.sort_by(|a, b| a.name.cmp(&b.name));
 
-    let submenu_label = downloaded
+    let (cloud_models, on_device_models): (Vec<_>, Vec<_>) = selectable
+        .into_iter()
+        .partition(|m| m.engine_type.is_cloud());
+
+    // "Model: Whisper Small" rather than a bare "Whisper Small", which reads
+    // like a command rather than the current value.
+    let active_model_name = on_device_models
         .iter()
+        .chain(cloud_models.iter())
         .find(|m| m.id == *current_model_id)
-        .map(|m| m.name.clone())
-        .unwrap_or_else(|| strings.model.clone());
+        .map(|m| m.name.clone());
+    let submenu_label = match &active_model_name {
+        Some(name) => format!("{}: {}", strings.model, name),
+        None => strings.model.clone(),
+    };
 
     let model_submenu = {
         let submenu = Submenu::with_id(app, "model_submenu", &submenu_label, true)
             .expect("failed to create model submenu");
 
-        for model in &downloaded {
-            let is_active = model.id == *current_model_id;
-            let item_id = format!("model_select:{}", model.id);
-            let item =
-                CheckMenuItem::with_id(app, &item_id, &model.name, true, is_active, None::<&str>)
-                    .expect("failed to create model item");
-            let _ = submenu.append(&item);
-        }
+        let section = |heading: &str, group: &[crate::managers::model::ModelInfo]| {
+            if group.is_empty() {
+                return;
+            }
+            let header = MenuItem::with_id(
+                app,
+                format!("model_heading:{heading}"),
+                heading,
+                false,
+                None::<&str>,
+            )
+            .expect("failed to create model heading");
+            let _ = submenu.append(&header);
+            for model in group {
+                let is_active = model.id == *current_model_id;
+                let item_id = format!("model_select:{}", model.id);
+                let item = CheckMenuItem::with_id(
+                    app,
+                    &item_id,
+                    &model.name,
+                    true,
+                    is_active,
+                    None::<&str>,
+                )
+                .expect("failed to create model item");
+                let _ = submenu.append(&item);
+            }
+        };
+
+        section(&strings.models_on_device, &on_device_models);
+        section(&strings.models_cloud, &cloud_models);
 
         submenu
     };
 
+    // Unloading a model by hand is a memory-management chore the app already
+    // does on a timer (`model_unload_timeout`), so it only earns a menu slot in
+    // debug mode — same rule as the Developer group under Advanced.
     let unload_model_i = MenuItem::with_id(
         app,
         "unload_model",
@@ -269,51 +349,44 @@ pub fn update_tray_menu(app: &AppHandle, state: &TrayIconState, locale: Option<&
     )
     .expect("failed to create unload model item");
 
-    let menu = match state {
-        TrayIconState::Recording | TrayIconState::Transcribing => {
-            let cancel_i = MenuItem::with_id(app, "cancel", &strings.cancel, true, None::<&str>)
-                .expect("failed to create cancel item");
-            Menu::with_items(
-                app,
-                &[
-                    &version_i,
-                    &separator(),
-                    &cancel_i,
-                    &separator(),
-                    &toggle_meeting_i,
-                    &meetings_i,
-                    &separator(),
-                    &copy_last_transcript_i,
-                    &separator(),
-                    &settings_i,
-                    &check_updates_i,
-                    &separator(),
-                    &quit_i,
-                ],
-            )
-            .expect("failed to create menu")
-        }
-        TrayIconState::Idle => Menu::with_items(
-            app,
-            &[
-                &version_i,
-                &separator(),
-                &toggle_meeting_i,
-                &meetings_i,
-                &separator(),
-                &copy_last_transcript_i,
-                &separator(),
-                &model_submenu,
-                &unload_model_i,
-                &separator(),
-                &settings_i,
-                &check_updates_i,
-                &separator(),
-                &quit_i,
-            ],
-        )
-        .expect("failed to create menu"),
-    };
+    // One layout for every state, in a fixed order: what you can do now, then
+    // what you can open, then what you can configure. Items change label or go
+    // disabled between states instead of appearing and disappearing, so muscle
+    // memory keeps working while a recording runs.
+    let cancel_i = MenuItem::with_id(app, "cancel", &strings.cancel, true, None::<&str>)
+        .expect("failed to create cancel item");
+    // A separator is a real platform menu item and cannot sit in two places, so
+    // each one is its own instance rather than a reused reference.
+    let (sep1, sep2, sep3, sep4, sep5) = (
+        separator(),
+        separator(),
+        separator(),
+        separator(),
+        separator(),
+    );
+
+    let mut items: Vec<&dyn IsMenuItem<tauri::Wry>> = vec![&version_i, &sep1];
+    items.push(&toggle_dictation_i);
+    items.push(&toggle_meeting_i);
+    if *state != TrayIconState::Idle {
+        items.push(&cancel_i);
+    }
+    items.push(&sep2);
+    items.push(&copy_last_transcript_i);
+    items.push(&history_i);
+    items.push(&meetings_i);
+    items.push(&sep3);
+    items.push(&model_submenu);
+    if settings.debug_mode {
+        items.push(&unload_model_i);
+    }
+    items.push(&sep4);
+    items.push(&settings_i);
+    items.push(&check_updates_i);
+    items.push(&sep5);
+    items.push(&quit_i);
+
+    let menu = Menu::with_items(app, &items).expect("failed to create menu");
 
     let tray = app.state::<TrayIcon>();
     let _ = tray.set_menu(Some(menu));

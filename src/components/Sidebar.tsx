@@ -1,22 +1,12 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import {
-  Cog,
-  FlaskConical,
-  History,
-  Info,
-  Sparkles,
-  Cpu,
-  Radio,
-} from "lucide-react";
+import { Cog, History, Info, Sparkles, Cpu, Radio } from "lucide-react";
 import FisiltiWordmark from "./icons/FisiltiWordmark";
 import FisiltiMark from "./icons/FisiltiMark";
-import { useSettings } from "../hooks/useSettings";
 import {
   GeneralSettings,
   AdvancedSettings,
   HistorySettings,
-  DebugSettings,
   AboutSettings,
   PostProcessingSettings,
   ModelsSettings,
@@ -33,63 +23,72 @@ interface IconProps {
   [key: string]: any;
 }
 
+/** Which cluster of the sidebar a section belongs to. */
+type SectionGroup = "main" | "features" | "system";
+
 interface SectionConfig {
   labelKey: string;
   icon: React.ComponentType<IconProps>;
   component: React.ComponentType;
-  enabled: (settings: any) => boolean;
+  group: SectionGroup;
 }
 
+// Every section is always visible: sections that appear and disappear based on
+// a toggle buried on another page were a big part of "where do I configure
+// this?". Feature switches now live at the top of their own page instead.
 export const SECTIONS_CONFIG = {
   general: {
     labelKey: "sidebar.general",
     icon: FisiltiMark,
     component: GeneralSettings,
-    enabled: () => true,
+    group: "main",
   },
   models: {
     labelKey: "sidebar.models",
     icon: Cpu,
     component: ModelsSettings,
-    enabled: () => true,
-  },
-  advanced: {
-    labelKey: "sidebar.advanced",
-    icon: Cog,
-    component: AdvancedSettings,
-    enabled: () => true,
+    group: "main",
   },
   postprocessing: {
     labelKey: "sidebar.postProcessing",
     icon: Sparkles,
     component: PostProcessingSettings,
-    enabled: (settings) => settings?.post_process_enabled ?? false,
+    group: "features",
   },
   meeting: {
     labelKey: "sidebar.meeting",
     icon: Radio,
     component: MeetingSettings,
-    enabled: () => true,
+    group: "features",
   },
   history: {
     labelKey: "sidebar.history",
     icon: History,
     component: HistorySettings,
-    enabled: () => true,
+    group: "features",
   },
-  debug: {
-    labelKey: "sidebar.debug",
-    icon: FlaskConical,
-    component: DebugSettings,
-    enabled: (settings) => settings?.debug_mode ?? false,
+  advanced: {
+    labelKey: "sidebar.advanced",
+    icon: Cog,
+    component: AdvancedSettings,
+    group: "system",
   },
   about: {
     labelKey: "sidebar.about",
     icon: Info,
     component: AboutSettings,
-    enabled: () => true,
+    group: "system",
   },
 } as const satisfies Record<string, SectionConfig>;
+
+const GROUP_ORDER: SectionGroup[] = ["main", "features", "system"];
+
+// The first cluster carries the app wordmark, so it needs no extra heading.
+const GROUP_LABEL_KEYS: Record<SectionGroup, string | null> = {
+  main: null,
+  features: "sidebar.groups.features",
+  system: "sidebar.groups.system",
+};
 
 interface SidebarProps {
   activeSection: SidebarSection;
@@ -101,41 +100,58 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSectionChange,
 }) => {
   const { t } = useTranslation();
-  const { settings } = useSettings();
 
-  const availableSections = Object.entries(SECTIONS_CONFIG)
-    .filter(([_, config]) => config.enabled(settings))
-    .map(([id, config]) => ({ id: id as SidebarSection, ...config }));
+  const sections = Object.entries(SECTIONS_CONFIG).map(([id, config]) => ({
+    id: id as SidebarSection,
+    ...config,
+  }));
 
   return (
-    <div className="flex flex-col w-40 h-full border-e border-mid-gray/20 items-center px-2">
+    <nav className="flex h-full w-44 flex-col items-center border-e border-mid-gray/20 px-2">
       <FisiltiWordmark width={120} className="m-4" />
-      <div className="flex flex-col w-full items-center gap-1 pt-2 border-t border-mid-gray/20">
-        {availableSections.map((section) => {
-          const Icon = section.icon;
-          const isActive = activeSection === section.id;
+      <div className="flex w-full flex-col gap-4 border-t border-mid-gray/20 pt-3">
+        {GROUP_ORDER.map((group) => {
+          const items = sections.filter((section) => section.group === group);
+          if (items.length === 0) return null;
+          const labelKey = GROUP_LABEL_KEYS[group];
 
           return (
-            <div
-              key={section.id}
-              className={`flex gap-2 items-center p-2 w-full rounded-lg cursor-pointer transition-colors ${
-                isActive
-                  ? "bg-logo-primary/80"
-                  : "hover:bg-mid-gray/20 hover:opacity-100 opacity-85"
-              }`}
-              onClick={() => onSectionChange(section.id)}
-            >
-              <Icon width={24} height={24} className="shrink-0" />
-              <p
-                className="text-sm font-medium truncate"
-                title={t(section.labelKey)}
-              >
-                {t(section.labelKey)}
-              </p>
+            <div key={group} className="flex w-full flex-col gap-1">
+              {labelKey && (
+                <p className="px-2 pb-0.5 text-[10px] font-medium uppercase tracking-wider text-mid-gray/70">
+                  {t(labelKey)}
+                </p>
+              )}
+              {items.map((section) => {
+                const Icon = section.icon;
+                const isActive = activeSection === section.id;
+
+                return (
+                  <button
+                    key={section.id}
+                    type="button"
+                    aria-current={isActive ? "page" : undefined}
+                    className={`flex w-full cursor-pointer items-center gap-2 rounded-lg p-2 text-start transition-colors ${
+                      isActive
+                        ? "bg-logo-primary/80"
+                        : "opacity-85 hover:bg-mid-gray/20 hover:opacity-100"
+                    }`}
+                    onClick={() => onSectionChange(section.id)}
+                  >
+                    <Icon width={20} height={20} className="shrink-0" />
+                    <span
+                      className="truncate text-sm font-medium"
+                      title={t(section.labelKey)}
+                    >
+                      {t(section.labelKey)}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           );
         })}
       </div>
-    </div>
+    </nav>
   );
 };

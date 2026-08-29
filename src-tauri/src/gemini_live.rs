@@ -224,6 +224,9 @@ pub struct LiveSession {
     label: String,
     /// Tokens the API reported for this session, read after `stop()`.
     usage: Arc<Mutex<crate::ai_usage::UsageAccumulator>>,
+    /// 16 kHz samples actually handed to the API. Dropped chunks are excluded:
+    /// audio we never sent was never billed.
+    frames_sent: Arc<AtomicU64>,
 }
 
 impl LiveSession {
@@ -264,6 +267,7 @@ impl LiveSession {
             dropped,
             label,
             usage,
+            frames_sent: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -276,7 +280,10 @@ impl LiveSession {
         }
         if self.audio_tx.try_send(frames.to_vec()).is_err() {
             self.dropped.fetch_add(1, Ordering::Relaxed);
+            return;
         }
+        self.frames_sent
+            .fetch_add(frames.len() as u64, Ordering::Relaxed);
     }
 
     /// Signal the worker to close the socket and stop reconnecting.
@@ -297,6 +304,15 @@ impl LiveSession {
     /// `(input_tokens, output_tokens)` the API reported for this session.
     pub fn usage_totals(&self) -> (u64, u64) {
         self.usage.lock().unwrap().totals()
+    }
+
+    /// Whole seconds of audio streamed to the API.
+    ///
+    /// The billable quantity when the model reports no tokens, which is the
+    /// case for `gemini-3.5-transcribe-live`.
+    pub fn audio_seconds(&self) -> u64 {
+        const SAMPLE_RATE: u64 = 16_000;
+        self.frames_sent.load(Ordering::Relaxed) / SAMPLE_RATE
     }
 }
 
@@ -444,6 +460,8 @@ where
     // Set when the server warns it is about to close, so we stop feeding audio
     // into a socket that is going away and reconnect promptly.
     let mut going_away = false;
+    let mut seen_shapes: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut usage_logged = false;
 
     loop {
         if stop.load(Ordering::Relaxed) {
@@ -519,6 +537,43 @@ where
                 let Ok(value) = serde_json::from_str::<Value>(&text) else {
                     continue;
                 };
+
+                // Log the SHAPE of the first few messages — key names only,
+                // never values, so meeting content stays out of the log. Two
+                // rounds of this API were debugged by guessing at field
+                // placement; the names it actually sends are worth a few lines.
+                // Log each DISTINCT message shape once rather than the first N
+                // messages. Sampling the opening of a stream misses exactly the
+                // rare message types worth knowing about — a usage report, a
+                // turn boundary — because the stream opens with hundreds of
+                // identical partials.
+                {
+                    let top: Vec<&str> = value
+                        .as_object()
+                        .map(|o| o.keys().map(String::as_str).collect())
+                        .unwrap_or_default();
+                    let inner: Vec<&str> = value["serverContent"]
+                        .as_object()
+                        .map(|o| o.keys().map(String::as_str).collect())
+                        .unwrap_or_default();
+                    let signature = format!("{:?}/{:?}", top, inner);
+                    if seen_shapes.insert(signature.clone()) {
+                        log::debug!("gemini-live[{}]: new message shape {}", label, signature);
+                    }
+                }
+
+                // Token counts are numbers, not content, so the whole object is
+                // safe to log — and its real field names are the thing we do
+                // not know.
+                if let Some(usage) = value
+                    .get("usageMetadata")
+                    .or_else(|| value["serverContent"].get("usageMetadata"))
+                {
+                    if !usage_logged {
+                        usage_logged = true;
+                        log::debug!("gemini-live[{}]: usageMetadata {}", label, usage);
+                    }
+                }
 
                 if let Some((input, output)) = crate::ai_usage::usage_of(&value) {
                     usage.lock().unwrap().record(input, output);

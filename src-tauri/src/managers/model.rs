@@ -37,14 +37,29 @@ pub enum EngineType {
     /// `/audio/transcriptions` endpoint — verbatim speech-to-text. Same
     /// not-downloaded/`filename`-as-slug conventions as [`EngineType::OpenRouter`].
     OpenRouterAsr,
+    /// Cloud transcription straight from Google's Gemini API (not through
+    /// OpenRouter), using the same batch endpoint the meeting finalize pass
+    /// uses. Authenticated with `gemini_api_key` rather than the OpenRouter
+    /// key; `filename` carries the bare Gemini model id.
+    ///
+    /// This is the only cloud engine that can attribute speakers and stream
+    /// live, which is why meetings can drive it beyond plain transcription.
+    Gemini,
 }
 
+/// Catalogue id of the direct-Gemini entry. Referenced by the settings
+/// migration that moves pre-existing "finalize with Gemini" users onto it.
+pub const GEMINI_MODEL_ID: &str = "gemini-transcribe";
+
 impl EngineType {
-    /// Whether this engine runs in the cloud via OpenRouter (chat or dedicated
-    /// ASR). Cloud engines share the "not downloaded, slug-in-filename, reuse
-    /// the OpenRouter key, skip idle-unload" handling.
+    /// Whether this engine runs in the cloud. Cloud engines share the "not
+    /// downloaded, slug-in-filename, no local path, skip idle-unload" handling;
+    /// they differ only in which endpoint and which API key they use.
     pub fn is_cloud(&self) -> bool {
-        matches!(self, EngineType::OpenRouter | EngineType::OpenRouterAsr)
+        matches!(
+            self,
+            EngineType::OpenRouter | EngineType::OpenRouterAsr | EngineType::Gemini
+        )
     }
 }
 
@@ -312,6 +327,38 @@ impl ModelManager {
                 engine_type: EngineType::OpenRouterAsr,
                 accuracy_score: 0.0,
                 speed_score: 0.0,
+                supports_translation: false,
+                is_recommended: false,
+                supported_languages: whisper_languages.clone(),
+                supports_language_selection: true,
+                is_custom: false,
+            },
+        );
+
+        // --- Cloud models (Google Gemini, direct) --------------------------
+        // Same not-downloaded/slug-in-filename conventions as the OpenRouter
+        // entries above, but authenticated with `gemini_api_key` and talking to
+        // Google directly. Listing it here is what makes Gemini selectable for
+        // dictation instead of being reachable only from the meeting settings.
+        available_models.insert(
+            GEMINI_MODEL_ID.to_string(),
+            ModelInfo {
+                id: GEMINI_MODEL_ID.to_string(),
+                name: "Gemini Transcribe (Google)".to_string(),
+                description:
+                    "Cloud transcription direct from Google. Needs a Gemini API key. Very accurate, handles accents and mixed languages."
+                        .to_string(),
+                filename: crate::gemini_transcribe::DEFAULT_BATCH_TRANSCRIBE_MODEL.to_string(),
+                url: None,
+                sha256: None,
+                size_mb: 0,
+                is_downloaded: true,
+                is_downloading: false,
+                partial_size: 0,
+                is_directory: false,
+                engine_type: EngineType::Gemini,
+                accuracy_score: 0.95,
+                speed_score: 0.5,
                 supports_translation: false,
                 is_recommended: false,
                 supported_languages: whisper_languages.clone(),

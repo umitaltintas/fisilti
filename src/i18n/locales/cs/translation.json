@@ -3,10 +3,15 @@
     "settings": "Nastavení...",
     "checkUpdates": "Zkontrolovat aktualizace...",
     "copyLastTranscript": "Zkopírovat poslední přepis",
+    "history": "Historie diktování...",
     "unloadModel": "Uvolnit model",
     "model": "Model",
+    "modelsOnDevice": "V tomto zařízení",
+    "modelsCloud": "Cloud",
     "quit": "Ukončit",
     "cancel": "Zrušit",
+    "startDictation": "Spustit diktování",
+    "stopDictation": "Zastavit diktování",
     "startMeeting": "Zahájit schůzku",
     "stopMeeting": "Ukončit schůzku",
     "recordingIndicator": "Fısıltı — Nahrávání…",
@@ -17,10 +22,14 @@
     "models": "Modely",
     "advanced": "Pokročilé",
     "postProcessing": "Následné zpracování",
-    "history": "Historie",
+    "history": "Historie diktování",
     "debug": "Ladění",
     "about": "O aplikaci",
-    "meeting": "Meeting"
+    "meeting": "Meeting",
+    "groups": {
+      "features": "Funkce",
+      "system": "Systém"
+    }
   },
   "onboarding": {
     "subtitle": "Pro začátek vyberte model pro přepis",
@@ -184,6 +193,37 @@
         "modelPlaceholder": "např. openai/gpt-4o-mini-transcribe",
         "browseModels": "Procházet modely →",
         "modelRequired": "Zadejte identifikátor modelu OpenRouter (např. google/gemini-2.5-flash)."
+      },
+      "gemini": {
+        "description": "Tento model přepisuje v cloudu, přímo u Google. Váš zvuk se odesílá společnosti Google a účtuje se po minutách. Stejný klíč Gemini se používá pro přepis schůzek.",
+        "apiKeyPlaceholder": "Klíč API Gemini",
+        "apiKeyStored": "Klíč je uložen. Vložte nový, chcete-li jej nahradit.",
+        "getKey": "Získat klíč API →",
+        "keyRequired": "Zadejte svůj klíč API Gemini, abyste mohli tento model použít."
+      },
+      "meetingModel": {
+        "title": "Model pro schůzky",
+        "description": "Schůzky mohou používat jiný model než diktování — přesný cloudový model pro dlouhou schůzku a něco lokálního a okamžitého pro stiskni-a-mluv.",
+        "label": "Přepisovat schůzky pomocí",
+        "hint": "Platí pro živý přepis i závěrečný průchod. Model diktování se nemění.",
+        "sameAsDictation": "Stejně jako diktování",
+        "sameAsDictationNamed": "Stejně jako diktování ({{model}})"
+      },
+      "activeModel": "Aktivní model",
+      "browse": "Všechny modely",
+      "searchPlaceholder": "Hledat model nebo jazyk",
+      "languageCount": "Počet jazyků: {{count}}",
+      "badges": {
+        "cloud": "Běží v cloudu",
+        "local": "Běží v tomto zařízení"
+      },
+      "groups": {
+        "installed": "Staženo",
+        "cloud": "Cloud",
+        "multilingual": "Vícejazyčný",
+        "multilingualShort": "Vícejazyčný",
+        "english": "Pouze angličtina",
+        "regional": "Konkrétní jazyky"
       }
     },
     "general": {
@@ -230,6 +270,10 @@
       "pushToTalk": {
         "label": "Stisk a mluv",
         "description": "Podržte pro nahrávání, uvolněte pro zastavení"
+      },
+      "groups": {
+        "recording": "Nahrávání",
+        "app": "Aplikace"
       }
     },
     "sound": {
@@ -262,7 +306,8 @@
         "output": "Výstup",
         "transcription": "Přepis",
         "history": "Historie",
-        "experimental": "Experimentální"
+        "experimental": "Experimentální",
+        "developer": "Vývojář"
       },
       "experimentalToggle": {
         "label": "Experimentální funkce",
@@ -428,10 +473,11 @@
         "cancel": "Zrušit",
         "selectToEdit": "Vyberte výše prompt, abyste zobrazili a upravili jeho podrobnosti.",
         "createFirst": "Klikněte nahoře na 'Vytvořit nový prompt' a vytvořte svůj první prompt pro následné zpracování."
-      }
+      },
+      "description": "Nechte model AI upravit, přeformátovat nebo přeložit každý přepis, než se vloží."
     },
     "history": {
-      "title": "Historie",
+      "title": "Historie diktování",
       "openFolder": "Otevřít složku nahrávek",
       "loading": "Načítám historii...",
       "empty": "Zatím žádné přepisy. Začněte nahrávat a vytvořte si historii!",
@@ -443,7 +489,8 @@
       "retranscribe": "Přepsat znovu",
       "retranscribeError": "Opětovný přepis se nezdařil. Zkuste to prosím znovu.",
       "transcribing": "Přepisuji...",
-      "transcriptionFailed": "Přepis selhal. Můžete zkusit přepis znovu pomocí ikony opakování."
+      "transcriptionFailed": "Přepis selhal. Můžete zkusit přepis znovu pomocí ikony opakování.",
+      "retentionSettings": "Nastavení historie"
     },
     "debug": {
       "title": "Ladění",
@@ -585,7 +632,8 @@
     "off": "Vypnuto",
     "yes": "Ano",
     "no": "Ne",
-    "noOptionsFound": "Nenalezeny žádné možnosti"
+    "noOptionsFound": "Nenalezeny žádné možnosti",
+    "clear": "Vymazat"
   },
   "accessibility": {
     "permissionsRequired": "Vyžadována oprávnění usnadnění přístupu",
@@ -690,7 +738,9 @@
     "autoEndToggle": "Nabídnout ukončení po delším tichu",
     "autoEndDescription": "Pokud po zvolenou dobu není rozpoznána řeč, zobrazí se dotaz na ukončení schůzky — bez odpovědi bude ukončena automaticky.",
     "silenceTimeoutLabel": "Ticho před dotazem",
+    "silenceTimeoutDescription": "Jak dlouho musí být na schůzce ticho, než se zobrazí dotaz, zda ji ukončit.",
     "autoEndGraceLabel": "Automaticky ukončit po",
+    "autoEndGraceDescription": "Jak dlouho tento dotaz čeká na odpověď, než se schůzka ukončí sama.",
     "durationMinutes": "{{count}} min",
     "durationSeconds": "{{count}} s",
     "tabSession": "Session",
@@ -711,7 +761,11 @@
     "generalSection": "General",
     "calendarNamesToggle": "Pojmenovávat schůzky podle kalendáře",
     "calendarNamesDescription": "Nové relace dostanou název právě probíhající události v kalendáři. Zapnutí vyžádá přístup ke kalendáři.",
-    "calendarAccessDenied": "Přístup ke kalendáři byl odepřen. Povolit ho můžete v Nastavení systému → Soukromí a zabezpečení → Kalendáře."
+    "calendarAccessDenied": "Přístup ke kalendáři byl odepřen. Povolit ho můžete v Nastavení systému → Soukromí a zabezpečení → Kalendáře.",
+    "liveTranslateTargetDescription": "Jazyk, do kterého se překládá živá řeč.",
+    "geminiSection": "Živý přepis (Gemini)",
+    "geminiNeedsKey": "Živý přepis a rozpoznávání mluvčích vyžadují klíč API Gemini.",
+    "geminiOpenModels": "Otevřít Modely"
   },
   "meetingPrompt": {
     "startTitle": "Zjištěna schůzka",

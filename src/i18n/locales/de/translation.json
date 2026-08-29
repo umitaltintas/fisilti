@@ -3,10 +3,15 @@
     "settings": "Einstellungen...",
     "checkUpdates": "Nach Updates suchen...",
     "copyLastTranscript": "Letzte Transkription kopieren",
+    "history": "Diktat-Verlauf ...",
     "unloadModel": "Modell entladen",
     "model": "Modell",
+    "modelsOnDevice": "Auf diesem Gerät",
+    "modelsCloud": "Cloud",
     "quit": "Beenden",
     "cancel": "Abbrechen",
+    "startDictation": "Diktat starten",
+    "stopDictation": "Diktat beenden",
     "startMeeting": "Meeting starten",
     "stopMeeting": "Meeting stoppen",
     "recordingIndicator": "Fısıltı — Aufnahme…",
@@ -17,10 +22,14 @@
     "models": "Modelle",
     "advanced": "Erweitert",
     "postProcessing": "Nachbearbeitung",
-    "history": "Verlauf",
+    "history": "Diktat-Verlauf",
     "debug": "Debug",
     "about": "Info",
-    "meeting": "Meeting"
+    "meeting": "Meeting",
+    "groups": {
+      "features": "Funktionen",
+      "system": "System"
+    }
   },
   "onboarding": {
     "subtitle": "Wähle ein Transkriptionsmodell, um loszulegen",
@@ -184,6 +193,37 @@
         "modelPlaceholder": "z. B. openai/gpt-4o-mini-transcribe",
         "browseModels": "Modelle durchsuchen →",
         "modelRequired": "Gib einen OpenRouter-Modell-Slug ein (z. B. google/gemini-2.5-flash)."
+      },
+      "gemini": {
+        "description": "Dieses Modell transkribiert in der Cloud, direkt bei Google. Ihr Audio wird an Google gesendet und pro Minute abgerechnet. Derselbe Gemini-Schlüssel wird für die Besprechungstranskription verwendet.",
+        "apiKeyPlaceholder": "Gemini-API-Schlüssel",
+        "apiKeyStored": "Ein Schlüssel ist gespeichert. Fügen Sie einen neuen ein, um ihn zu ersetzen.",
+        "getKey": "API-Schlüssel holen →",
+        "keyRequired": "Geben Sie Ihren Gemini-API-Schlüssel ein, um dieses Modell zu verwenden."
+      },
+      "meetingModel": {
+        "title": "Besprechungsmodell",
+        "description": "Besprechungen können ein anderes Modell verwenden als das Diktat — ein genaues Cloud-Modell für eine lange Besprechung, etwas Lokales und Sofortiges für Push-to-Talk.",
+        "label": "Besprechungen transkribieren mit",
+        "hint": "Gilt für das Live-Transkript und den Abschlussdurchlauf. Das Diktatmodell bleibt unverändert.",
+        "sameAsDictation": "Wie beim Diktat",
+        "sameAsDictationNamed": "Wie beim Diktat ({{model}})"
+      },
+      "activeModel": "Aktives Modell",
+      "browse": "Alle Modelle",
+      "searchPlaceholder": "Modell oder Sprache suchen",
+      "languageCount": "{{count}} Sprachen",
+      "badges": {
+        "cloud": "Läuft in der Cloud",
+        "local": "Läuft auf diesem Gerät"
+      },
+      "groups": {
+        "installed": "Heruntergeladen",
+        "cloud": "Cloud",
+        "multilingual": "Mehrsprachig",
+        "multilingualShort": "Mehrsprachig",
+        "english": "Nur Englisch",
+        "regional": "Bestimmte Sprachen"
       }
     },
     "general": {
@@ -230,6 +270,10 @@
       "pushToTalk": {
         "label": "Push-to-Talk",
         "description": "Gedrückt halten zum Aufnehmen, loslassen zum Stoppen"
+      },
+      "groups": {
+        "recording": "Aufnahme",
+        "app": "App"
       }
     },
     "sound": {
@@ -262,7 +306,8 @@
         "output": "Ausgabe",
         "transcription": "Transkription",
         "history": "Verlauf",
-        "experimental": "Experimentell"
+        "experimental": "Experimentell",
+        "developer": "Entwickler"
       },
       "experimentalToggle": {
         "label": "Experimentelle Funktionen",
@@ -428,10 +473,11 @@
         "cancel": "Abbrechen",
         "selectToEdit": "Wähle oben einen Prompt aus, um dessen Details anzuzeigen und zu bearbeiten.",
         "createFirst": "Klicke oben auf 'Neuen Prompt erstellen', um deinen ersten Nachbearbeitungs-Prompt zu erstellen."
-      }
+      },
+      "description": "Lassen Sie ein KI-Modell jede Transkription bereinigen, umformatieren oder übersetzen, bevor sie eingefügt wird."
     },
     "history": {
-      "title": "Verlauf",
+      "title": "Diktat-Verlauf",
       "openFolder": "Aufnahmeordner öffnen",
       "loading": "Verlauf wird geladen...",
       "empty": "Noch keine Transkriptionen. Starte eine Aufnahme, um deinen Verlauf aufzubauen!",
@@ -443,7 +489,8 @@
       "retranscribe": "Erneut transkribieren",
       "retranscribeError": "Erneute Transkription fehlgeschlagen. Bitte versuche es erneut.",
       "transcribing": "Transkribiere...",
-      "transcriptionFailed": "Transkription fehlgeschlagen. Du kannst über das Wiederholen-Symbol erneut transkribieren."
+      "transcriptionFailed": "Transkription fehlgeschlagen. Du kannst über das Wiederholen-Symbol erneut transkribieren.",
+      "retentionSettings": "Verlaufseinstellungen"
     },
     "debug": {
       "title": "Debug",
@@ -585,7 +632,8 @@
     "off": "Aus",
     "yes": "Ja",
     "no": "Nein",
-    "noOptionsFound": "Keine Optionen gefunden"
+    "noOptionsFound": "Keine Optionen gefunden",
+    "clear": "Leeren"
   },
   "accessibility": {
     "permissionsRequired": "Bedienungshilfen-Berechtigungen erforderlich",
@@ -690,7 +738,9 @@
     "autoEndToggle": "Beenden nach längerer Stille anbieten",
     "autoEndDescription": "Wird für die gewählte Dauer keine Sprache erkannt, wird gefragt, ob das Meeting beendet werden soll — ohne Antwort wird es automatisch beendet.",
     "silenceTimeoutLabel": "Stille vor der Nachfrage",
+    "silenceTimeoutDescription": "Wie lange die Besprechung still bleiben muss, bevor Sie gefragt werden, ob sie beendet werden soll.",
     "autoEndGraceLabel": "Automatisch beenden nach",
+    "autoEndGraceDescription": "Wie lange diese Abfrage auf eine Antwort wartet, bevor die Besprechung von selbst endet.",
     "durationMinutes": "{{count}} Min.",
     "durationSeconds": "{{count}} Sek.",
     "tabSession": "Session",
@@ -711,7 +761,11 @@
     "generalSection": "General",
     "calendarNamesToggle": "Meetings nach Kalender benennen",
     "calendarNamesDescription": "Neue Sitzungen erhalten den Titel des gerade laufenden Kalendertermins. Beim Aktivieren wird Kalenderzugriff angefragt.",
-    "calendarAccessDenied": "Kalenderzugriff wurde verweigert. Erlaube ihn unter Systemeinstellungen → Datenschutz & Sicherheit → Kalender."
+    "calendarAccessDenied": "Kalenderzugriff wurde verweigert. Erlaube ihn unter Systemeinstellungen → Datenschutz & Sicherheit → Kalender.",
+    "liveTranslateTargetDescription": "Die Sprache, in die live gesprochene Sprache übersetzt wird.",
+    "geminiSection": "Live-Transkription (Gemini)",
+    "geminiNeedsKey": "Live-Transkription und Sprecherzuordnung benötigen einen Gemini-API-Schlüssel.",
+    "geminiOpenModels": "Modelle öffnen"
   },
   "meetingPrompt": {
     "startTitle": "Meeting erkannt",

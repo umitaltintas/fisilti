@@ -28,12 +28,20 @@ use specta::Type;
 /// (audio out) and a transcribe session (text out) sit side by side.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Type)]
 pub struct ModelUsage {
-    /// Bare model id the tokens were spent on.
+    /// Bare model id the work was spent on.
     pub model: String,
-    /// Tokens the model consumed (audio in, for every path here).
+    /// Tokens the model consumed, when it reported them.
     pub input_tokens: u64,
-    /// Tokens the model produced.
+    /// Tokens the model produced, when it reported them.
     pub output_tokens: u64,
+    /// Seconds of audio streamed to this model.
+    ///
+    /// Measured on our side, and for the Live API it is the ONLY basis
+    /// available: `gemini-3.5-transcribe-live` sends no `usageMetadata` at all
+    /// — verified by enumerating every distinct message shape across whole
+    /// meetings — so a token-only design silently reported nothing.
+    #[serde(default)]
+    pub audio_seconds: u64,
 }
 
 /// Everything a meeting spent, one entry per model involved.
@@ -47,18 +55,31 @@ impl MeetingUsage {
     /// same model so a meeting that reconnected six times still reads as one
     /// line per model.
     pub fn add(&mut self, model: &str, input_tokens: u64, output_tokens: u64) {
-        if input_tokens == 0 && output_tokens == 0 {
+        self.add_with_audio(model, input_tokens, output_tokens, 0);
+    }
+
+    /// Fold in usage that also carries measured audio duration.
+    pub fn add_with_audio(
+        &mut self,
+        model: &str,
+        input_tokens: u64,
+        output_tokens: u64,
+        audio_seconds: u64,
+    ) {
+        if input_tokens == 0 && output_tokens == 0 && audio_seconds == 0 {
             return;
         }
         match self.entries.iter_mut().find(|e| e.model == model) {
             Some(entry) => {
                 entry.input_tokens += input_tokens;
                 entry.output_tokens += output_tokens;
+                entry.audio_seconds += audio_seconds;
             }
             None => self.entries.push(ModelUsage {
                 model: model.to_string(),
                 input_tokens,
                 output_tokens,
+                audio_seconds,
             }),
         }
     }
@@ -78,8 +99,16 @@ impl MeetingUsage {
         for entry in &self.entries {
             match price_for(&entry.model) {
                 Some(price) => {
-                    usd += entry.input_tokens as f64 / 1_000_000.0 * price.input_per_mtok;
-                    usd += entry.output_tokens as f64 / 1_000_000.0 * price.output_per_mtok;
+                    // Prefer reported tokens; fall back to measured audio when
+                    // the model reports none. Never both — that would bill the
+                    // same audio twice.
+                    if entry.input_tokens > 0 || entry.output_tokens > 0 {
+                        usd += entry.input_tokens as f64 / 1_000_000.0 * price.input_per_mtok;
+                        usd += entry.output_tokens as f64 / 1_000_000.0 * price.output_per_mtok;
+                    } else {
+                        let minutes = entry.audio_seconds as f64 / 60.0;
+                        usd += minutes * (price.input_per_min + price.output_per_min);
+                    }
                 }
                 None => complete = false,
             }
@@ -101,6 +130,10 @@ pub struct CostEstimate {
 struct Price {
     input_per_mtok: f64,
     output_per_mtok: f64,
+    /// Google's published per-minute-of-audio figures, used when the model
+    /// reports no tokens.
+    input_per_min: f64,
+    output_per_min: f64,
 }
 
 /// Published paid-tier pricing, per million tokens.
@@ -112,18 +145,23 @@ fn price_for(model: &str) -> Option<Price> {
     let model = model.trim_start_matches("models/");
     // Longest-prefix first, so "…-live-translate" is not captured by a shorter
     // entry that happens to also match.
-    const TABLE: &[(&str, f64, f64)] = &[
-        ("gemini-3.5-live-translate", 3.50, 21.00),
-        ("gemini-3.5-transcribe-live", 3.50, 21.00),
-        ("gemini-3.5-transcribe", 2.00, 12.00),
+    // (prefix, $/Mtok in, $/Mtok out, $/min in, $/min out)
+    const TABLE: &[(&str, f64, f64, f64, f64)] = &[
+        ("gemini-3.5-live-translate", 3.50, 21.00, 0.0053, 0.0315),
+        ("gemini-3.5-transcribe-live", 3.50, 21.00, 0.005, 0.004),
+        ("gemini-3.5-transcribe", 2.00, 12.00, 0.003, 0.002),
     ];
     TABLE
         .iter()
-        .find(|(prefix, _, _)| model.starts_with(prefix))
-        .map(|&(_, input_per_mtok, output_per_mtok)| Price {
-            input_per_mtok,
-            output_per_mtok,
-        })
+        .find(|(prefix, ..)| model.starts_with(prefix))
+        .map(
+            |&(_, input_per_mtok, output_per_mtok, input_per_min, output_per_min)| Price {
+                input_per_mtok,
+                output_per_mtok,
+                input_per_min,
+                output_per_min,
+            },
+        )
 }
 
 /// Read `usageMetadata` out of an API message.
@@ -133,7 +171,12 @@ fn price_for(model: &str) -> Option<Price> {
 /// rather than failing — usage is a nice-to-have on top of transcription, and
 /// must never be able to break it.
 pub fn usage_of(value: &Value) -> Option<(u64, u64)> {
-    let usage = value.get("usageMetadata")?;
+    // Seen at the top level on some messages; checked inside `serverContent`
+    // too because this API has already placed two other fields somewhere other
+    // than where its own examples show them.
+    let usage = value
+        .get("usageMetadata")
+        .or_else(|| value["serverContent"].get("usageMetadata"))?;
     let input = usage["promptTokenCount"].as_u64().unwrap_or(0);
     let output = usage["responseTokenCount"]
         .as_u64()
@@ -212,6 +255,7 @@ mod tests {
     fn zero_usage_adds_nothing() {
         let mut usage = MeetingUsage::default();
         usage.add("gemini-3.5-transcribe", 0, 0);
+        usage.add_with_audio("gemini-3.5-transcribe", 0, 0, 0);
         assert!(usage.is_empty());
     }
 
@@ -245,6 +289,35 @@ mod tests {
     }
 
     #[test]
+    fn audio_duration_prices_a_model_that_reports_no_tokens() {
+        // gemini-3.5-transcribe-live sends no usageMetadata at all, so without
+        // this the whole feature silently reported nothing.
+        let mut usage = MeetingUsage::default();
+        usage.add_with_audio("gemini-3.5-transcribe-live", 0, 0, 600);
+        // 10 minutes at $0.005 + $0.004 per minute.
+        let estimate = usage.estimate_usd();
+        assert!((estimate.usd - 0.09).abs() < 1e-9, "got {}", estimate.usd);
+        assert!(estimate.complete);
+    }
+
+    #[test]
+    fn reported_tokens_win_so_audio_is_never_billed_twice() {
+        let mut usage = MeetingUsage::default();
+        usage.add_with_audio("gemini-3.5-transcribe", 1_000_000, 0, 600);
+        // Tokens only: $2.00, with no per-minute charge added on top.
+        assert!((usage.estimate_usd().usd - 2.00).abs() < 1e-9);
+    }
+
+    #[test]
+    fn audio_seconds_accumulate_across_reconnects() {
+        let mut usage = MeetingUsage::default();
+        usage.add_with_audio("gemini-3.5-transcribe-live", 0, 0, 300);
+        usage.add_with_audio("gemini-3.5-transcribe-live", 0, 0, 300);
+        assert_eq!(usage.entries.len(), 1);
+        assert_eq!(usage.entries[0].audio_seconds, 600);
+    }
+
+    #[test]
     fn an_unpriced_model_marks_the_estimate_incomplete() {
         let mut usage = MeetingUsage::default();
         usage.add("gemini-3.5-transcribe", 1_000_000, 0);
@@ -270,6 +343,13 @@ mod tests {
                 "promptTokenCount": 5, "candidatesTokenCount": 3
             }})),
             Some((5, 3))
+        );
+        // Nested under serverContent, which is where some messages carry it.
+        assert_eq!(
+            usage_of(&json!({ "serverContent": { "usageMetadata": {
+                "promptTokenCount": 7, "responseTokenCount": 2
+            }}})),
+            Some((7, 2))
         );
         assert_eq!(usage_of(&json!({})), None);
         assert_eq!(

@@ -220,9 +220,97 @@ a bare Meet room code) → the existing LLM auto-title on stop → datetime.
   "Settings" tab (`MeetingPreferences.tsx`) and requests calendar access
   before persisting the setting
 
+## Settings Information Architecture
+
+The sidebar has a fixed set of always-visible sections, grouped into three
+clusters (`SECTIONS_CONFIG` in `src/components/Sidebar.tsx`):
+
+| Cluster   | Sections                                     |
+| --------- | -------------------------------------------- |
+| (unnamed) | General, Models                              |
+| Features  | Post-processing, Meetings, Dictation history |
+| System    | Advanced, About                              |
+
+**Rules to keep it from drifting back:**
+
+- **One home per setting.** A setting belongs to exactly one page. If it feels
+  like it belongs to two, the page split is wrong — don't duplicate it.
+- **A feature's on/off switch lives at the top of that feature's own page**,
+  never on another page. Sections must not appear/disappear from the sidebar
+  based on a toggle.
+- **Model-specific settings** (recognition language, translate-to-English,
+  cloud API key) live in `models/ActiveModelPanel.tsx`, next to the model
+  picker — not on General.
+- **Debug/low-level settings** are the "Developer" group at the bottom of
+  Advanced, shown only when `debug_mode` is on.
+- Long lists use `ui/CollapsibleGroup.tsx` so a page opens showing only what
+  is likely needed.
+- **One set of settings primitives.** Anything that reads as a setting is built
+  from `SettingsGroup` + `SettingContainer` / `ToggleSwitch` / `Dropdown`, on
+  every page including the ones inside a feature workspace. Do not grow a
+  local toggle or select widget for one page — a toggle must look and behave
+  the same everywhere.
+- **"History" means dictation history.** The sidebar entry is _Dictation
+  history_ (`sidebar.history`); the meeting archive is the History tab inside
+  Meetings. Two archives, two names, no shared label.
+
+The models list (`models/ModelsSettings.tsx`) renders ~20 entries as compact
+`ModelRow`s bucketed into Installed / Cloud / Multilingual / English only /
+Specific languages. Only the first non-empty bucket is expanded. The search box
+matches names, descriptions **and** supported languages, which is why there is
+no separate language-filter dropdown.
+
+**Model selection is two settings, one page.** `selected_model` drives
+dictation; `meeting_selected_model` drives meetings and is empty by default,
+meaning "follow the dictation model". Never read `selected_model` from a
+meeting code path — go through `AppSettings::meeting_model_id()`, or the two
+silently diverge (the loader warms one engine while metadata lookups describe
+another). Both pickers live on the Models page: the big list sets the
+dictation model, `models/MeetingModelPanel.tsx` sets the meeting one.
+
+Only ONE engine is resident at a time, so `initiate_model_load_for` swaps
+whenever the resident model is not the requested one, and the dictation
+entry point `initiate_model_load` no-ops entirely while a meeting is running —
+the meeting owns the engine for its duration.
+
+Cloud engines are `EngineType::is_cloud()`: OpenRouter (chat + ASR, keyed by
+`post_process_api_keys["openrouter"]`) and Gemini (direct to Google, keyed by
+`gemini_api_key`). Adding a cloud engine means adding it to `is_cloud()` — that
+one predicate drives download status, deletion, local paths, idle-unload
+exemption and tray grouping. On the frontend use `lib/utils/model.ts`
+(`isCloudModel` / `cloudProviderOf`), never an inline `engine_type ===` check.
+
+**Choosing Gemini as the meeting model is the only switch for Gemini
+transcription.** There is deliberately no "finalize with Gemini" toggle: it
+used to exist alongside the model choice, which meant two Gemini paths of
+different quality picked by a hidden boolean.
+`MeetingManager::gemini_finalize_config` keys off the meeting model's engine
+type and routes finalize through the per-source `finalize_via_gemini` (which
+keeps you/others labels and can diarize) rather than the generic single-blob
+cloud path. `meeting_gemini_finalize` survives in `AppSettings` only so
+`migrate_gemini_finalize_to_meeting_model` can read it off existing installs;
+nothing else may read it.
+
+API keys have one home each, on the Models page next to the active model.
+Meeting settings never grow a key field — Gemini Live needs the key even when
+the meeting model is local, so that page links to Models instead (a frontend
+`emit("navigate-section", "models")`, which `App.tsx` already listens for).
+
+Meetings is the one sidebar entry that is a **workspace** rather than a
+settings page, so it keeps its own Session / History / Settings tabs. Its
+Settings tab (`meeting/MeetingPreferences.tsx`) is still built from the shared
+primitives: a visible "General" group (shortcut, auto-summarize, calendar
+names) plus two `CollapsibleGroup`s — Gemini and automatic detection — that
+open only when they are already in use (`geminiInUse`, `autoDetect`). Those
+defaults are read from the backend, which is why the tab renders a spacer
+until the settings load instead of painting a collapsed group and expanding it
+a frame later.
+
 ## Debug Mode
 
-Access debug features: `Cmd+Shift+D` (macOS) or `Ctrl+Shift+D` (Windows/Linux)
+Access debug features: `Cmd+Shift+D` (macOS) or `Ctrl+Shift+D` (Windows/Linux).
+This reveals the "Developer" group at the bottom of Settings → Advanced
+(there is no separate Debug section) and navigates there.
 
 ## Platform Notes
 

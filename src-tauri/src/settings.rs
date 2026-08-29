@@ -408,10 +408,22 @@ pub struct AppSettings {
     /// (using the active post-process provider). Additive; defaults to false.
     #[serde(default)]
     pub meeting_auto_summarize: bool,
+    /// Meeting mode: which model transcribes meetings, independent of the model
+    /// dictation uses.
+    ///
+    /// Empty (the default) means "whatever dictation uses", which is both the
+    /// old behaviour and a sensible default — it keeps following
+    /// [`Self::selected_model`] when the user changes that. Set it to run
+    /// meetings on something else: an accurate cloud model for meetings while
+    /// push-to-talk dictation stays local and free.
+    ///
+    /// Read through [`Self::meeting_model_id`], never directly.
+    #[serde(default)]
+    pub meeting_selected_model: String,
     /// Meeting mode: the model used for the high-quality FINAL (on-stop)
-    /// re-transcription pass. Swapped in for finalize only, then the user's
-    /// normal `selected_model` is restored. Defaults to "turbo"
-    /// (large-v3-turbo). The LIVE preview path keeps using `selected_model`.
+    /// re-transcription pass. Swapped in for finalize only, then the meeting
+    /// model is restored. Defaults to "turbo" (large-v3-turbo). The LIVE
+    /// preview path uses [`Self::meeting_model_id`].
     #[serde(default = "default_meeting_final_model")]
     pub meeting_final_model: String,
     /// Meeting mode: language forced for meeting transcription windows. Fixes
@@ -467,10 +479,14 @@ pub struct AppSettings {
     /// Live API model id used for live transcription (no translation).
     #[serde(default = "default_meeting_live_transcribe_model")]
     pub meeting_live_transcribe_model: String,
-    /// Meeting mode: run the on-stop finalize pass through Gemini's batch
-    /// transcription model instead of the local Whisper windows. Slower to
-    /// start (the audio is uploaded first) but it is the only path that can
-    /// attribute speech to individual speakers.
+    /// DEPRECATED, kept only so [`migrate_gemini_finalize_to_meeting_model`]
+    /// can read it off existing installs.
+    ///
+    /// This used to be a toggle: "run the on-stop finalize through Gemini
+    /// instead of the local Whisper windows". Choosing Gemini as the meeting
+    /// model now says the same thing in one place, and having both meant two
+    /// Gemini paths of different quality selected by a hidden boolean. Nothing
+    /// reads this field any more; the migration clears it.
     #[serde(default)]
     pub meeting_gemini_finalize: bool,
     /// Batch transcription model id for the Gemini finalize pass.
@@ -852,6 +868,24 @@ fn default_typing_tool() -> TypingTool {
     TypingTool::Auto
 }
 
+/// Move installs that had "finalize with Gemini" switched on onto the Gemini
+/// meeting model, so the feature keeps working after the toggle was removed.
+///
+/// Only picks the model when the user has not already chosen one — an explicit
+/// choice must never be overwritten by a migration. Returns whether anything
+/// changed, so the caller knows to persist.
+fn migrate_gemini_finalize_to_meeting_model(settings: &mut AppSettings) -> bool {
+    if !settings.meeting_gemini_finalize {
+        return false;
+    }
+    settings.meeting_gemini_finalize = false;
+    if settings.meeting_selected_model.trim().is_empty() {
+        settings.meeting_selected_model = crate::managers::model::GEMINI_MODEL_ID.to_string();
+        debug!("Migrated 'finalize with Gemini' onto the Gemini meeting model");
+    }
+    true
+}
+
 fn ensure_post_process_defaults(settings: &mut AppSettings) -> bool {
     let mut changed = false;
     for provider in default_post_process_providers() {
@@ -1027,6 +1061,7 @@ pub fn get_default_settings() -> AppSettings {
         ort_accelerator: OrtAcceleratorSetting::default(),
         extra_recording_buffer_ms: 0,
         meeting_auto_summarize: false,
+        meeting_selected_model: String::new(),
         meeting_final_model: default_meeting_final_model(),
         meeting_language: default_meeting_language(),
         meeting_summary_templates: default_meeting_summary_templates(),
@@ -1071,6 +1106,22 @@ impl AppSettings {
             return self.gemini_api_key.trim().to_string();
         }
         String::new()
+    }
+
+    /// Which model transcribes meetings.
+    ///
+    /// [`Self::meeting_selected_model`] when the user picked one, otherwise the
+    /// dictation model. Every meeting code path must go through this rather
+    /// than reading `selected_model`, or the two selections silently diverge:
+    /// the live pass would transcribe with one model while the loader warmed up
+    /// another.
+    pub fn meeting_model_id(&self) -> &str {
+        let explicit = self.meeting_selected_model.trim();
+        if explicit.is_empty() {
+            &self.selected_model
+        } else {
+            explicit
+        }
     }
 
     pub fn active_post_process_provider(&self) -> Option<&PostProcessProvider> {
@@ -1139,7 +1190,9 @@ pub fn load_or_create_app_settings(app: &AppHandle) -> AppSettings {
         default_settings
     };
 
-    if ensure_post_process_defaults(&mut settings) {
+    let mut migrated = ensure_post_process_defaults(&mut settings);
+    migrated |= migrate_gemini_finalize_to_meeting_model(&mut settings);
+    if migrated {
         store.set("settings", serde_json::to_value(&settings).unwrap());
     }
 
@@ -1163,7 +1216,9 @@ pub fn get_settings(app: &AppHandle) -> AppSettings {
         default_settings
     };
 
-    if ensure_post_process_defaults(&mut settings) {
+    let mut migrated = ensure_post_process_defaults(&mut settings);
+    migrated |= migrate_gemini_finalize_to_meeting_model(&mut settings);
+    if migrated {
         store.set("settings", serde_json::to_value(&settings).unwrap());
     }
 
@@ -1205,6 +1260,63 @@ pub fn get_recording_retention_period(app: &AppHandle) -> RecordingRetentionPeri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_old_gemini_finalize_toggle_becomes_the_gemini_meeting_model() {
+        let mut settings = get_default_settings();
+        settings.meeting_gemini_finalize = true;
+
+        assert!(migrate_gemini_finalize_to_meeting_model(&mut settings));
+        assert_eq!(
+            settings.meeting_selected_model,
+            crate::managers::model::GEMINI_MODEL_ID
+        );
+        // The flag is cleared, so the migration is not re-run on every load.
+        assert!(!settings.meeting_gemini_finalize);
+        assert!(!migrate_gemini_finalize_to_meeting_model(&mut settings));
+    }
+
+    #[test]
+    fn the_migration_never_overwrites_a_chosen_meeting_model() {
+        let mut settings = get_default_settings();
+        settings.meeting_gemini_finalize = true;
+        settings.meeting_selected_model = "turbo".to_string();
+
+        assert!(migrate_gemini_finalize_to_meeting_model(&mut settings));
+        assert_eq!(settings.meeting_selected_model, "turbo");
+        assert!(!settings.meeting_gemini_finalize);
+    }
+
+    #[test]
+    fn installs_without_the_old_toggle_are_left_alone() {
+        let mut settings = get_default_settings();
+        assert!(!migrate_gemini_finalize_to_meeting_model(&mut settings));
+        assert_eq!(settings.meeting_selected_model, "");
+    }
+
+    #[test]
+    fn meetings_follow_the_dictation_model_until_told_otherwise() {
+        let mut settings = get_default_settings();
+        settings.selected_model = "parakeet-tdt-0.6b-v3".to_string();
+
+        // Unset is the default, and must keep tracking `selected_model` rather
+        // than pinning whatever it happened to be at first run.
+        assert_eq!(settings.meeting_model_id(), "parakeet-tdt-0.6b-v3");
+        settings.selected_model = "turbo".to_string();
+        assert_eq!(settings.meeting_model_id(), "turbo");
+    }
+
+    #[test]
+    fn an_explicit_meeting_model_wins_and_whitespace_is_not_a_choice() {
+        let mut settings = get_default_settings();
+        settings.selected_model = "turbo".to_string();
+        settings.meeting_selected_model = "gemini-transcribe".to_string();
+        assert_eq!(settings.meeting_model_id(), "gemini-transcribe");
+
+        // A blank field means "follow dictation", not "transcribe with nothing".
+        settings.meeting_selected_model = "   ".to_string();
+        assert_eq!(settings.meeting_model_id(), "turbo");
+    }
 
     #[test]
     fn google_provider_falls_back_to_the_meeting_gemini_key() {

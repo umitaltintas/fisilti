@@ -16,6 +16,7 @@ import {
   getTranslatedModelName,
 } from "../../lib/utils/modelTranslation";
 import { LANGUAGES } from "../../lib/constants/languages";
+import { isCloudModel } from "@/lib/utils/model";
 import Badge from "../ui/Badge";
 import { Button } from "../ui/Button";
 
@@ -73,8 +74,7 @@ const ModelCard: React.FC<ModelCardProps> = ({
 }) => {
   const { t } = useTranslation();
   const isFeatured = variant === "featured";
-  const isCloud =
-    model.engine_type === "OpenRouter" || model.engine_type === "OpenRouterAsr";
+  const isCloud = isCloudModel(model);
   const isClickable =
     status === "available" || status === "active" || status === "downloadable";
 

@@ -714,14 +714,6 @@ pub fn change_meeting_live_mode_setting(app: AppHandle, mode: String) -> Result<
 
 /// Meeting mode: run the on-stop finalize pass through Gemini batch
 /// transcription (speaker attribution) instead of local Whisper windows.
-#[tauri::command]
-#[specta::specta]
-pub fn change_meeting_gemini_finalize_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
-    let mut settings = settings::get_settings(&app);
-    settings.meeting_gemini_finalize = enabled;
-    settings::write_settings(&app, settings);
-    Ok(())
-}
 
 /// Meeting mode: turn speaker attribution on or off for the Gemini finalize pass.
 #[tauri::command]
@@ -781,6 +773,37 @@ pub fn change_meeting_live_translate_target_setting(
     }
     let mut settings = settings::get_settings(&app);
     settings.meeting_live_translate_target = language;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+/// Meeting mode: choose which model transcribes meetings. An empty string
+/// means "follow the dictation model", which is the default.
+///
+/// Rejects unknown ids so a typo cannot leave meetings pointing at a model that
+/// does not exist — the live pass would then fail on every segment with nothing
+/// on screen explaining why.
+#[tauri::command]
+#[specta::specta]
+pub fn change_meeting_selected_model_setting(
+    app: AppHandle,
+    model_id: String,
+) -> Result<(), String> {
+    use tauri::Manager;
+
+    let model_id = model_id.trim().to_string();
+    if !model_id.is_empty() {
+        let known = app
+            .try_state::<std::sync::Arc<crate::managers::model::ModelManager>>()
+            .and_then(|mm| mm.get_model_info(&model_id))
+            .is_some();
+        if !known {
+            return Err(format!("Unknown model: {model_id}"));
+        }
+    }
+
+    let mut settings = settings::get_settings(&app);
+    settings.meeting_selected_model = model_id;
     settings::write_settings(&app, settings);
     Ok(())
 }

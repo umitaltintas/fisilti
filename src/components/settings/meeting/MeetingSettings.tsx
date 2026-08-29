@@ -39,6 +39,7 @@ import {
   type TranscriptSegment,
 } from "@/lib/meeting";
 import { useModelStore } from "@/stores/modelStore";
+import { isCloudEngine } from "@/lib/utils/model";
 
 type MeetingTab = "session" | "history" | "settings";
 
@@ -57,7 +58,7 @@ export const MeetingSettings: React.FC = () => {
   const { currentModel, models } = useModelStore();
   const selectedIsCloud = (() => {
     const engine = models.find((m) => m.id === currentModel)?.engine_type;
-    return engine === "OpenRouter" || engine === "OpenRouterAsr";
+    return isCloudEngine(engine);
   })();
 
   const [status, setStatus] = useState<MeetingStatus>("idle");

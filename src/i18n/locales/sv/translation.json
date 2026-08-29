@@ -3,10 +3,15 @@
     "settings": "Inställningar...",
     "checkUpdates": "Sök efter uppdateringar...",
     "copyLastTranscript": "Kopiera senaste transkriptionen",
+    "history": "Dikteringshistorik...",
     "unloadModel": "Avlasta modell",
     "model": "Modell",
+    "modelsOnDevice": "På den här enheten",
+    "modelsCloud": "Moln",
     "quit": "Avsluta",
     "cancel": "Avbryt",
+    "startDictation": "Starta diktering",
+    "stopDictation": "Stoppa diktering",
     "startMeeting": "Starta möte",
     "stopMeeting": "Stoppa möte",
     "recordingIndicator": "Fısıltı — Spelar in…",
@@ -17,10 +22,14 @@
     "models": "Modeller",
     "advanced": "Avancerat",
     "postProcessing": "Efterbearbetning",
-    "history": "Historik",
+    "history": "Dikteringshistorik",
     "debug": "Felsökning",
     "about": "Om",
-    "meeting": "Meeting"
+    "meeting": "Meeting",
+    "groups": {
+      "features": "Funktioner",
+      "system": "System"
+    }
   },
   "onboarding": {
     "subtitle": "För att komma igång, välj en transkriptionsmodell",
@@ -201,6 +210,10 @@
       "pushToTalk": {
         "label": "Tryck för att tala",
         "description": "Håll ned för att spela in, släpp för att stoppa"
+      },
+      "groups": {
+        "recording": "Inspelning",
+        "app": "App"
       }
     },
     "models": {
@@ -230,6 +243,37 @@
         "modelPlaceholder": "t.ex. openai/gpt-4o-mini-transcribe",
         "browseModels": "Bläddra bland modeller →",
         "modelRequired": "Ange en OpenRouter-modellslug (t.ex. google/gemini-2.5-flash)."
+      },
+      "gemini": {
+        "description": "Den här modellen transkriberar i molnet, direkt hos Google. Ditt ljud skickas till Google och debiteras per minut. Samma Gemini-nyckel används för mötestranskribering.",
+        "apiKeyPlaceholder": "Gemini API-nyckel",
+        "apiKeyStored": "En nyckel är sparad. Klistra in en ny för att ersätta den.",
+        "getKey": "Hämta en API-nyckel →",
+        "keyRequired": "Ange din Gemini API-nyckel för att använda den här modellen."
+      },
+      "meetingModel": {
+        "title": "Mötesmodell",
+        "description": "Möten kan köra på en annan modell än diktering — en träffsäker molnmodell för ett långt möte och något lokalt och omedelbart för tryck-och-tala.",
+        "label": "Transkribera möten med",
+        "hint": "Gäller livetranskriptet och den avslutande omgången. Dikteringsmodellen påverkas inte.",
+        "sameAsDictation": "Samma som diktering",
+        "sameAsDictationNamed": "Samma som diktering ({{model}})"
+      },
+      "activeModel": "Aktiv modell",
+      "browse": "Alla modeller",
+      "searchPlaceholder": "Sök efter modell eller språk",
+      "languageCount": "{{count}} språk",
+      "badges": {
+        "cloud": "Körs i molnet",
+        "local": "Körs på den här enheten"
+      },
+      "groups": {
+        "installed": "Nedladdad",
+        "cloud": "Moln",
+        "multilingual": "Flerspråkig",
+        "multilingualShort": "Flerspråkig",
+        "english": "Endast engelska",
+        "regional": "Specifika språk"
       }
     },
     "sound": {
@@ -262,7 +306,8 @@
         "output": "Utmatning",
         "transcription": "Transkription",
         "history": "Historik",
-        "experimental": "Experimentellt"
+        "experimental": "Experimentellt",
+        "developer": "Utvecklare"
       },
       "experimentalToggle": {
         "label": "Experimentella funktioner",
@@ -428,10 +473,11 @@
         "cancel": "Avbryt",
         "selectToEdit": "Välj en prompt ovan för att visa och redigera dess detaljer.",
         "createFirst": "Klicka på 'Skapa ny prompt' ovan för att skapa din första prompt för efterbearbetning."
-      }
+      },
+      "description": "Låt en AI-modell städa upp, formatera om eller översätta varje transkription innan den klistras in."
     },
     "history": {
-      "title": "Historik",
+      "title": "Dikteringshistorik",
       "openFolder": "Öppna mapp för inspelningar",
       "loading": "Laddar historik...",
       "empty": "Inga transkriptioner ännu. Börja spela in för att bygga upp din historik!",
@@ -443,7 +489,8 @@
       "retranscribe": "Transkribera igen",
       "retranscribeError": "Misslyckades med att transkribera igen. Försök igen.",
       "transcribing": "Transkriberar...",
-      "transcriptionFailed": "Transkribering misslyckades. Du kan transkribera igen med hjälp av ikonen för nytt försök."
+      "transcriptionFailed": "Transkribering misslyckades. Du kan transkribera igen med hjälp av ikonen för nytt försök.",
+      "retentionSettings": "Historikinställningar"
     },
     "debug": {
       "title": "Felsökning",
@@ -585,7 +632,8 @@
     "off": "Av",
     "yes": "Ja",
     "no": "Nej",
-    "noOptionsFound": "Inga alternativ hittades"
+    "noOptionsFound": "Inga alternativ hittades",
+    "clear": "Rensa"
   },
   "accessibility": {
     "permissionsRequired": "Behörigheter för hjälpmedel krävs",
@@ -690,7 +738,9 @@
     "autoEndToggle": "Erbjud att avsluta efter längre tystnad",
     "autoEndDescription": "Om inget tal upptäcks under den valda tiden får du frågan om mötet ska avslutas — utan svar avslutas det automatiskt.",
     "silenceTimeoutLabel": "Tystnad innan frågan",
+    "silenceTimeoutDescription": "Hur länge mötet måste vara tyst innan du tillfrågas om det ska avslutas.",
     "autoEndGraceLabel": "Avsluta automatiskt efter",
+    "autoEndGraceDescription": "Hur länge frågan väntar på svar innan mötet avslutas av sig självt.",
     "durationMinutes": "{{count}} min",
     "durationSeconds": "{{count}} s",
     "tabSession": "Session",
@@ -711,7 +761,11 @@
     "generalSection": "General",
     "calendarNamesToggle": "Namnge möten från kalendern",
     "calendarNamesDescription": "Nya sessioner får titeln från den pågående kalenderhändelsen. När du aktiverar begärs kalenderåtkomst.",
-    "calendarAccessDenied": "Kalenderåtkomst nekades. Du kan tillåta den i Systeminställningar → Integritet och säkerhet → Kalendrar."
+    "calendarAccessDenied": "Kalenderåtkomst nekades. Du kan tillåta den i Systeminställningar → Integritet och säkerhet → Kalendrar.",
+    "liveTranslateTargetDescription": "Språket som direktsänt tal översätts till.",
+    "geminiSection": "Livetranskribering (Gemini)",
+    "geminiNeedsKey": "Livetranskribering och talarigenkänning kräver en Gemini API-nyckel.",
+    "geminiOpenModels": "Öppna Modeller"
   },
   "meetingPrompt": {
     "startTitle": "Möte upptäckt",

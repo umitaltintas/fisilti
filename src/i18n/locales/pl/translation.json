@@ -3,10 +3,15 @@
     "settings": "Ustawienia...",
     "checkUpdates": "Sprawdź aktualizacje...",
     "copyLastTranscript": "Kopiuj ostatnią transkrypcję",
+    "history": "Historia dyktowania...",
     "unloadModel": "Zwolnij model",
     "model": "Model",
+    "modelsOnDevice": "Na tym urządzeniu",
+    "modelsCloud": "Chmura",
     "quit": "Zamknij",
     "cancel": "Anuluj",
+    "startDictation": "Rozpocznij dyktowanie",
+    "stopDictation": "Zatrzymaj dyktowanie",
     "startMeeting": "Rozpocznij spotkanie",
     "stopMeeting": "Zatrzymaj spotkanie",
     "recordingIndicator": "Fısıltı — Nagrywanie…",
@@ -17,10 +22,14 @@
     "models": "Modele",
     "advanced": "Zaawansowane",
     "postProcessing": "Postproces",
-    "history": "Historia",
+    "history": "Historia dyktowania",
     "debug": "Debugowanie",
     "about": "O programie",
-    "meeting": "Meeting"
+    "meeting": "Meeting",
+    "groups": {
+      "features": "Funkcje",
+      "system": "System"
+    }
   },
   "onboarding": {
     "subtitle": "Aby rozpocząć, wybierz model transkrypcji",
@@ -184,6 +193,37 @@
         "modelPlaceholder": "np. openai/gpt-4o-mini-transcribe",
         "browseModels": "Przeglądaj modele →",
         "modelRequired": "Wprowadź identyfikator modelu OpenRouter (np. google/gemini-2.5-flash)."
+      },
+      "gemini": {
+        "description": "Ten model transkrybuje w chmurze, bezpośrednio w Google. Twoje audio jest wysyłane do Google i rozliczane za minutę. Ten sam klucz Gemini jest używany do transkrypcji spotkań.",
+        "apiKeyPlaceholder": "Klucz API Gemini",
+        "apiKeyStored": "Klucz jest zapisany. Wklej nowy, aby go zastąpić.",
+        "getKey": "Uzyskaj klucz API →",
+        "keyRequired": "Wprowadź swój klucz API Gemini, aby użyć tego modelu."
+      },
+      "meetingModel": {
+        "title": "Model do spotkań",
+        "description": "Spotkania mogą korzystać z innego modelu niż dyktowanie — dokładnego modelu w chmurze na długie spotkanie i czegoś lokalnego oraz natychmiastowego do naciśnij-i-mów.",
+        "label": "Transkrybuj spotkania modelem",
+        "hint": "Dotyczy transkrypcji na żywo i przebiegu końcowego. Model dyktowania pozostaje bez zmian.",
+        "sameAsDictation": "Tak jak dyktowanie",
+        "sameAsDictationNamed": "Tak jak dyktowanie ({{model}})"
+      },
+      "activeModel": "Aktywny model",
+      "browse": "Wszystkie modele",
+      "searchPlaceholder": "Szukaj modelu lub języka",
+      "languageCount": "Liczba języków: {{count}}",
+      "badges": {
+        "cloud": "Działa w chmurze",
+        "local": "Działa na tym urządzeniu"
+      },
+      "groups": {
+        "installed": "Pobrane",
+        "cloud": "Chmura",
+        "multilingual": "Wielojęzyczne",
+        "multilingualShort": "Wielojęzyczne",
+        "english": "Tylko angielski",
+        "regional": "Wybrane języki"
       }
     },
     "general": {
@@ -230,6 +270,10 @@
       "pushToTalk": {
         "label": "Push To Talk",
         "description": "Przytrzymaj, aby nagrywać, puść, aby zatrzymać"
+      },
+      "groups": {
+        "recording": "Nagrywanie",
+        "app": "Aplikacja"
       }
     },
     "sound": {
@@ -262,7 +306,8 @@
         "output": "Wyjście",
         "transcription": "Transkrypcja",
         "history": "Historia",
-        "experimental": "Eksperymentalne"
+        "experimental": "Eksperymentalne",
+        "developer": "Deweloper"
       },
       "experimentalToggle": {
         "label": "Funkcje Eksperymentalne",
@@ -428,10 +473,11 @@
         "cancel": "Anuluj",
         "selectToEdit": "Wybierz prompt powyżej, aby zobaczyć i edytować jego szczegóły.",
         "createFirst": "Kliknij 'Utwórz nowy prompt' powyżej, aby utworzyć pierwszy prompt postprocessingu."
-      }
+      },
+      "description": "Pozwól modelowi AI poprawić, sformatować lub przetłumaczyć każdą transkrypcję przed wklejeniem."
     },
     "history": {
-      "title": "Historia",
+      "title": "Historia dyktowania",
       "openFolder": "Otwórz folder nagrań",
       "loading": "Wczytywanie historii...",
       "empty": "Brak transkrypcji. Rozpocznij nagrywanie, aby zbudować historię!",
@@ -443,7 +489,8 @@
       "retranscribe": "Transkrybuj ponownie",
       "retranscribeError": "Nie udało się ponownie transkrybować. Spróbuj ponownie.",
       "transcribing": "Transkrybuję...",
-      "transcriptionFailed": "Transkrypcja nie powiodła się. Możesz transkrybować ponownie za pomocą ikony ponowienia."
+      "transcriptionFailed": "Transkrypcja nie powiodła się. Możesz transkrybować ponownie za pomocą ikony ponowienia.",
+      "retentionSettings": "Ustawienia historii"
     },
     "debug": {
       "title": "Debugowanie",
@@ -585,7 +632,8 @@
     "off": "Wyłącz",
     "yes": "Tak",
     "no": "Nie",
-    "noOptionsFound": "Nie znaleziono opcji"
+    "noOptionsFound": "Nie znaleziono opcji",
+    "clear": "Wyczyść"
   },
   "accessibility": {
     "permissionsRequired": "Wymagane uprawnienia dostępności",
@@ -690,7 +738,9 @@
     "autoEndToggle": "Proponuj zakończenie po dłuższej ciszy",
     "autoEndDescription": "Jeśli przez wybrany czas nie zostanie wykryta mowa, pojawi się pytanie o zakończenie spotkania — bez odpowiedzi zostanie ono zakończone automatycznie.",
     "silenceTimeoutLabel": "Cisza przed pytaniem",
+    "silenceTimeoutDescription": "Jak długo spotkanie musi pozostać ciche, zanim pojawi się pytanie o jego zakończenie.",
     "autoEndGraceLabel": "Automatyczne zakończenie po",
+    "autoEndGraceDescription": "Jak długo to pytanie czeka na odpowiedź, zanim spotkanie zakończy się samo.",
     "durationMinutes": "{{count}} min",
     "durationSeconds": "{{count}} s",
     "tabSession": "Session",
@@ -711,7 +761,11 @@
     "generalSection": "General",
     "calendarNamesToggle": "Nazywaj spotkania na podstawie kalendarza",
     "calendarNamesDescription": "Nowe sesje otrzymują tytuł trwającego wydarzenia z kalendarza. Włączenie wymaga dostępu do kalendarza.",
-    "calendarAccessDenied": "Odmówiono dostępu do kalendarza. Możesz go włączyć w Ustawieniach systemowych → Prywatność i bezpieczeństwo → Kalendarze."
+    "calendarAccessDenied": "Odmówiono dostępu do kalendarza. Możesz go włączyć w Ustawieniach systemowych → Prywatność i bezpieczeństwo → Kalendarze.",
+    "liveTranslateTargetDescription": "Język, na który tłumaczona jest mowa na żywo.",
+    "geminiSection": "Transkrypcja na żywo (Gemini)",
+    "geminiNeedsKey": "Transkrypcja na żywo i rozpoznawanie mówców wymagają klucza API Gemini.",
+    "geminiOpenModels": "Otwórz Modele"
   },
   "meetingPrompt": {
     "startTitle": "Wykryto spotkanie",

@@ -3,10 +3,15 @@
     "settings": "...الإعدادات",
     "checkUpdates": "...التحقق من وجود تحديثات",
     "copyLastTranscript": "نسخ آخر نص تم تفريغه",
+    "history": "سجل الإملاء...",
     "unloadModel": "تفريغ النموذج",
     "model": "النموذج",
+    "modelsOnDevice": "على هذا الجهاز",
+    "modelsCloud": "السحابة",
     "quit": "إنهاء",
     "cancel": "إلغاء",
+    "startDictation": "بدء الإملاء",
+    "stopDictation": "إيقاف الإملاء",
     "startMeeting": "بدء الاجتماع",
     "stopMeeting": "إيقاف الاجتماع",
     "recordingIndicator": "Fısıltı — جارٍ التسجيل…",
@@ -16,11 +21,15 @@
     "general": "عام",
     "advanced": "متقدم",
     "postProcessing": "معالجة لاحقة",
-    "history": "السجل",
+    "history": "سجل الإملاء",
     "debug": "تصحيح الأخطاء",
     "about": "حول",
     "models": "النماذج",
-    "meeting": "Meeting"
+    "meeting": "Meeting",
+    "groups": {
+      "features": "الميزات",
+      "system": "النظام"
+    }
   },
   "onboarding": {
     "subtitle": "للبدء، اختر نموذج التفريغ الصوتي",
@@ -197,6 +206,10 @@
       "pushToTalk": {
         "label": "اضغط للتحدث",
         "description": "استمر في الضغط للتسجيل، واترك للتوقف"
+      },
+      "groups": {
+        "recording": "التسجيل",
+        "app": "التطبيق"
       }
     },
     "sound": {
@@ -229,7 +242,8 @@
         "output": "الإخراج",
         "transcription": "التفريغ الصوتي",
         "history": "السجل",
-        "experimental": "تجريبي"
+        "experimental": "تجريبي",
+        "developer": "المطوّر"
       },
       "experimentalToggle": {
         "label": "الميزات التجريبية",
@@ -395,10 +409,11 @@
         "cancel": "إلغاء",
         "selectToEdit": ".اختر مطالبة أعلاه لعرض وتعديل تفاصيلها",
         "createFirst": ".انقر على 'إنشاء مطالبة جديدة' أعلاه لإنشاء أول مطالبة معالجة لاحقة لك"
-      }
+      },
+      "description": "دع نموذج ذكاء اصطناعي ينقّح كل تفريغ نصي أو يعيد تنسيقه أو يترجمه قبل لصقه."
     },
     "history": {
-      "title": "السجل",
+      "title": "سجل الإملاء",
       "openFolder": "فتح مجلد التسجيلات",
       "loading": "...جاري تحميل السجل",
       "empty": "!لا يوجد تفريغ صوتي بعد. ابدأ التسجيل لبناء سجلك",
@@ -410,7 +425,8 @@
       "retranscribe": "إعادة النسخ",
       "retranscribeError": "فشلت إعادة النسخ. يرجى المحاولة مرة أخرى.",
       "transcribing": "جارٍ النسخ...",
-      "transcriptionFailed": "فشل النسخ. يمكنك إعادة النسخ باستخدام أيقونة إعادة المحاولة."
+      "transcriptionFailed": "فشل النسخ. يمكنك إعادة النسخ باستخدام أيقونة إعادة المحاولة.",
+      "retentionSettings": "إعدادات السجل"
     },
     "debug": {
       "title": "تصحيح الأخطاء",
@@ -548,6 +564,37 @@
         "modelPlaceholder": "مثال: openai/gpt-4o-mini-transcribe",
         "browseModels": "تصفح النماذج",
         "modelRequired": "أدخل معرف نموذج OpenRouter (مثال: google/gemini-2.5-flash)."
+      },
+      "gemini": {
+        "description": "يُفرِّغ هذا النموذج الصوت في السحابة مباشرةً عبر Google. يُرسَل صوتك إلى Google ويُحاسَب بالدقيقة. ويُستخدم مفتاح Gemini نفسه لتفريغ الاجتماعات.",
+        "apiKeyPlaceholder": "مفتاح Gemini API",
+        "apiKeyStored": "هناك مفتاح محفوظ. الصق مفتاحًا جديدًا لاستبداله.",
+        "getKey": "احصل على مفتاح API ←",
+        "keyRequired": "أدخل مفتاح Gemini API لاستخدام هذا النموذج."
+      },
+      "meetingModel": {
+        "title": "نموذج الاجتماعات",
+        "description": "يمكن للاجتماعات أن تعمل بنموذج مختلف عن الإملاء: نموذج سحابي دقيق للاجتماع الطويل، وشيء محلي وفوري لوضع اضغط-وتحدث.",
+        "label": "تفريغ الاجتماعات باستخدام",
+        "hint": "ينطبق على النص المباشر وعلى التمريرة النهائية. ولا يتأثر نموذج الإملاء.",
+        "sameAsDictation": "مثل الإملاء",
+        "sameAsDictationNamed": "مثل الإملاء ({{model}})"
+      },
+      "activeModel": "النموذج النشط",
+      "browse": "كل النماذج",
+      "searchPlaceholder": "ابحث عن نموذج أو لغة",
+      "languageCount": "{{count}} لغة",
+      "badges": {
+        "cloud": "يعمل في السحابة",
+        "local": "يعمل على هذا الجهاز"
+      },
+      "groups": {
+        "installed": "تم التنزيل",
+        "cloud": "السحابة",
+        "multilingual": "متعدد اللغات",
+        "multilingualShort": "متعدد اللغات",
+        "english": "الإنجليزية فقط",
+        "regional": "لغات محددة"
       }
     }
   },
@@ -585,7 +632,8 @@
     "off": "إيقاف",
     "yes": "نعم",
     "no": "لا",
-    "noOptionsFound": "لم يتم العثور على خيارات"
+    "noOptionsFound": "لم يتم العثور على خيارات",
+    "clear": "مسح"
   },
   "accessibility": {
     "permissionsRequired": "أذونات إمكانية الوصول مطلوبة",
@@ -690,7 +738,9 @@
     "autoEndToggle": "عرض الإنهاء بعد صمت طويل",
     "autoEndDescription": "إذا لم يُكتشف أي كلام خلال المدة المحددة، سيُسأل عن إنهاء الاجتماع — وسيُنهى تلقائيًا إذا لم تُجب.",
     "silenceTimeoutLabel": "مدة الصمت قبل السؤال",
+    "silenceTimeoutDescription": "المدة التي يجب أن يظل الاجتماع صامتًا خلالها قبل أن يُطلب منك إنهاؤه.",
     "autoEndGraceLabel": "الإنهاء التلقائي بعد",
+    "autoEndGraceDescription": "المدة التي ينتظر فيها هذا الطلب ردًا قبل أن ينتهي الاجتماع تلقائيًا.",
     "durationMinutes": "{{count}} د",
     "durationSeconds": "{{count}} ث",
     "tabSession": "Session",
@@ -711,7 +761,11 @@
     "generalSection": "General",
     "calendarNamesToggle": "تسمية الاجتماعات من التقويم",
     "calendarNamesDescription": "تحصل الجلسات الجديدة على عنوان حدث التقويم الجاري. عند التفعيل سيُطلب الوصول إلى التقويم.",
-    "calendarAccessDenied": "تم رفض الوصول إلى التقويم. يمكنك السماح به من إعدادات النظام ← الخصوصية والأمان ← التقويمات."
+    "calendarAccessDenied": "تم رفض الوصول إلى التقويم. يمكنك السماح به من إعدادات النظام ← الخصوصية والأمان ← التقويمات.",
+    "liveTranslateTargetDescription": "اللغة التي يُترجم إليها الكلام المباشر.",
+    "geminiSection": "التفريغ المباشر (Gemini)",
+    "geminiNeedsKey": "يتطلب التفريغ المباشر وتمييز المتحدثين مفتاح Gemini API.",
+    "geminiOpenModels": "فتح النماذج"
   },
   "meetingPrompt": {
     "startTitle": "تم اكتشاف اجتماع",

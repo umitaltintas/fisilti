@@ -3,10 +3,15 @@
     "settings": "설정...",
     "checkUpdates": "업데이트 확인...",
     "copyLastTranscript": "마지막 녹음 내용 복사",
+    "history": "받아쓰기 기록...",
     "unloadModel": "모델 언로드",
     "model": "모델",
+    "modelsOnDevice": "이 기기에서",
+    "modelsCloud": "클라우드",
     "quit": "종료",
     "cancel": "취소",
+    "startDictation": "받아쓰기 시작",
+    "stopDictation": "받아쓰기 중지",
     "startMeeting": "회의 시작",
     "stopMeeting": "회의 중지",
     "recordingIndicator": "Fısıltı — 녹음 중…",
@@ -17,10 +22,14 @@
     "models": "모델",
     "advanced": "고급",
     "postProcessing": "후처리",
-    "history": "히스토리",
+    "history": "받아쓰기 기록",
     "debug": "디버그",
     "about": "정보",
-    "meeting": "Meeting"
+    "meeting": "Meeting",
+    "groups": {
+      "features": "기능",
+      "system": "시스템"
+    }
   },
   "onboarding": {
     "subtitle": "시작하려면 음성 인식 모델을 선택하세요",
@@ -201,6 +210,10 @@
       "pushToTalk": {
         "label": "녹음 중 단축키 홀딩",
         "description": "누르고 있으면 녹음, 놓으면 정지"
+      },
+      "groups": {
+        "recording": "녹음",
+        "app": "앱"
       }
     },
     "sound": {
@@ -253,6 +266,37 @@
         "modelPlaceholder": "예: openai/gpt-4o-mini-transcribe",
         "browseModels": "모델 둘러보기 →",
         "modelRequired": "OpenRouter 모델 슬러그를 입력하세요 (예: google/gemini-2.5-flash)."
+      },
+      "gemini": {
+        "description": "이 모델은 Google에 직접 연결해 클라우드에서 텍스트로 변환합니다. 오디오가 Google로 전송되며 분 단위로 과금됩니다. 같은 Gemini 키가 회의 전사에도 사용됩니다.",
+        "apiKeyPlaceholder": "Gemini API 키",
+        "apiKeyStored": "저장된 키가 있습니다. 교체하려면 새 키를 붙여넣으세요.",
+        "getKey": "API 키 받기 →",
+        "keyRequired": "이 모델을 사용하려면 Gemini API 키를 입력하세요."
+      },
+      "meetingModel": {
+        "title": "회의 모델",
+        "description": "회의는 받아쓰기와 다른 모델로 실행할 수 있습니다. 긴 회의에는 정확한 클라우드 모델을, 푸시투토크에는 즉각적인 로컬 모델을 쓸 수 있습니다.",
+        "label": "회의 전사에 사용할 모델",
+        "hint": "실시간 전사와 최종 처리에 적용됩니다. 받아쓰기 모델은 바뀌지 않습니다.",
+        "sameAsDictation": "받아쓰기와 동일",
+        "sameAsDictationNamed": "받아쓰기와 동일 ({{model}})"
+      },
+      "activeModel": "사용 중인 모델",
+      "browse": "모든 모델",
+      "searchPlaceholder": "모델 또는 언어 검색",
+      "languageCount": "{{count}}개 언어",
+      "badges": {
+        "cloud": "클라우드에서 실행",
+        "local": "이 기기에서 실행"
+      },
+      "groups": {
+        "installed": "다운로드됨",
+        "cloud": "클라우드",
+        "multilingual": "다국어",
+        "multilingualShort": "다국어",
+        "english": "영어 전용",
+        "regional": "특정 언어"
       }
     },
     "advanced": {
@@ -262,7 +306,8 @@
         "output": "출력",
         "transcription": "전사",
         "history": "히스토리",
-        "experimental": "실험적"
+        "experimental": "실험적",
+        "developer": "개발자"
       },
       "experimentalToggle": {
         "label": "실험적 기능",
@@ -428,10 +473,11 @@
         "cancel": "취소",
         "selectToEdit": "세부 정보를 보고 편집하려면 위에서 프롬프트를 선택하세요.",
         "createFirst": "첫 번째 후처리 프롬프트를 만들려면 위의 '새 프롬프트 만들기'를 클릭하세요."
-      }
+      },
+      "description": "붙여넣기 전에 AI 모델이 각 전사 결과를 다듬거나 형식을 바꾸거나 번역하도록 합니다."
     },
     "history": {
-      "title": "히스토리",
+      "title": "받아쓰기 기록",
       "openFolder": "녹음 폴더 열기",
       "loading": "히스토리 로딩 중...",
       "empty": "아직 변환된 내용이 없습니다. 녹음을 시작하여 히스토리를 만드세요!",
@@ -443,7 +489,8 @@
       "retranscribe": "다시 전사",
       "retranscribeError": "다시 전사에 실패했습니다. 다시 시도해주세요.",
       "transcribing": "전사 중...",
-      "transcriptionFailed": "전사에 실패했습니다. 재시도 아이콘을 사용하여 다시 전사할 수 있습니다."
+      "transcriptionFailed": "전사에 실패했습니다. 재시도 아이콘을 사용하여 다시 전사할 수 있습니다.",
+      "retentionSettings": "기록 설정"
     },
     "debug": {
       "title": "디버그",
@@ -585,7 +632,8 @@
     "off": "꺼짐",
     "yes": "예",
     "no": "아니오",
-    "noOptionsFound": "옵션을 찾을 수 없습니다"
+    "noOptionsFound": "옵션을 찾을 수 없습니다",
+    "clear": "지우기"
   },
   "accessibility": {
     "permissionsRequired": "접근성 권한 필요",
@@ -690,7 +738,9 @@
     "autoEndToggle": "긴 침묵 후 종료 제안",
     "autoEndDescription": "선택한 시간 동안 음성이 감지되지 않으면 회의 종료 여부를 묻고, 응답이 없으면 자동으로 종료합니다.",
     "silenceTimeoutLabel": "묻기 전 침묵 시간",
+    "silenceTimeoutDescription": "회의 종료 여부를 묻기까지 필요한 무음 시간입니다.",
     "autoEndGraceLabel": "무응답 시 자동 종료까지",
+    "autoEndGraceDescription": "회의가 자동으로 종료되기까지 이 알림이 응답을 기다리는 시간입니다.",
     "durationMinutes": "{{count}}분",
     "durationSeconds": "{{count}}초",
     "tabSession": "Session",
@@ -711,7 +761,11 @@
     "generalSection": "General",
     "calendarNamesToggle": "캘린더에서 회의 이름 가져오기",
     "calendarNamesDescription": "새 세션의 제목을 진행 중인 캘린더 일정의 이름으로 지정합니다. 활성화하면 캘린더 접근 권한을 요청합니다.",
-    "calendarAccessDenied": "캘린더 접근이 거부되었습니다. 시스템 설정 → 개인정보 보호 및 보안 → 캘린더에서 허용할 수 있습니다."
+    "calendarAccessDenied": "캘린더 접근이 거부되었습니다. 시스템 설정 → 개인정보 보호 및 보안 → 캘린더에서 허용할 수 있습니다.",
+    "liveTranslateTargetDescription": "실시간 음성을 번역할 언어입니다.",
+    "geminiSection": "실시간 전사 (Gemini)",
+    "geminiNeedsKey": "실시간 전사와 화자 구분에는 Gemini API 키가 필요합니다.",
+    "geminiOpenModels": "모델 열기"
   },
   "meetingPrompt": {
     "startTitle": "회의 감지됨",

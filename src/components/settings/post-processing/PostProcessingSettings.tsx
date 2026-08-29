@@ -20,6 +20,7 @@ import { ApiKeyField } from "../PostProcessingSettingsApi/ApiKeyField";
 import { ModelSelect } from "../PostProcessingSettingsApi/ModelSelect";
 import { usePostProcessProviderState } from "../PostProcessingSettingsApi/usePostProcessProviderState";
 import { ShortcutInput } from "../ShortcutInput";
+import { PostProcessingToggle } from "../PostProcessingToggle";
 import { useSettings } from "../../../hooks/useSettings";
 
 const PostProcessingSettingsApiComponent: React.FC = () => {
@@ -425,24 +426,40 @@ PostProcessingSettingsPrompts.displayName = "PostProcessingSettingsPrompts";
 
 export const PostProcessingSettings: React.FC = () => {
   const { t } = useTranslation();
+  const { getSetting } = useSettings();
+  // The on/off switch used to live under Advanced -> Experimental while the
+  // configuration lived here, so the whole section silently vanished from the
+  // sidebar. The switch now sits on top of the thing it turns on.
+  const enabled = getSetting("post_process_enabled") || false;
 
   return (
-    <div className="max-w-3xl w-full mx-auto space-y-6">
-      <SettingsGroup title={t("settings.postProcessing.hotkey.title")}>
-        <ShortcutInput
-          shortcutId="transcribe_with_post_process"
-          descriptionMode="tooltip"
-          grouped={true}
-        />
+    <div className="mx-auto w-full max-w-3xl space-y-6">
+      <SettingsGroup
+        title={t("settings.postProcessing.title")}
+        description={t("settings.postProcessing.description")}
+      >
+        <PostProcessingToggle descriptionMode="tooltip" grouped={true} />
       </SettingsGroup>
 
-      <SettingsGroup title={t("settings.postProcessing.api.title")}>
-        <PostProcessingSettingsApi />
-      </SettingsGroup>
+      {enabled && (
+        <>
+          <SettingsGroup title={t("settings.postProcessing.hotkey.title")}>
+            <ShortcutInput
+              shortcutId="transcribe_with_post_process"
+              descriptionMode="tooltip"
+              grouped={true}
+            />
+          </SettingsGroup>
 
-      <SettingsGroup title={t("settings.postProcessing.prompts.title")}>
-        <PostProcessingSettingsPrompts />
-      </SettingsGroup>
+          <SettingsGroup title={t("settings.postProcessing.api.title")}>
+            <PostProcessingSettingsApi />
+          </SettingsGroup>
+
+          <SettingsGroup title={t("settings.postProcessing.prompts.title")}>
+            <PostProcessingSettingsPrompts />
+          </SettingsGroup>
+        </>
+      )}
     </div>
   );
 };

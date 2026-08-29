@@ -1,30 +1,71 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ask } from "@tauri-apps/plugin-dialog";
-import { openUrl } from "@tauri-apps/plugin-opener";
-import { ChevronDown, Cloud, Globe } from "lucide-react";
+import { Search, X } from "lucide-react";
 import type { ModelCardStatus } from "@/components/onboarding";
-import { ModelCard } from "@/components/onboarding";
 import { useModelStore } from "@/stores/modelStore";
-import { useSettingsStore } from "@/stores/settingsStore";
-import { ApiKeyField } from "@/components/settings/PostProcessingSettingsApi/ApiKeyField";
-import { Input } from "@/components/ui/Input";
-import { LANGUAGES } from "@/lib/constants/languages.ts";
+import { CollapsibleGroup } from "@/components/ui/CollapsibleGroup";
+import { LANGUAGES } from "@/lib/constants/languages";
 import type { ModelInfo } from "@/bindings";
+import { getTranslatedModelName } from "@/lib/utils/modelTranslation";
+import { ActiveModelPanel } from "./ActiveModelPanel";
+import { MeetingModelPanel } from "./MeetingModelPanel";
+import { ModelRow } from "./ModelRow";
+import { isCloudModel } from "@/lib/utils/model";
 
-// check if model supports a language based on its supported_languages list
-const modelSupportsLanguage = (model: ModelInfo, langCode: string): boolean => {
-  return model.supported_languages.includes(langCode);
+type GroupId = "installed" | "cloud" | "multilingual" | "english" | "regional";
+
+// Groups are ordered the way people choose a model: what I already have, then
+// cloud vs. local, then by which languages the model covers.
+const GROUP_ORDER: GroupId[] = [
+  "installed",
+  "cloud",
+  "multilingual",
+  "english",
+  "regional",
+];
+
+const groupOf = (model: ModelInfo): GroupId => {
+  if (isCloudModel(model)) return "cloud";
+  if (model.is_downloaded || model.is_custom) return "installed";
+  if (model.supported_languages.length >= 20) return "multilingual";
+  if (
+    model.supported_languages.length === 1 &&
+    model.supported_languages[0] === "en"
+  ) {
+    return "english";
+  }
+  return "regional";
+};
+
+/**
+ * Matches a model against the search box. The query is checked against the
+ * model's name and description *and* against the languages it supports, so
+ * typing a language name ("turkish") narrows the list to models that handle it
+ * — one control instead of a separate language filter dropdown.
+ */
+const matchesQuery = (
+  model: ModelInfo,
+  query: string,
+  name: string,
+): boolean => {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  if (name.toLowerCase().includes(q)) return true;
+  if (model.description.toLowerCase().includes(q)) return true;
+  return LANGUAGES.some(
+    (lang) =>
+      lang.value !== "auto" &&
+      lang.label.toLowerCase().includes(q) &&
+      model.supported_languages.includes(lang.value),
+  );
 };
 
 export const ModelsSettings: React.FC = () => {
   const { t } = useTranslation();
   const [switchingModelId, setSwitchingModelId] = useState<string | null>(null);
-  const [languageFilter, setLanguageFilter] = useState("all");
-  const [languageDropdownOpen, setLanguageDropdownOpen] = useState(false);
-  const [languageSearch, setLanguageSearch] = useState("");
-  const languageDropdownRef = useRef<HTMLDivElement>(null);
-  const languageSearchInputRef = useRef<HTMLInputElement>(null);
+  const [query, setQuery] = useState("");
+
   const {
     models,
     currentModel,
@@ -39,95 +80,18 @@ export const ModelsSettings: React.FC = () => {
     selectModel,
     deleteModel,
   } = useModelStore();
-  const { settings, updatePostProcessApiKey, updateSetting } =
-    useSettingsStore();
 
-  // Cloud (OpenRouter) transcription reuses the OpenRouter post-processing key,
-  // so there is a single key to manage for both features.
   const currentModelInfo = models.find((m: ModelInfo) => m.id === currentModel);
-  const isCloudSelected =
-    currentModelInfo?.engine_type === "OpenRouter" ||
-    currentModelInfo?.engine_type === "OpenRouterAsr";
-  const isCustomCloud =
-    currentModel === "openrouter-custom" ||
-    currentModel === "openrouter-asr-custom";
-  const openrouterKey = settings?.post_process_api_keys?.["openrouter"] ?? "";
-  const customModel = settings?.openrouter_custom_model ?? "";
-  const [customModelLocal, setCustomModelLocal] = useState(customModel);
-  useEffect(() => {
-    setCustomModelLocal(customModel);
-  }, [customModel]);
-
-  // click outside handler for language dropdown
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        languageDropdownRef.current &&
-        !languageDropdownRef.current.contains(event.target as Node)
-      ) {
-        setLanguageDropdownOpen(false);
-        setLanguageSearch("");
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  // focus search input when dropdown opens
-  useEffect(() => {
-    if (languageDropdownOpen && languageSearchInputRef.current) {
-      languageSearchInputRef.current.focus();
-    }
-  }, [languageDropdownOpen]);
-
-  // filtered languages for dropdown (exclude "auto")
-  const filteredLanguages = useMemo(() => {
-    return LANGUAGES.filter(
-      (lang) =>
-        lang.value !== "auto" &&
-        lang.label.toLowerCase().includes(languageSearch.toLowerCase()),
-    );
-  }, [languageSearch]);
-
-  // Get selected language label
-  const selectedLanguageLabel = useMemo(() => {
-    if (languageFilter === "all") {
-      return t("settings.models.filters.allLanguages");
-    }
-    return LANGUAGES.find((lang) => lang.value === languageFilter)?.label || "";
-  }, [languageFilter, t]);
 
   const getModelStatus = (modelId: string): ModelCardStatus => {
-    if (modelId in extractingModels) {
-      return "extracting";
-    }
-    if (modelId in verifyingModels) {
-      return "verifying";
-    }
-    if (modelId in downloadingModels) {
-      return "downloading";
-    }
-    if (switchingModelId === modelId) {
-      return "switching";
-    }
-    if (modelId === currentModel) {
-      return "active";
-    }
-    const model = models.find((m: ModelInfo) => m.id === modelId);
-    if (model?.is_downloaded) {
-      return "available";
-    }
-    return "downloadable";
-  };
-
-  const getDownloadProgress = (modelId: string): number | undefined => {
-    const progress = downloadProgress[modelId];
-    return progress?.percentage;
-  };
-
-  const getDownloadSpeed = (modelId: string): number | undefined => {
-    const stats = downloadStats[modelId];
-    return stats?.speed;
+    if (modelId in extractingModels) return "extracting";
+    if (modelId in verifyingModels) return "verifying";
+    if (modelId in downloadingModels) return "downloading";
+    if (switchingModelId === modelId) return "switching";
+    if (modelId === currentModel) return "active";
+    return models.find((m: ModelInfo) => m.id === modelId)?.is_downloaded
+      ? "available"
+      : "downloadable";
   };
 
   const handleModelSelect = async (modelId: string) => {
@@ -139,31 +103,20 @@ export const ModelsSettings: React.FC = () => {
     }
   };
 
-  const handleModelDownload = async (modelId: string) => {
-    await downloadModel(modelId);
-  };
-
   const handleModelDelete = async (modelId: string) => {
     const model = models.find((m: ModelInfo) => m.id === modelId);
-    const modelName = model?.name || modelId;
-    const isActive = modelId === currentModel;
-
+    const modelName = model ? getTranslatedModelName(model, t) : modelId;
     const confirmed = await ask(
-      isActive
+      modelId === currentModel
         ? t("settings.models.deleteActiveConfirm", { modelName })
         : t("settings.models.deleteConfirm", { modelName }),
-      {
-        title: t("settings.models.deleteTitle"),
-        kind: "warning",
-      },
+      { title: t("settings.models.deleteTitle"), kind: "warning" },
     );
-
-    if (confirmed) {
-      try {
-        await deleteModel(modelId);
-      } catch (err) {
-        console.error(`Failed to delete model ${modelId}:`, err);
-      }
+    if (!confirmed) return;
+    try {
+      await deleteModel(modelId);
+    } catch (err) {
+      console.error(`Failed to delete model ${modelId}:`, err);
     }
   };
 
@@ -175,284 +128,129 @@ export const ModelsSettings: React.FC = () => {
     }
   };
 
-  // Filter models based on language filter
-  const filteredModels = useMemo(() => {
-    return models.filter((model: ModelInfo) => {
-      if (languageFilter !== "all") {
-        if (!modelSupportsLanguage(model, languageFilter)) return false;
-      }
-      return true;
-    });
-  }, [models, languageFilter]);
+  const searching = query.trim().length > 0;
 
-  // Split filtered models into downloaded (including custom) and available sections
-  const { downloadedModels, availableModels } = useMemo(() => {
-    const downloaded: ModelInfo[] = [];
-    const available: ModelInfo[] = [];
+  const { grouped, matches } = useMemo(() => {
+    const visible = models.filter((model: ModelInfo) =>
+      matchesQuery(model, query, getTranslatedModelName(model, t)),
+    );
 
-    for (const model of filteredModels) {
-      if (
-        model.is_custom ||
-        model.is_downloaded ||
-        model.id in downloadingModels ||
-        model.id in extractingModels
-      ) {
-        downloaded.push(model);
-      } else {
-        available.push(model);
-      }
+    const buckets: Record<GroupId, ModelInfo[]> = {
+      installed: [],
+      cloud: [],
+      multilingual: [],
+      english: [],
+      regional: [],
+    };
+
+    for (const model of visible) {
+      const id =
+        model.id in downloadingModels || model.id in extractingModels
+          ? "installed"
+          : groupOf(model);
+      buckets[id].push(model);
     }
 
-    // Sort: active model first, then non-custom, then custom at the bottom
-    downloaded.sort((a, b) => {
-      if (a.id === currentModel) return -1;
-      if (b.id === currentModel) return 1;
-      if (a.is_custom !== b.is_custom) return a.is_custom ? 1 : -1;
-      return 0;
-    });
+    // The active model heads its group; recommended models come next.
+    const rank = (model: ModelInfo) =>
+      model.id === currentModel ? 0 : model.is_recommended ? 1 : 2;
+    for (const id of GROUP_ORDER) {
+      buckets[id].sort(
+        (a, b) =>
+          rank(a) - rank(b) ||
+          Number(a.is_custom) - Number(b.is_custom) ||
+          b.accuracy_score - a.accuracy_score,
+      );
+    }
 
-    return {
-      downloadedModels: downloaded,
-      availableModels: available,
-    };
-  }, [filteredModels, downloadingModels, extractingModels, currentModel]);
+    return { grouped: buckets, matches: visible };
+  }, [models, query, t, currentModel, downloadingModels, extractingModels]);
+
+  // Only the first non-empty group starts expanded — normally "Installed", or
+  // whatever comes first when the user has not downloaded anything yet.
+  const visibleGroups = GROUP_ORDER.filter((id) => grouped[id].length > 0);
+
+  const renderRow = (model: ModelInfo) => (
+    <ModelRow
+      key={model.id}
+      model={model}
+      status={getModelStatus(model.id)}
+      onSelect={handleModelSelect}
+      onDownload={downloadModel}
+      onDelete={handleModelDelete}
+      onCancel={handleModelCancel}
+      downloadProgress={downloadProgress[model.id]?.percentage}
+      downloadSpeed={downloadStats[model.id]?.speed}
+    />
+  );
+
+  const listShell = (children: React.ReactNode) => (
+    <div className="overflow-hidden rounded-lg border border-mid-gray/20 bg-background">
+      <div className="divide-y divide-mid-gray/20">{children}</div>
+    </div>
+  );
 
   if (loading) {
     return (
-      <div className="max-w-3xl w-full mx-auto">
+      <div className="mx-auto w-full max-w-3xl">
         <div className="flex items-center justify-center py-16">
-          <div className="w-8 h-8 border-2 border-logo-primary border-t-transparent rounded-full animate-spin" />
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-logo-primary border-t-transparent" />
         </div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-3xl w-full mx-auto space-y-4">
-      <div className="mb-4">
-        <h1 className="text-xl font-semibold mb-2">
-          {t("settings.models.title")}
-        </h1>
-        <p className="text-sm text-text/60">
-          {t("settings.models.description")}
-        </p>
-      </div>
+    <div className="mx-auto w-full max-w-3xl space-y-6">
+      <ActiveModelPanel model={currentModelInfo} />
+      <MeetingModelPanel models={models} dictationModel={currentModelInfo} />
 
-      {/* Cloud transcription (OpenRouter) — API key panel, shown when a cloud
-          model is the active model. */}
-      {isCloudSelected && (
-        <div className="rounded-xl border-2 border-logo-primary/25 bg-logo-primary/5 px-4 py-3 space-y-2">
-          <div className="flex items-center gap-2">
-            <Cloud className="w-4 h-4 text-logo-primary" />
-            <h2 className="text-sm font-medium">
-              {t("settings.models.cloud.title")}
-            </h2>
-          </div>
-          <p className="text-xs text-text/60">
-            {t("settings.models.cloud.description")}
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <ApiKeyField
-              value={openrouterKey}
-              onBlur={(value) => updatePostProcessApiKey("openrouter", value)}
-              disabled={false}
-              placeholder={t("settings.models.cloud.apiKeyPlaceholder")}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-3 px-1">
+          <h2 className="text-xs font-medium uppercase tracking-wide text-mid-gray">
+            {t("settings.models.browse")}
+          </h2>
+          <div className="relative w-64">
+            <Search className="pointer-events-none absolute start-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-text/40" />
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={t("settings.models.searchPlaceholder")}
+              className="w-full rounded-lg border border-mid-gray/30 bg-background py-1.5 ps-8 pe-7 text-sm focus:border-logo-primary focus:outline-none"
             />
-            <button
-              type="button"
-              onClick={() => openUrl("https://openrouter.ai/keys")}
-              className="text-xs text-logo-primary hover:underline"
-            >
-              {t("settings.models.cloud.getKey")}
-            </button>
+            {searching && (
+              <button
+                type="button"
+                onClick={() => setQuery("")}
+                aria-label={t("common.clear")}
+                className="absolute end-2 top-1/2 -translate-y-1/2 text-text/40 hover:text-text cursor-pointer"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
-          {!openrouterKey.trim() && (
-            <p className="text-xs text-amber-500">
-              {t("settings.models.cloud.keyRequired")}
-            </p>
-          )}
-
-          {/* Free-text model slug, only for the "Custom OpenRouter model" entry. */}
-          {isCustomCloud && (
-            <div className="pt-1 space-y-1">
-              <label className="text-xs font-medium text-text/70">
-                {t("settings.models.cloud.modelLabel")}
-              </label>
-              <div className="flex flex-wrap items-center gap-2">
-                <Input
-                  type="text"
-                  value={customModelLocal}
-                  onChange={(event) => setCustomModelLocal(event.target.value)}
-                  onBlur={() =>
-                    updateSetting("openrouter_custom_model", customModelLocal)
-                  }
-                  placeholder={t("settings.models.cloud.modelPlaceholder")}
-                  variant="compact"
-                  className="flex-1 min-w-[320px]"
-                />
-                <button
-                  type="button"
-                  onClick={() => openUrl("https://openrouter.ai/models")}
-                  className="text-xs text-logo-primary hover:underline"
-                >
-                  {t("settings.models.cloud.browseModels")}
-                </button>
-              </div>
-              {!customModel.trim() && (
-                <p className="text-xs text-amber-500">
-                  {t("settings.models.cloud.modelRequired")}
-                </p>
-              )}
-            </div>
-          )}
         </div>
-      )}
 
-      {filteredModels.length > 0 ? (
-        <div className="space-y-6">
-          {/* Downloaded Models Section — header always visible so filter stays accessible */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-medium text-text/60">
-                {t("settings.models.yourModels")}
-              </h2>
-              {/* Language filter dropdown */}
-              <div className="relative" ref={languageDropdownRef}>
-                <button
-                  type="button"
-                  onClick={() => setLanguageDropdownOpen(!languageDropdownOpen)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-                    languageFilter !== "all"
-                      ? "bg-logo-primary/20 text-logo-primary"
-                      : "bg-mid-gray/10 text-text/60 hover:bg-mid-gray/20"
-                  }`}
-                >
-                  <Globe className="w-3.5 h-3.5" />
-                  <span className="max-w-[120px] truncate">
-                    {selectedLanguageLabel}
-                  </span>
-                  <ChevronDown
-                    className={`w-3.5 h-3.5 transition-transform ${
-                      languageDropdownOpen ? "rotate-180" : ""
-                    }`}
-                  />
-                </button>
+        {matches.length === 0 && (
+          <div className="py-8 text-center text-sm text-text/50">
+            {t("settings.models.noModelsMatch")}
+          </div>
+        )}
 
-                {languageDropdownOpen && (
-                  <div className="absolute top-full right-0 mt-1 w-56 bg-background border border-mid-gray/80 rounded-lg shadow-lg z-50 overflow-hidden">
-                    <div className="p-2 border-b border-mid-gray/40">
-                      <input
-                        ref={languageSearchInputRef}
-                        type="text"
-                        value={languageSearch}
-                        onChange={(e) => setLanguageSearch(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (
-                            e.key === "Enter" &&
-                            filteredLanguages.length > 0
-                          ) {
-                            setLanguageFilter(filteredLanguages[0].value);
-                            setLanguageDropdownOpen(false);
-                            setLanguageSearch("");
-                          } else if (e.key === "Escape") {
-                            setLanguageDropdownOpen(false);
-                            setLanguageSearch("");
-                          }
-                        }}
-                        placeholder={t(
-                          "settings.general.language.searchPlaceholder",
-                        )}
-                        className="w-full px-2 py-1 text-sm bg-mid-gray/10 border border-mid-gray/40 rounded-md focus:outline-none focus:ring-1 focus:ring-logo-primary"
-                      />
-                    </div>
-                    <div className="max-h-48 overflow-y-auto">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setLanguageFilter("all");
-                          setLanguageDropdownOpen(false);
-                          setLanguageSearch("");
-                        }}
-                        className={`w-full px-3 py-1.5 text-sm text-left transition-colors ${
-                          languageFilter === "all"
-                            ? "bg-logo-primary/20 text-logo-primary font-semibold"
-                            : "hover:bg-mid-gray/10"
-                        }`}
-                      >
-                        {t("settings.models.filters.allLanguages")}
-                      </button>
-                      {filteredLanguages.map((lang) => (
-                        <button
-                          key={lang.value}
-                          type="button"
-                          onClick={() => {
-                            setLanguageFilter(lang.value);
-                            setLanguageDropdownOpen(false);
-                            setLanguageSearch("");
-                          }}
-                          className={`w-full px-3 py-1.5 text-sm text-left transition-colors ${
-                            languageFilter === lang.value
-                              ? "bg-logo-primary/20 text-logo-primary font-semibold"
-                              : "hover:bg-mid-gray/10"
-                          }`}
-                        >
-                          {lang.label}
-                        </button>
-                      ))}
-                      {filteredLanguages.length === 0 && (
-                        <div className="px-3 py-2 text-sm text-text/50 text-center">
-                          {t("settings.general.language.noResults")}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-            {downloadedModels.map((model: ModelInfo) => (
-              <ModelCard
-                key={model.id}
-                model={model}
-                status={getModelStatus(model.id)}
-                onSelect={handleModelSelect}
-                onDownload={handleModelDownload}
-                onDelete={handleModelDelete}
-                onCancel={handleModelCancel}
-                downloadProgress={getDownloadProgress(model.id)}
-                downloadSpeed={getDownloadSpeed(model.id)}
-                showRecommended={false}
-              />
+        {searching
+          ? matches.length > 0 && listShell(matches.map(renderRow))
+          : visibleGroups.map((id) => (
+              <CollapsibleGroup
+                key={id}
+                title={t(`settings.models.groups.${id}`)}
+                count={grouped[id].length}
+                defaultOpen={id === visibleGroups[0]}
+              >
+                {listShell(grouped[id].map(renderRow))}
+              </CollapsibleGroup>
             ))}
-          </div>
-
-          {/* Available Models Section */}
-          {availableModels.length > 0 && (
-            <div className="space-y-3">
-              <h2 className="text-sm font-medium text-text/60">
-                {t("settings.models.availableModels")}
-              </h2>
-              {availableModels.map((model: ModelInfo) => (
-                <ModelCard
-                  key={model.id}
-                  model={model}
-                  status={getModelStatus(model.id)}
-                  onSelect={handleModelSelect}
-                  onDownload={handleModelDownload}
-                  onDelete={handleModelDelete}
-                  onCancel={handleModelCancel}
-                  downloadProgress={getDownloadProgress(model.id)}
-                  downloadSpeed={getDownloadSpeed(model.id)}
-                  showRecommended={false}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-      ) : (
-        <div className="text-center py-8 text-text/50">
-          {t("settings.models.noModelsMatch")}
-        </div>
-      )}
+      </div>
     </div>
   );
 };

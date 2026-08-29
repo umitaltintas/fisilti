@@ -1,71 +1,76 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { ShowOverlay } from "../ShowOverlay";
-import { ModelUnloadTimeoutSetting } from "../ModelUnloadTimeout";
-import { CustomWords } from "../CustomWords";
 import { SettingsGroup } from "../../ui/SettingsGroup";
-import { StartHidden } from "../StartHidden";
-import { AutostartToggle } from "../AutostartToggle";
-import { ShowTrayIcon } from "../ShowTrayIcon";
+import { useSettings } from "../../../hooks/useSettings";
 import { PasteMethodSetting } from "../PasteMethod";
 import { TypingToolSetting } from "../TypingTool";
 import { ClipboardHandlingSetting } from "../ClipboardHandling";
 import { AutoSubmit } from "../AutoSubmit";
-import { PostProcessingToggle } from "../PostProcessingToggle";
 import { AppendTrailingSpace } from "../AppendTrailingSpace";
-import { HistoryLimit } from "../HistoryLimit";
-import { RecordingRetentionPeriodSelector } from "../RecordingRetentionPeriod";
+import { CustomWords } from "../CustomWords";
+import { ModelUnloadTimeoutSetting } from "../ModelUnloadTimeout";
 import { ExperimentalToggle } from "../ExperimentalToggle";
-import { useSettings } from "../../../hooks/useSettings";
-import { KeyboardImplementationSelector } from "../debug/KeyboardImplementationSelector";
 import { AccelerationSelector } from "../AccelerationSelector";
 import { LazyStreamClose } from "../LazyStreamClose";
+import { AlwaysOnMicrophone } from "../AlwaysOnMicrophone";
+import { ClamshellMicrophoneSelector } from "../ClamshellMicrophoneSelector";
+import { KeyboardImplementationSelector } from "../debug/KeyboardImplementationSelector";
+import { WordCorrectionThreshold } from "../debug/WordCorrectionThreshold";
+import { LogLevelSelector } from "../debug/LogLevelSelector";
+import { LogDirectory } from "../debug/LogDirectory";
+import { PasteDelay } from "../debug/PasteDelay";
+import { RecordingBuffer } from "../debug/RecordingBuffer";
 
+// Set-once options. The old Debug section was folded in here as the
+// "Developer" group so there is one place for low-level settings instead of
+// two sidebar entries that overlapped.
 export const AdvancedSettings: React.FC = () => {
   const { t } = useTranslation();
   const { getSetting } = useSettings();
   const experimentalEnabled = getSetting("experimental_enabled") || false;
+  const debugEnabled = getSetting("debug_mode") || false;
 
   return (
-    <div className="max-w-3xl w-full mx-auto space-y-6">
-      <SettingsGroup title={t("settings.advanced.groups.app")}>
-        <StartHidden descriptionMode="tooltip" grouped={true} />
-        <AutostartToggle descriptionMode="tooltip" grouped={true} />
-        <ShowTrayIcon descriptionMode="tooltip" grouped={true} />
-        <ShowOverlay descriptionMode="tooltip" grouped={true} />
-        <ModelUnloadTimeoutSetting descriptionMode="tooltip" grouped={true} />
-        <ExperimentalToggle descriptionMode="tooltip" grouped={true} />
-      </SettingsGroup>
-
+    <div className="mx-auto w-full max-w-3xl space-y-6">
       <SettingsGroup title={t("settings.advanced.groups.output")}>
         <PasteMethodSetting descriptionMode="tooltip" grouped={true} />
         <TypingToolSetting descriptionMode="tooltip" grouped={true} />
         <ClipboardHandlingSetting descriptionMode="tooltip" grouped={true} />
         <AutoSubmit descriptionMode="tooltip" grouped={true} />
+        <AppendTrailingSpace descriptionMode="tooltip" grouped={true} />
       </SettingsGroup>
 
       <SettingsGroup title={t("settings.advanced.groups.transcription")}>
         <CustomWords descriptionMode="tooltip" grouped />
-        <AppendTrailingSpace descriptionMode="tooltip" grouped={true} />
+        <WordCorrectionThreshold descriptionMode="tooltip" grouped={true} />
+        <ModelUnloadTimeoutSetting descriptionMode="tooltip" grouped={true} />
       </SettingsGroup>
 
-      <SettingsGroup title={t("settings.advanced.groups.history")}>
-        <HistoryLimit descriptionMode="tooltip" grouped={true} />
-        <RecordingRetentionPeriodSelector
-          descriptionMode="tooltip"
-          grouped={true}
-        />
+      <SettingsGroup title={t("settings.advanced.groups.experimental")}>
+        <ExperimentalToggle descriptionMode="tooltip" grouped={true} />
+        {experimentalEnabled && (
+          <>
+            <KeyboardImplementationSelector
+              descriptionMode="tooltip"
+              grouped={true}
+            />
+            <AccelerationSelector descriptionMode="tooltip" grouped={true} />
+            <LazyStreamClose descriptionMode="tooltip" grouped={true} />
+          </>
+        )}
       </SettingsGroup>
 
-      {experimentalEnabled && (
-        <SettingsGroup title={t("settings.advanced.groups.experimental")}>
-          <PostProcessingToggle descriptionMode="tooltip" grouped={true} />
-          <KeyboardImplementationSelector
+      {debugEnabled && (
+        <SettingsGroup title={t("settings.advanced.groups.developer")}>
+          <LogLevelSelector grouped={true} />
+          <PasteDelay descriptionMode="tooltip" grouped={true} />
+          <RecordingBuffer descriptionMode="tooltip" grouped={true} />
+          <AlwaysOnMicrophone descriptionMode="tooltip" grouped={true} />
+          <ClamshellMicrophoneSelector
             descriptionMode="tooltip"
             grouped={true}
           />
-          <AccelerationSelector descriptionMode="tooltip" grouped={true} />
-          <LazyStreamClose descriptionMode="tooltip" grouped={true} />
+          <LogDirectory grouped={true} />
         </SettingsGroup>
       )}
     </div>

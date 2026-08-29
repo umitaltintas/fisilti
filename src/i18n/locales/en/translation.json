@@ -3,10 +3,15 @@
     "settings": "Settings...",
     "checkUpdates": "Check for Updates...",
     "copyLastTranscript": "Copy Last Transcript",
+    "history": "Dictation History...",
     "unloadModel": "Unload Model",
     "model": "Model",
+    "modelsOnDevice": "On this device",
+    "modelsCloud": "Cloud",
     "quit": "Quit",
     "cancel": "Cancel",
+    "startDictation": "Start Dictation",
+    "stopDictation": "Stop Dictation",
     "startMeeting": "Start Meeting",
     "stopMeeting": "Stop Meeting",
     "recordingIndicator": "Fisilti — Recording…",
@@ -16,11 +21,15 @@
     "general": "General",
     "models": "Models",
     "advanced": "Advanced",
-    "postProcessing": "Post Process",
-    "history": "History",
+    "postProcessing": "Post-processing",
+    "history": "Dictation history",
     "debug": "Debug",
     "about": "About",
-    "meeting": "Meeting"
+    "meeting": "Meeting",
+    "groups": {
+      "features": "Features",
+      "system": "System"
+    }
   },
   "onboarding": {
     "subtitle": "To get started, choose a transcription model",
@@ -201,6 +210,10 @@
       "pushToTalk": {
         "label": "Push To Talk",
         "description": "Hold to record, release to stop"
+      },
+      "groups": {
+        "recording": "Recording",
+        "app": "Application"
       }
     },
     "models": {
@@ -230,6 +243,37 @@
         "modelPlaceholder": "e.g. openai/gpt-4o-mini-transcribe",
         "browseModels": "Browse models →",
         "modelRequired": "Enter an OpenRouter model slug (e.g. google/gemini-2.5-flash)."
+      },
+      "gemini": {
+        "description": "This model transcribes in the cloud, direct from Google. Your audio is sent to Google and billed per minute. The same Gemini key is used for meeting transcription.",
+        "apiKeyPlaceholder": "Gemini API key",
+        "apiKeyStored": "A key is saved. Paste a new one to replace it.",
+        "getKey": "Get an API key →",
+        "keyRequired": "Enter your Gemini API key to use this model."
+      },
+      "meetingModel": {
+        "title": "Meeting model",
+        "description": "Meetings can run on a different model than dictation — an accurate cloud model for a long meeting, something local and instant for push-to-talk.",
+        "label": "Transcribe meetings with",
+        "hint": "Applies to the live transcript and the final pass. The dictation model is unaffected.",
+        "sameAsDictation": "Same as dictation",
+        "sameAsDictationNamed": "Same as dictation ({{model}})"
+      },
+      "activeModel": "Active model",
+      "browse": "All models",
+      "searchPlaceholder": "Search a model or language",
+      "languageCount": "{{count}} languages",
+      "badges": {
+        "cloud": "Runs in the cloud",
+        "local": "Runs on this device"
+      },
+      "groups": {
+        "installed": "Installed",
+        "cloud": "Cloud",
+        "multilingual": "Multilingual",
+        "english": "English only",
+        "regional": "Specific languages",
+        "multilingualShort": "Multilingual"
       }
     },
     "sound": {
@@ -262,7 +306,8 @@
         "output": "Output",
         "transcription": "Transcription",
         "history": "History",
-        "experimental": "Experimental"
+        "experimental": "Experimental",
+        "developer": "Developer"
       },
       "experimentalToggle": {
         "label": "Experimental Features",
@@ -371,7 +416,7 @@
       }
     },
     "postProcessing": {
-      "title": "Post Process",
+      "title": "Post-processing",
       "hotkey": {
         "title": "Hotkey"
       },
@@ -428,10 +473,11 @@
         "cancel": "Cancel",
         "selectToEdit": "Select a prompt above to view and edit its details.",
         "createFirst": "Click 'Create New Prompt' above to create your first post-processing prompt."
-      }
+      },
+      "description": "Let an AI model clean up, reformat or translate each transcription before it is pasted."
     },
     "history": {
-      "title": "History",
+      "title": "Dictation history",
       "openFolder": "Open Recordings Folder",
       "loading": "Loading history...",
       "empty": "No transcriptions yet. Start recording to build your history!",
@@ -443,7 +489,8 @@
       "retranscribe": "Re-transcribe",
       "retranscribeError": "Failed to re-transcribe. Please try again.",
       "transcribing": "Transcribing...",
-      "transcriptionFailed": "Transcription failed. You can re-transcribe using the retry icon."
+      "transcriptionFailed": "Transcription failed. You can re-transcribe using the retry icon.",
+      "retentionSettings": "History settings"
     },
     "debug": {
       "title": "Debug",
@@ -585,7 +632,8 @@
     "off": "Off",
     "yes": "Yes",
     "no": "No",
-    "noOptionsFound": "No options found"
+    "noOptionsFound": "No options found",
+    "clear": "Clear"
   },
   "accessibility": {
     "permissionsRequired": "Accessibility Permissions Required",
@@ -623,10 +671,7 @@
     "transcriptEmpty": "No transcript yet. Start a meeting to capture live audio.",
     "transcriptionFailed": "Transcription failed, so this meeting has no text. The audio was saved and the recording was kept. Reason: {{error}}",
     "liveTranslateTargetLabel": "Translate into",
-    "geminiApiKeyLabel": "Gemini API key",
-    "geminiApiKeyPlaceholder": "Paste your Gemini API key",
-    "geminiApiKeyStored": "A key is saved. Paste a new one to replace it.",
-    "geminiApiKeyClear": "Clear",
+    "liveTranslateTargetDescription": "The language live speech is translated into.",
     "listening": "Listening...",
     "cloudLivePreviewOff": "Recording… cloud model: the transcript is generated when you stop the meeting.",
     "notes": "Notes",
@@ -696,7 +741,9 @@
     "autoEndToggle": "Offer to end after prolonged silence",
     "autoEndDescription": "If no speech is detected for the selected duration, a prompt asks whether to end the meeting — and ends it automatically if you don't respond.",
     "silenceTimeoutLabel": "Silence before asking",
+    "silenceTimeoutDescription": "How long the meeting has to stay silent before you are asked whether to end it.",
     "autoEndGraceLabel": "Auto-end if unanswered for",
+    "autoEndGraceDescription": "How long that prompt waits for an answer before the meeting ends on its own.",
     "durationMinutes": "{{count}} min",
     "durationSeconds": "{{count}} sec",
     "tabSession": "Session",
@@ -718,11 +765,9 @@
     "calendarNamesToggle": "Name meetings from your calendar",
     "calendarNamesDescription": "Title new sessions after the calendar event in progress. Enabling asks for calendar access.",
     "calendarAccessDenied": "Calendar access was denied. You can allow it in System Settings → Privacy & Security → Calendars.",
-    "geminiSection": "Gemini (cloud transcription)",
-    "geminiKeyNote": "Audio is sent to Google and billed per minute. Nothing is sent until you turn a Gemini option on below.",
-    "geminiNeedsKey": "The Gemini options below stay off until you add an API key.",
-    "geminiFinalizeToggle": "Transcribe with Gemini when the meeting ends",
-    "geminiFinalizeDescription": "Upload the recording to Gemini when the meeting ends instead of transcribing it locally. More accurate, and the only option that can tell participants apart. Runs after live transcription too, replacing the rough live text with the better version.",
+    "geminiSection": "Live transcription (Gemini)",
+    "geminiNeedsKey": "Live transcription and speaker attribution need a Gemini API key.",
+    "geminiOpenModels": "Open Models",
     "geminiDiarizeToggle": "Identify individual speakers",
     "geminiDiarizeDescription": "Label each line with who said it. Takes priority over the cleanup option below, and is skipped automatically for recordings longer than 30 minutes, which the API cannot attribute.",
     "geminiSmartToggle": "Clean up the transcript",

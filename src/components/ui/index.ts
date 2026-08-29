@@ -1,3 +1,4 @@
+export { CollapsibleGroup } from "./CollapsibleGroup";
 export { Dropdown } from "./Dropdown";
 export { Slider } from "./Slider";
 export { ToggleSwitch } from "./ToggleSwitch";

@@ -3,10 +3,15 @@
     "settings": "Configuración...",
     "checkUpdates": "Buscar actualizaciones...",
     "copyLastTranscript": "Copiar la última transcripción",
+    "history": "Historial de dictado...",
     "unloadModel": "Descargar modelo",
     "model": "Modelo",
+    "modelsOnDevice": "En este dispositivo",
+    "modelsCloud": "Nube",
     "quit": "Salir",
     "cancel": "Cancelar",
+    "startDictation": "Iniciar dictado",
+    "stopDictation": "Detener dictado",
     "startMeeting": "Iniciar reunión",
     "stopMeeting": "Detener reunión",
     "recordingIndicator": "Fısıltı — Grabando…",
@@ -17,10 +22,14 @@
     "models": "Modelos",
     "advanced": "Avanzado",
     "postProcessing": "Post Proceso",
-    "history": "Historial",
+    "history": "Historial de dictado",
     "debug": "Depuración",
     "about": "Acerca de",
-    "meeting": "Meeting"
+    "meeting": "Meeting",
+    "groups": {
+      "features": "Funciones",
+      "system": "Sistema"
+    }
   },
   "onboarding": {
     "subtitle": "Para comenzar, elige un modelo de transcripción",
@@ -184,6 +193,37 @@
         "modelPlaceholder": "p. ej. openai/gpt-4o-mini-transcribe",
         "browseModels": "Explorar modelos →",
         "modelRequired": "Introduce un identificador de modelo de OpenRouter (p. ej. google/gemini-2.5-flash)."
+      },
+      "gemini": {
+        "description": "Este modelo transcribe en la nube, directamente desde Google. Tu audio se envía a Google y se factura por minuto. La misma clave de Gemini se usa para la transcripción de reuniones.",
+        "apiKeyPlaceholder": "Clave de API de Gemini",
+        "apiKeyStored": "Hay una clave guardada. Pega una nueva para reemplazarla.",
+        "getKey": "Obtener una clave de API →",
+        "keyRequired": "Introduce tu clave de API de Gemini para usar este modelo."
+      },
+      "meetingModel": {
+        "title": "Modelo para reuniones",
+        "description": "Las reuniones pueden usar un modelo distinto al del dictado: un modelo en la nube preciso para una reunión larga y algo local e instantáneo para pulsar y hablar.",
+        "label": "Transcribir reuniones con",
+        "hint": "Se aplica a la transcripción en vivo y a la pasada final. El modelo de dictado no cambia.",
+        "sameAsDictation": "Igual que el dictado",
+        "sameAsDictationNamed": "Igual que el dictado ({{model}})"
+      },
+      "activeModel": "Modelo activo",
+      "browse": "Todos los modelos",
+      "searchPlaceholder": "Buscar un modelo o idioma",
+      "languageCount": "{{count}} idiomas",
+      "badges": {
+        "cloud": "Se ejecuta en la nube",
+        "local": "Se ejecuta en este dispositivo"
+      },
+      "groups": {
+        "installed": "Descargados",
+        "cloud": "Nube",
+        "multilingual": "Multiidioma",
+        "multilingualShort": "Multiidioma",
+        "english": "Solo inglés",
+        "regional": "Idiomas específicos"
       }
     },
     "general": {
@@ -230,6 +270,10 @@
       "pushToTalk": {
         "label": "Presionar para Hablar",
         "description": "Mantén presionado para grabar, suelta para detener"
+      },
+      "groups": {
+        "recording": "Grabación",
+        "app": "Aplicación"
       }
     },
     "sound": {
@@ -262,7 +306,8 @@
         "output": "Salida",
         "transcription": "Transcripción",
         "history": "Historial",
-        "experimental": "Experimental"
+        "experimental": "Experimental",
+        "developer": "Desarrollador"
       },
       "experimentalToggle": {
         "label": "Funciones Experimentales",
@@ -428,10 +473,11 @@
         "cancel": "Cancelar",
         "selectToEdit": "Selecciona un prompt arriba para ver y editar sus detalles.",
         "createFirst": "Haz clic en 'Crear Nuevo Prompt' arriba para crear tu primer prompt de post procesamiento."
-      }
+      },
+      "description": "Deja que un modelo de IA corrija, reformatee o traduzca cada transcripción antes de pegarla."
     },
     "history": {
-      "title": "Historial",
+      "title": "Historial de dictado",
       "openFolder": "Abrir Carpeta de Grabaciones",
       "loading": "Cargando historial...",
       "empty": "Aún no hay transcripciones. ¡Comienza a grabar para crear tu historial!",
@@ -443,7 +489,8 @@
       "retranscribe": "Re-transcribir",
       "retranscribeError": "No se pudo re-transcribir. Por favor, inténtalo de nuevo.",
       "transcribing": "Transcribiendo...",
-      "transcriptionFailed": "La transcripción falló. Puedes re-transcribir usando el ícono de reintentar."
+      "transcriptionFailed": "La transcripción falló. Puedes re-transcribir usando el ícono de reintentar.",
+      "retentionSettings": "Ajustes del historial"
     },
     "debug": {
       "title": "Depuración",
@@ -585,7 +632,8 @@
     "off": "Desactivado",
     "yes": "Sí",
     "no": "No",
-    "noOptionsFound": "No se encontraron opciones"
+    "noOptionsFound": "No se encontraron opciones",
+    "clear": "Borrar"
   },
   "accessibility": {
     "permissionsRequired": "Se Requieren Permisos de Accesibilidad",
@@ -690,7 +738,9 @@
     "autoEndToggle": "Ofrecer finalizar tras un silencio prolongado",
     "autoEndDescription": "Si no se detecta voz durante el tiempo seleccionado, se pregunta si finalizar la reunión, y se finaliza automáticamente si no respondes.",
     "silenceTimeoutLabel": "Silencio antes de preguntar",
+    "silenceTimeoutDescription": "Cuánto tiempo debe permanecer la reunión en silencio antes de que se te pregunte si quieres finalizarla.",
     "autoEndGraceLabel": "Finalizar automáticamente tras",
+    "autoEndGraceDescription": "Cuánto espera ese aviso una respuesta antes de que la reunión finalice por sí sola.",
     "durationMinutes": "{{count}} min",
     "durationSeconds": "{{count}} s",
     "tabSession": "Session",
@@ -711,7 +761,11 @@
     "generalSection": "General",
     "calendarNamesToggle": "Nombrar reuniones desde el calendario",
     "calendarNamesDescription": "Las nuevas sesiones toman el título del evento del calendario en curso. Al activarlo se solicita acceso al calendario.",
-    "calendarAccessDenied": "Se denegó el acceso al calendario. Puedes permitirlo en Ajustes del Sistema → Privacidad y seguridad → Calendarios."
+    "calendarAccessDenied": "Se denegó el acceso al calendario. Puedes permitirlo en Ajustes del Sistema → Privacidad y seguridad → Calendarios.",
+    "liveTranslateTargetDescription": "El idioma al que se traduce el habla en vivo.",
+    "geminiSection": "Transcripción en vivo (Gemini)",
+    "geminiNeedsKey": "La transcripción en vivo y la atribución de hablantes necesitan una clave de API de Gemini.",
+    "geminiOpenModels": "Abrir Modelos"
   },
   "meetingPrompt": {
     "startTitle": "Reunión detectada",

@@ -744,7 +744,8 @@
     "subtitlesDescription": "Float what the other participants are saying near the bottom of your screen while the meeting runs, so you can read along without leaving the call. Click-through, and hidden from screen sharing and recordings. Needs a live mode above.",
     "stillProcessing": "Transcribing",
     "costEstimate": "~${{amount}}",
-    "costTooltip": "Estimated from the token counts the API reported, priced from a snapshot of public rates. Preview pricing changes, and free-tier quota and billing discounts are not accounted for, so this will not match an invoice exactly. A trailing + means one model had no published price and the real cost is higher."
+    "costTooltip": "Estimated from the token counts the API reported, priced from a snapshot of public rates. Preview pricing changes, and free-tier quota and billing discounts are not accounted for, so this will not match an invoice exactly. A trailing + means one model had no published price and the real cost is higher.",
+    "cloudBadge": "Audio sent to {{providers}}"
   },
   "meetingPrompt": {
     "startTitle": "Meeting detected",

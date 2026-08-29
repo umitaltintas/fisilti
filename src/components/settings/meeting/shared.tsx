@@ -1,9 +1,13 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Check, ChevronRight, Copy, Lock } from "lucide-react";
+import { Check, ChevronRight, Cloud, Copy, Lock } from "lucide-react";
 
 import { Select, type SelectOption } from "../../ui/Select";
-import type { SummaryProviderInfo, TranscriptSegment } from "@/lib/meeting";
+import {
+  getTranscriptionLocation,
+  type SummaryProviderInfo,
+  type TranscriptSegment,
+} from "@/lib/meeting";
 
 export const NOTES_AUTOSAVE_MS = 800;
 export const SEARCH_DEBOUNCE_MS = 300;
@@ -92,8 +96,38 @@ export const plainTranscriptText = (
 };
 
 // Persistent "100% on-device transcription" trust badge.
+// Honest indicator for where TRANSCRIPTION runs. This used to claim
+// "100% on-device" unconditionally, which stopped being true the moment a cloud
+// transcription model or a Gemini path could be selected. A privacy claim that
+// is only usually right is worse than none: it is exactly when someone stops
+// checking that it misleads them.
 export const OnDeviceBadge: React.FC = () => {
   const { t } = useTranslation();
+  const [cloudProviders, setCloudProviders] = useState<string[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getTranscriptionLocation().then((info) => {
+      if (!cancelled) setCloudProviders(info.cloudProviders);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Say nothing until we know. Showing the on-device claim optimistically and
+  // correcting it a moment later is the same lie, just briefer.
+  if (cloudProviders === null) return null;
+
+  if (cloudProviders.length > 0) {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-mid-gray/15 px-2.5 py-1 text-[11px] font-medium text-text/60">
+        <Cloud width={12} height={12} />
+        {t("meeting.cloudBadge", { providers: cloudProviders.join(", ") })}
+      </span>
+    );
+  }
+
   return (
     <span className="inline-flex items-center gap-1.5 rounded-full bg-logo-primary/10 px-2.5 py-1 text-[11px] font-medium text-logo-primary">
       <Lock width={12} height={12} />

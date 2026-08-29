@@ -11,7 +11,7 @@
     <meta property="og:title" content="Fısıltı — a whisper stays in the room" />
     <meta
       property="og:description"
-      content="Private, local-first dictation and AI meeting notes for macOS. 100% on-device speech recognition."
+      content="Private, local-first dictation and AI meeting notes for macOS. On-device speech recognition by default; cloud transcription, translation and speaker identification strictly opt-in."
     />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://umitaltintas.github.io/fisilti/" />
@@ -792,6 +792,7 @@
         <nav class="nav-links" aria-label="Site">
           <a href="#dictation">Dictation</a>
           <a href="#meetings">Meetings</a>
+          <a href="#cloud">Cloud</a>
           <a href="#install">Install</a>
           <a href="https://github.com/umitaltintas/fisilti">GitHub</a>
         </nav>
@@ -825,17 +826,20 @@
       <div class="claims">
         <div class="wrap claims-grid">
           <div class="claim">
-            <h3>Nothing leaves the machine</h3>
+            <h3>Local until you say otherwise</h3>
             <p>
-              Speech recognition runs 100% locally. There is no server, no
-              account, no audio upload — there is nowhere for your voice to go.
+              Speech recognition runs on your machine by default. No account, no
+              telemetry, nothing uploaded. Cloud transcription exists, but it is
+              off until you turn it on — and the app says so on screen while it
+              is running.
             </p>
           </div>
           <div class="claim">
             <h3>Summaries on your terms</h3>
             <p>
               AI meeting notes are optional and use a provider you choose —
-              OpenRouter, a local Ollama, or any OpenAI-compatible endpoint.
+              OpenRouter, Google Gemini, a local Ollama, or any
+              OpenAI-compatible endpoint.
             </p>
           </div>
           <div class="claim">
@@ -969,6 +973,63 @@
                   stored locally.</span
                 >
               </li>
+              <li>
+                <span
+                  ><b>Named after the real meeting</b> — the calendar event in
+                  progress, or the app's window title.</span
+                >
+              </li>
+              <li>
+                <span
+                  ><b>Nothing lost to a crash</b> — an interrupted session keeps
+                  its audio and can be transcribed later.</span
+                >
+              </li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section class="section wrap" id="cloud">
+        <p class="eyebrow">Optional · bring your own key</p>
+        <h2>When on-device <em>isn't enough.</em></h2>
+        <div class="section-body">
+          <div class="feature-copy reveal">
+            <p>
+              Some things a local model simply cannot do: tell four remote
+              voices apart, or translate a conversation while it is still
+              happening. Fısıltı can hand those jobs to Google's Gemini models —
+              only if you switch it on, only with your own API key, and never
+              without saying so on screen.
+            </p>
+            <p>
+              Every meeting shows what it cost, next to how long it ran.
+            </p>
+            <ul class="feature-list">
+              <li>
+                <span
+                  ><b>Speaker identification</b> — "Speaker 1", "Speaker 2"
+                  instead of one anonymous block of everyone else.</span
+                >
+              </li>
+              <li>
+                <span
+                  ><b>Live translation</b> — follow a meeting in a language you
+                  don't speak, original and translation side by side.</span
+                >
+              </li>
+              <li>
+                <span
+                  ><b>On-screen subtitles</b> — a click-through strip at the
+                  bottom of your display, hidden from screen sharing.</span
+                >
+              </li>
+              <li>
+                <span
+                  ><b>Custom vocabulary</b> — the names, products and jargon
+                  your meetings are actually about.</span
+                >
+              </li>
             </ul>
           </div>
         </div>
@@ -981,14 +1042,18 @@
             <em>stays in the room.</em>
           </h2>
           <p class="reveal">
-            So is everything Fısıltı hears. The models run here, the history
-            lives here, and the only network calls are the ones you configure
-            yourself.
+            By default, so is everything Fısıltı hears: the models run here, the
+            history lives here, and the only network calls are the ones you
+            configure yourself. Cloud transcription can do things a local model
+            cannot — tell several people apart, translate as they speak — so it
+            is offered, switched off, with your own key and a running cost shown
+            on every meeting. The choice is yours to make, not ours to make
+            quietly.
           </p>
           <div class="keys reveal" aria-hidden="true">
             <span>no account</span>
             <span>no telemetry</span>
-            <span>no audio upload</span>
+            <span>local by default</span>
             <span>your api keys</span>
           </div>
         </div>

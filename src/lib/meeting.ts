@@ -300,6 +300,22 @@ export function getMeetingSummaryTemplates(): Promise<
     .catch(() => []);
 }
 
+/** Where meeting transcription would actually run. Mirrors Rust
+ * `TranscriptionLocation`. An empty `cloudProviders` means fully on-device. */
+export interface TranscriptionLocation {
+  cloudProviders: string[];
+}
+
+/** Ask the backend where transcription runs. Computed there because only the
+ * backend knows whether the selected model is a cloud engine. Falls back to
+ * claiming cloud on error: over-claiming privacy is the one failure mode worth
+ * avoiding. */
+export function getTranscriptionLocation(): Promise<TranscriptionLocation> {
+  return invoke<{ cloud_providers?: string[] }>("get_transcription_location")
+    .then((r) => ({ cloudProviders: r?.cloud_providers ?? [] }))
+    .catch(() => ({ cloudProviders: ["?"] }));
+}
+
 /** Resolve the active post-process provider used for summaries and whether it
  * runs locally or in the cloud, for the honest trust indicator. */
 export function getSummaryProviderInfo(): Promise<SummaryProviderInfo> {

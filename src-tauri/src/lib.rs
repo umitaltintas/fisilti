@@ -492,6 +492,7 @@ pub fn run(cli_args: CliArgs) {
             commands::meeting::get_meeting_audio_path,
             commands::meeting::delete_meeting,
             commands::meeting::discard_interrupted_meeting,
+            commands::meeting::get_transcription_location,
             commands::meeting::update_meeting_title,
             commands::meeting::update_meeting_notes,
             commands::meeting::export_meeting_markdown,

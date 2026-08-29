@@ -7,18 +7,24 @@
 
 ## What it is
 
-Fisilti (technical id: `fisilti`) is a privacy-first desktop app that keeps your
-voice on your own machine. Nothing is sent to the cloud for transcription —
-speech recognition runs 100% locally on your computer. It does two things:
+Fisilti (technical id: `fisilti`) is a privacy-first desktop app for your voice.
+It does two things:
 
 1. **Dictation** — push-to-talk speech-to-text. Press a shortcut, speak, and
    your words are pasted into whatever app you're using.
 2. **Meeting mode** — capture a full conversation (your mic + the system audio),
    watch a live transcript, then get an AI-generated summary when you stop.
 
-Optional AI summaries can use a provider of your choice (OpenRouter, a local
-Ollama instance, or any OpenAI-compatible endpoint), so you stay in control of
-where — if anywhere — your data goes.
+**Local by default, cloud only if you ask.** Out of the box, speech recognition
+runs entirely on your machine and no audio leaves it. Every cloud feature below
+is off until you turn it on and paste your own API key, and the app tells you
+which one is active: the badge above the transcript reads "100% on-device
+transcription" only while that is actually true, and names the service
+otherwise.
+
+Cloud options exist because some things genuinely cannot be done on-device
+today — telling several remote participants apart, or translating a meeting as
+it happens. Whether that trade is worth making is your call, not a default.
 
 ## Features
 
@@ -28,33 +34,73 @@ where — if anywhere — your data goes.
 - Local transcription via **Whisper** (Small/Medium/Turbo/Large, GPU-accelerated
   when available) or **Parakeet** (CPU-optimized, automatic language detection)
 - Voice Activity Detection (Silero VAD) to trim silence
+- Optional AI post-processing to clean up transcripts (any provider below)
 
 ### Meeting mode
 
 - Captures **microphone + system audio** together using the macOS CoreAudio tap
-- **Live transcript** as the meeting runs
-- **Oscilloscope / level visualizer** for real-time audio feedback
-- **Per-speaker labels** ("you" vs. "others") from the separate mic and
+- **Live transcript** as the meeting runs, with an oscilloscope level meter
+- **Per-source labels** ("you" vs. "others") from the separate mic and
   system-audio streams
-- **Hybrid high-quality finalize** — a higher-accuracy transcription pass when
-  you stop the meeting
-- **AI meeting-notes summary** via OpenRouter, Ollama, or any OpenAI-compatible
-  provider
+- **Hybrid high-quality finalize** — a higher-accuracy transcription pass over
+  the full audio when you stop, replacing the rough live preview
+- **AI meeting-notes summary** via OpenRouter, Google Gemini, Ollama, or any
+  OpenAI-compatible provider
 - **Persistent meeting history** with stored audio and **playback**
 - **Automatic meeting detection** (opt-in) — when a meeting app (Zoom, Teams,
   Webex, WhatsApp, …) or a browser (Google Meet & co. run in tabs) starts using
   the microphone, a small prompt offers to start transcribing
+- **Automatic naming** — sessions are titled after the calendar event in
+  progress, or the meeting app's window title, instead of a datetime
 - **Auto-end on silence** — if nobody speaks for a configurable duration (or
   the meeting app releases the microphone), Fisilti asks whether to end the
   meeting and ends it automatically if the prompt goes unanswered
+- **Crash recovery** — a meeting interrupted by a crash, or one whose
+  transcription failed, keeps its audio and can be re-transcribed later.
+  Nothing is discarded just because a transcription pass came back empty
 - Tray menu shortcuts: start/stop a meeting and open the past-meetings list
   without opening the main window
+
+### Cloud transcription with Gemini (opt-in)
+
+All of these are off by default and need a Gemini API key, pasted once in
+Meeting → Settings.
+
+- **Speaker identification** — the on-stop finalize pass can run through
+  `gemini-3.5-transcribe`, which attributes speech to individual participants
+  ("Speaker 1", "Speaker 2", …) instead of one undifferentiated "others" block.
+  This is the only option that can tell people apart. Recordings longer than
+  30 minutes fall back to plain transcription, which is the API's limit for
+  speaker attribution.
+- **Live transcription** — `gemini-3.5-transcribe-live` streams text as people
+  speak, for a more accurate live transcript than the local model can manage in
+  real time.
+- **Live translation** — `gemini-3.5-live-translate` shows the original and a
+  translation of each line, so you can follow a meeting in a language you don't
+  speak.
+- **Live subtitles** — a click-through strip near the bottom of your screen
+  showing what the other participants are saying, so you can read along without
+  leaving the call. Excluded from screen sharing and recordings.
+- **Custom vocabulary** — names, products and jargon the model should expect.
+- **Cleaned-up transcripts** — drop filler words and false starts instead of
+  transcribing every "um" verbatim. (Mutually exclusive with speaker
+  identification; the API does not offer both at once.)
+
+**Cost.** Each meeting shows an estimate next to its duration, computed from
+the token counts the API reports. Rough per hour of audio: speaker
+identification ~$0.30, live transcription ~$0.55, live translation ~$2.20 —
+translation is the expensive one because its output is speech. The figure is an
+estimate, not an invoice: prices for these preview models change, and free-tier
+quota and billing discounts aren't visible to the app.
 
 ## Requirements
 
 - **macOS 14.4 or later** — required for system-audio capture (the CoreAudio
   process tap used by meeting mode).
 - Microphone and accessibility permissions (granted on first launch).
+- Optional: a **calendar** permission, only if you turn on naming meetings after
+  the calendar event in progress.
+- Optional: a **Gemini API key**, only for the cloud features listed above.
 
 ## Models
 
@@ -62,6 +108,9 @@ Transcription models are **downloaded on first use** — there is nothing to
 configure manually to get started. Pick a model in Settings and Fisilti fetches
 it the first time it's needed. AI summary models are provided by whichever
 external provider you configure (and are optional).
+
+Cloud transcription models need no download — they run on the provider's side
+and need only an API key.
 
 ## Build from source
 

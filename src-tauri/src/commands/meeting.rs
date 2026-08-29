@@ -448,6 +448,44 @@ pub fn delete_meeting(meeting_manager: State<Arc<MeetingManager>>, id: i64) -> R
         .map_err(|e| format!("Failed to delete meeting: {}", e))
 }
 
+/// Where a meeting's transcription would actually run, for the trust
+/// indicator.
+///
+/// The UI showed an unconditional "100% on-device" badge, which stopped being
+/// true the moment a cloud transcription model or any Gemini path could be
+/// selected. A privacy claim that is right most of the time is worse than no
+/// claim: it is exactly the situation where the user stops checking.
+#[derive(serde::Serialize, specta::Type)]
+pub struct TranscriptionLocation {
+    /// Names of the cloud services audio would be sent to. Empty means the
+    /// meeting really is fully on-device.
+    pub cloud_providers: Vec<String>,
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn get_transcription_location(app: AppHandle) -> Result<TranscriptionLocation, String> {
+    let settings = crate::settings::get_settings(&app);
+    let mut cloud_providers: Vec<String> = Vec::new();
+
+    // Gemini: live streaming and/or the batch finalize pass.
+    let gemini = settings.meeting_live_mode != "off" || settings.meeting_gemini_finalize;
+    if gemini {
+        cloud_providers.push("Google Gemini".to_string());
+    }
+
+    // The selected transcription model may itself be a cloud model.
+    let selected_is_cloud = app
+        .try_state::<Arc<crate::managers::model::ModelManager>>()
+        .and_then(|mm| mm.get_model_info(&settings.selected_model))
+        .is_some_and(|m| m.engine_type.is_cloud());
+    if selected_is_cloud {
+        cloud_providers.push("OpenRouter".to_string());
+    }
+
+    Ok(TranscriptionLocation { cloud_providers })
+}
+
 /// Discard an interrupted meeting: delete the row AND the files only it
 /// referenced.
 ///

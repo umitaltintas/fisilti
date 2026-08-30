@@ -194,13 +194,6 @@
         "browseModels": "モデルを見る →",
         "modelRequired": "OpenRouter のモデル名を入力してください（例: google/gemini-2.5-flash）。"
       },
-      "gemini": {
-        "description": "このモデルは Google に直接接続してクラウドで文字起こしします。音声は Google に送信され、分単位で課金されます。同じ Gemini キーが会議の文字起こしにも使われます。",
-        "apiKeyPlaceholder": "Gemini API キー",
-        "apiKeyStored": "キーが保存されています。置き換えるには新しいキーを貼り付けてください。",
-        "getKey": "API キーを取得 →",
-        "keyRequired": "このモデルを使うには Gemini API キーを入力してください。"
-      },
       "meetingModel": {
         "title": "会議用モデル",
         "description": "会議は音声入力とは別のモデルで動かせます。長い会議には正確なクラウドモデル、プッシュトゥトークにはローカルで即座に動くモデルを。",
@@ -216,7 +209,8 @@
         "openrouterHint": "OpenRouter のモデルとクラウド後処理で使われます。",
         "gemini": "Gemini",
         "geminiHint": "Gemini のモデル、会議のライブ文字起こし、話者の判別で使われます。",
-        "clear": "消去"
+        "placeholder": "API キーを貼り付け",
+        "getKey": "API キーを取得 →"
       },
       "activeModel": "使用中のモデル",
       "browse": "すべてのモデル",
@@ -449,7 +443,10 @@
         "apiKey": {
           "title": "APIキー",
           "description": "選択したプロバイダーのAPIキー。",
-          "placeholder": "sk-..."
+          "placeholder": "sk-...",
+          "managedOnModels": "「モデル」ページのキーを使用します。",
+          "missingOnModels": "キーがまだ保存されていません。「モデル」ページで追加してください。",
+          "openModels": "モデルを開く"
         },
         "model": {
           "title": "モデル",

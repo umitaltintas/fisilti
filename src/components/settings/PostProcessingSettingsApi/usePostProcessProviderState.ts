@@ -3,6 +3,7 @@ import { useSettings } from "../../../hooks/useSettings";
 import { commands, type PostProcessProvider } from "@/bindings";
 import type { ModelOption } from "./types";
 import type { DropdownOption } from "../../ui/Dropdown";
+import { keyHomeForProvider, type CloudProvider } from "@/lib/utils/model";
 
 type PostProcessProviderState = {
   providerOptions: DropdownOption[];
@@ -17,6 +18,10 @@ type PostProcessProviderState = {
   apiKey: string;
   handleApiKeyChange: (value: string) => void;
   isApiKeyUpdating: boolean;
+  /** Set when this provider's key is owned by the Models page, not this tab. */
+  keyHome: CloudProvider | null;
+  /** Whether that shared key is actually filled in. */
+  hasKeyFromModels: boolean;
   model: string;
   handleModelChange: (value: string) => void;
   modelOptions: ModelOption[];
@@ -63,6 +68,17 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
   // Use settings directly as single source of truth
   const baseUrl = selectedProvider?.base_url ?? "";
   const apiKey = settings?.post_process_api_keys?.[selectedProviderId] ?? "";
+
+  // Google and OpenRouter bill the same account as the transcription engines,
+  // so their key is entered once on the Models page. This tab reports whether
+  // it is there rather than asking for it again.
+  const keyHome = keyHomeForProvider(selectedProviderId);
+  const hasKeyFromModels =
+    keyHome === "gemini"
+      ? (settings?.gemini_api_key ?? "").trim() !== ""
+      : keyHome === "openrouter"
+        ? (settings?.post_process_api_keys?.["openrouter"] ?? "").trim() !== ""
+        : false;
   const model = settings?.post_process_models?.[selectedProviderId] ?? "";
 
   const providerOptions = useMemo<DropdownOption[]>(() => {
@@ -98,7 +114,12 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
       // to avoid unnecessary backend errors.
       if (providerId !== APPLE_PROVIDER_ID) {
         const provider = providers.find((p) => p.id === providerId);
-        const apiKey = settings?.post_process_api_keys?.[providerId] ?? "";
+        // Google's key lives in `gemini_api_key`, so reading the map for it
+        // would look unconfigured and skip the fetch even when it is set.
+        const apiKey =
+          keyHomeForProvider(providerId) === "gemini"
+            ? (settings?.gemini_api_key ?? "")
+            : (settings?.post_process_api_keys?.[providerId] ?? "");
         const hasBaseUrl = (provider?.base_url ?? "").trim() !== "";
         const hasApiKey = apiKey.trim() !== "";
 
@@ -222,6 +243,8 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
     apiKey,
     handleApiKeyChange,
     isApiKeyUpdating,
+    keyHome,
+    hasKeyFromModels,
     model,
     handleModelChange,
     modelOptions,

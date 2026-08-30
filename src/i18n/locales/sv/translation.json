@@ -244,13 +244,6 @@
         "browseModels": "Bläddra bland modeller →",
         "modelRequired": "Ange en OpenRouter-modellslug (t.ex. google/gemini-2.5-flash)."
       },
-      "gemini": {
-        "description": "Den här modellen transkriberar i molnet, direkt hos Google. Ditt ljud skickas till Google och debiteras per minut. Samma Gemini-nyckel används för mötestranskribering.",
-        "apiKeyPlaceholder": "Gemini API-nyckel",
-        "apiKeyStored": "En nyckel är sparad. Klistra in en ny för att ersätta den.",
-        "getKey": "Hämta en API-nyckel →",
-        "keyRequired": "Ange din Gemini API-nyckel för att använda den här modellen."
-      },
       "meetingModel": {
         "title": "Mötesmodell",
         "description": "Möten kan köra på en annan modell än diktering — en träffsäker molnmodell för ett långt möte och något lokalt och omedelbart för tryck-och-tala.",
@@ -266,7 +259,8 @@
         "openrouterHint": "Används av OpenRouter-modellerna och molnbaserad efterbearbetning.",
         "gemini": "Gemini",
         "geminiHint": "Används av Gemini-modellerna, livetranskribering av möten och talarigenkänning.",
-        "clear": "Rensa"
+        "placeholder": "Klistra in din API-nyckel",
+        "getKey": "Hämta en API-nyckel →"
       },
       "activeModel": "Aktiv modell",
       "browse": "Alla modeller",
@@ -449,7 +443,10 @@
         "apiKey": {
           "title": "API-nyckel",
           "description": "API-nyckel för den valda leverantören.",
-          "placeholder": "sk-..."
+          "placeholder": "sk-...",
+          "managedOnModels": "Använder nyckeln från sidan Modeller.",
+          "missingOnModels": "Ingen nyckel har sparats än. Lägg till en på sidan Modeller.",
+          "openModels": "Öppna Modeller"
         },
         "model": {
           "title": "Modell",

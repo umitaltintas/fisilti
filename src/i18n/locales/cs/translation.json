@@ -194,13 +194,6 @@
         "browseModels": "Procházet modely →",
         "modelRequired": "Zadejte identifikátor modelu OpenRouter (např. google/gemini-2.5-flash)."
       },
-      "gemini": {
-        "description": "Tento model přepisuje v cloudu, přímo u Google. Váš zvuk se odesílá společnosti Google a účtuje se po minutách. Stejný klíč Gemini se používá pro přepis schůzek.",
-        "apiKeyPlaceholder": "Klíč API Gemini",
-        "apiKeyStored": "Klíč je uložen. Vložte nový, chcete-li jej nahradit.",
-        "getKey": "Získat klíč API →",
-        "keyRequired": "Zadejte svůj klíč API Gemini, abyste mohli tento model použít."
-      },
       "meetingModel": {
         "title": "Model pro schůzky",
         "description": "Schůzky mohou používat jiný model než diktování — přesný cloudový model pro dlouhou schůzku a něco lokálního a okamžitého pro stiskni-a-mluv.",
@@ -216,7 +209,8 @@
         "openrouterHint": "Používají ho modely OpenRouter a cloudové následné zpracování.",
         "gemini": "Gemini",
         "geminiHint": "Používají ho modely Gemini, živý přepis schůzek a rozpoznávání mluvčích.",
-        "clear": "Vymazat"
+        "placeholder": "Vložte svůj API klíč",
+        "getKey": "Získat API klíč →"
       },
       "activeModel": "Aktivní model",
       "browse": "Všechny modely",
@@ -449,7 +443,10 @@
         "apiKey": {
           "title": "API klíč",
           "description": "API klíč pro vybraného poskytovatele.",
-          "placeholder": "sk-..."
+          "placeholder": "sk-...",
+          "managedOnModels": "Používá klíč ze stránky Modely.",
+          "missingOnModels": "Zatím není uložen žádný klíč. Přidejte ho na stránce Modely.",
+          "openModels": "Otevřít Modely"
         },
         "model": {
           "title": "Model",

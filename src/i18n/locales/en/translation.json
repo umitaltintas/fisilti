@@ -244,13 +244,6 @@
         "browseModels": "Browse models →",
         "modelRequired": "Enter an OpenRouter model slug (e.g. google/gemini-2.5-flash)."
       },
-      "gemini": {
-        "description": "This model transcribes in the cloud, direct from Google. Your audio is sent to Google and billed per minute. The same Gemini key is used for meeting transcription.",
-        "apiKeyPlaceholder": "Gemini API key",
-        "apiKeyStored": "A key is saved. Paste a new one to replace it.",
-        "getKey": "Get an API key →",
-        "keyRequired": "Enter your Gemini API key to use this model."
-      },
       "meetingModel": {
         "title": "Meeting model",
         "description": "Meetings can run on a different model than dictation — an accurate cloud model for a long meeting, something local and instant for push-to-talk.",
@@ -266,7 +259,8 @@
         "openrouterHint": "Used by the OpenRouter models and by cloud post-processing.",
         "gemini": "Gemini",
         "geminiHint": "Used by the Gemini models, live meeting transcription and speaker attribution.",
-        "clear": "Clear"
+        "placeholder": "Paste your API key",
+        "getKey": "Get an API key →"
       },
       "activeModel": "Active model",
       "browse": "All models",
@@ -449,7 +443,10 @@
         "apiKey": {
           "title": "API Key",
           "description": "API key for the selected provider.",
-          "placeholder": "sk-..."
+          "placeholder": "sk-...",
+          "managedOnModels": "Uses the key from the Models page.",
+          "missingOnModels": "No key saved yet. Add one on the Models page.",
+          "openModels": "Open Models"
         },
         "model": {
           "title": "Model",

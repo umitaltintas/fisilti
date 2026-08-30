@@ -113,6 +113,8 @@ const settingUpdaters: {
     commands.changeSelectedLanguageSetting(value as string),
   openrouter_custom_model: (value) =>
     commands.changeOpenrouterCustomModelSetting(value as string),
+  gemini_api_key: (value) =>
+    commands.changeGeminiApiKeySetting(value as string),
   overlay_position: (value) =>
     commands.changeOverlayPositionSetting(value as string),
   debug_mode: (value) => commands.changeDebugModeSetting(value as boolean),

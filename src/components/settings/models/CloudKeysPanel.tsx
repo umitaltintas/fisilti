@@ -1,12 +1,63 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 import { useTranslation } from "react-i18next";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { KeyRound } from "lucide-react";
-import { Input } from "@/components/ui/Input";
 import { SettingContainer } from "@/components/ui/SettingContainer";
 import { SettingsGroup } from "@/components/ui/SettingsGroup";
-import { changeGeminiApiKey, getMeetingGeminiSettings } from "@/lib/meeting";
+import { ApiKeyField } from "../PostProcessingSettingsApi/ApiKeyField";
 import { useSettingsStore } from "@/stores/settingsStore";
+
+interface ApiKeyRowProps {
+  title: string;
+  description: string;
+  value: string;
+  onCommit: (value: string) => void;
+  disabled: boolean;
+  consoleUrl: string;
+}
+
+/**
+ * One credential. Every key row on every page is this component, so a key never
+ * looks or behaves differently depending on where you found it — the panel used
+ * to mix a bound password field with a write-only one whose state lived in its
+ * placeholder, which read as two unrelated controls.
+ */
+const ApiKeyRow: React.FC<ApiKeyRowProps> = ({
+  title,
+  description,
+  value,
+  onCommit,
+  disabled,
+  consoleUrl,
+}) => {
+  const { t } = useTranslation();
+
+  return (
+    <SettingContainer
+      title={title}
+      description={description}
+      descriptionMode="tooltip"
+      layout="horizontal"
+      grouped
+    >
+      <div className="flex items-center gap-2">
+        <ApiKeyField
+          value={value}
+          onBlur={onCommit}
+          disabled={disabled}
+          placeholder={t("settings.models.keys.placeholder")}
+        />
+        <button
+          type="button"
+          onClick={() => openUrl(consoleUrl)}
+          className="cursor-pointer whitespace-nowrap text-xs text-logo-primary hover:underline"
+        >
+          {t("settings.models.keys.getKey")}
+        </button>
+      </div>
+    </SettingContainer>
+  );
+};
 
 /**
  * Every cloud credential the app uses, in one always-visible place.
@@ -15,49 +66,13 @@ import { useSettingsStore } from "@/stores/settingsStore";
  * meant the Gemini field only existed while a Gemini model was the *dictation*
  * model — so anyone running local dictation with a Gemini meeting model had
  * nowhere to paste it. A key is account-level, not model-level, so it belongs
- * here rather than inside a model's panel.
+ * here rather than inside a model's panel, and the AI-editing tab links here
+ * instead of growing a second field for the same account.
  */
 export const CloudKeysPanel: React.FC = () => {
   const { t } = useTranslation();
-  const { settings, updatePostProcessApiKey } = useSettingsStore();
-
-  const openrouterKey = settings?.post_process_api_keys?.["openrouter"] ?? "";
-
-  // The Gemini key is write-only — the backend reports only whether one is
-  // stored — so the field stays empty and shows its state in the placeholder.
-  const [hasGeminiKey, setHasGeminiKey] = useState(false);
-  const [geminiDraft, setGeminiDraft] = useState("");
-  useEffect(() => {
-    let cancelled = false;
-    void getMeetingGeminiSettings().then((s) => {
-      if (!cancelled) setHasGeminiKey(s.hasApiKey);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const commitGemini = async (value: string) => {
-    const key = value.trim();
-    if (key.length === 0) return;
-    try {
-      await changeGeminiApiKey(key);
-      setHasGeminiKey(true);
-      setGeminiDraft("");
-    } catch (error) {
-      console.error("Failed to save the Gemini API key:", error);
-    }
-  };
-
-  const clearGemini = async () => {
-    try {
-      await changeGeminiApiKey("");
-      setHasGeminiKey(false);
-      setGeminiDraft("");
-    } catch (error) {
-      console.error("Failed to clear the Gemini API key:", error);
-    }
-  };
+  const { settings, updateSetting, updatePostProcessApiKey, isUpdatingKey } =
+    useSettingsStore();
 
   return (
     <SettingsGroup title={t("settings.models.keys.title")}>
@@ -70,72 +85,23 @@ export const CloudKeysPanel: React.FC = () => {
         </p>
       </div>
 
-      <SettingContainer
+      <ApiKeyRow
         title={t("settings.models.keys.openrouter")}
         description={t("settings.models.keys.openrouterHint")}
-        descriptionMode="tooltip"
-        grouped
-      >
-        <div className="flex items-center gap-2">
-          <Input
-            type="password"
-            value={openrouterKey}
-            onChange={(event) =>
-              updatePostProcessApiKey("openrouter", event.target.value)
-            }
-            placeholder={t("settings.models.cloud.apiKeyPlaceholder")}
-            variant="compact"
-            className="min-w-[280px]"
-          />
-          <button
-            type="button"
-            onClick={() => openUrl("https://openrouter.ai/keys")}
-            className="cursor-pointer whitespace-nowrap text-xs text-logo-primary hover:underline"
-          >
-            {t("settings.models.cloud.getKey")}
-          </button>
-        </div>
-      </SettingContainer>
+        value={settings?.post_process_api_keys?.["openrouter"] ?? ""}
+        onCommit={(value) => void updatePostProcessApiKey("openrouter", value)}
+        disabled={isUpdatingKey("post_process_api_key:openrouter")}
+        consoleUrl="https://openrouter.ai/keys"
+      />
 
-      <SettingContainer
+      <ApiKeyRow
         title={t("settings.models.keys.gemini")}
         description={t("settings.models.keys.geminiHint")}
-        descriptionMode="tooltip"
-        grouped
-      >
-        <div className="flex items-center gap-2">
-          <Input
-            type="password"
-            value={geminiDraft}
-            onChange={(event) => setGeminiDraft(event.target.value)}
-            onBlur={() => void commitGemini(geminiDraft)}
-            placeholder={
-              hasGeminiKey
-                ? t("settings.models.gemini.apiKeyStored")
-                : t("settings.models.gemini.apiKeyPlaceholder")
-            }
-            variant="compact"
-            className="min-w-[280px]"
-          />
-          {hasGeminiKey ? (
-            <button
-              type="button"
-              onClick={() => void clearGemini()}
-              className="cursor-pointer whitespace-nowrap text-xs text-text/50 transition-colors hover:text-red-400"
-            >
-              {t("settings.models.keys.clear")}
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => openUrl("https://aistudio.google.com/apikey")}
-              className="cursor-pointer whitespace-nowrap text-xs text-logo-primary hover:underline"
-            >
-              {t("settings.models.gemini.getKey")}
-            </button>
-          )}
-        </div>
-      </SettingContainer>
+        value={settings?.gemini_api_key ?? ""}
+        onCommit={(value) => void updateSetting("gemini_api_key", value)}
+        disabled={isUpdatingKey("gemini_api_key")}
+        consoleUrl="https://aistudio.google.com/apikey"
+      />
     </SettingsGroup>
   );
 };

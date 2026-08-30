@@ -244,13 +244,6 @@
         "browseModels": "瀏覽模型 →",
         "modelRequired": "請輸入 OpenRouter 模型識別碼（例如 google/gemini-2.5-flash）。"
       },
-      "gemini": {
-        "description": "此模型直接透過 Google 在雲端轉錄。你的音訊會傳送到 Google，並按分鐘計費。會議轉錄使用同一組 Gemini 金鑰。",
-        "apiKeyPlaceholder": "Gemini API 金鑰",
-        "apiKeyStored": "已儲存金鑰。貼上新金鑰即可取代。",
-        "getKey": "取得 API 金鑰 →",
-        "keyRequired": "請輸入你的 Gemini API 金鑰以使用此模型。"
-      },
       "meetingModel": {
         "title": "會議模型",
         "description": "會議可以使用與聽寫不同的模型：長會議用準確的雲端模型，按鍵說話用本機即時的模型。",
@@ -266,7 +259,8 @@
         "openrouterHint": "供 OpenRouter 模型和雲端後處理使用。",
         "gemini": "Gemini",
         "geminiHint": "供 Gemini 模型、會議即時轉錄和說話者識別使用。",
-        "clear": "清除"
+        "placeholder": "貼上你的 API 金鑰",
+        "getKey": "取得 API 金鑰 →"
       },
       "activeModel": "目前模型",
       "browse": "全部模型",
@@ -449,7 +443,10 @@
         "apiKey": {
           "title": "API 金鑰",
           "description": "所選供應商的 API 金鑰",
-          "placeholder": "sk-..."
+          "placeholder": "sk-...",
+          "managedOnModels": "使用「模型」頁面中的金鑰。",
+          "missingOnModels": "尚未儲存金鑰。請在「模型」頁面新增。",
+          "openModels": "開啟模型"
         },
         "model": {
           "title": "模型",

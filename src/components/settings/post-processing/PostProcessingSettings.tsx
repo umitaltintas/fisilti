@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { RefreshCcw } from "lucide-react";
 import { commands } from "@/bindings";
+import { emit } from "@tauri-apps/api/event";
 
 import { Alert } from "../../ui/Alert";
 import {
@@ -82,17 +83,44 @@ const PostProcessingSettingsApiComponent: React.FC = () => {
             layout="horizontal"
             grouped={true}
           >
-            <div className="flex items-center gap-2">
-              <ApiKeyField
-                value={state.apiKey}
-                onBlur={state.handleApiKeyChange}
-                placeholder={t(
-                  "settings.postProcessing.api.apiKey.placeholder",
-                )}
-                disabled={state.isApiKeyUpdating}
-                className="min-w-[320px]"
-              />
-            </div>
+            {state.keyHome ? (
+              /* This provider bills the same account as a transcription
+                 engine, so its key already has a home on the Models page.
+                 A second field here would be the same credential stored
+                 twice. */
+              <div className="flex items-center gap-3">
+                <span
+                  className={
+                    state.hasKeyFromModels
+                      ? "text-xs text-text/60"
+                      : "text-xs text-amber-500"
+                  }
+                >
+                  {state.hasKeyFromModels
+                    ? t("settings.postProcessing.api.apiKey.managedOnModels")
+                    : t("settings.postProcessing.api.apiKey.missingOnModels")}
+                </span>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => void emit("navigate-section", "models")}
+                >
+                  {t("settings.postProcessing.api.apiKey.openModels")}
+                </Button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <ApiKeyField
+                  value={state.apiKey}
+                  onBlur={state.handleApiKeyChange}
+                  placeholder={t(
+                    "settings.postProcessing.api.apiKey.placeholder",
+                  )}
+                  disabled={state.isApiKeyUpdating}
+                  className="min-w-[320px]"
+                />
+              </div>
+            )}
           </SettingContainer>
         </>
       )}

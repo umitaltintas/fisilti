@@ -194,13 +194,6 @@
         "browseModels": "Duyệt mô hình →",
         "modelRequired": "Nhập slug mô hình OpenRouter (ví dụ google/gemini-2.5-flash)."
       },
-      "gemini": {
-        "description": "Mô hình này chuyển lời nói thành văn bản trên đám mây, trực tiếp từ Google. Âm thanh của bạn được gửi tới Google và tính phí theo phút. Cùng khóa Gemini đó được dùng cho việc chép lời cuộc họp.",
-        "apiKeyPlaceholder": "Khóa API Gemini",
-        "apiKeyStored": "Đã lưu một khóa. Dán khóa mới để thay thế.",
-        "getKey": "Lấy khóa API →",
-        "keyRequired": "Nhập khóa API Gemini của bạn để dùng mô hình này."
-      },
       "meetingModel": {
         "title": "Mô hình cho cuộc họp",
         "description": "Cuộc họp có thể chạy trên mô hình khác với đọc chính tả — một mô hình đám mây chính xác cho cuộc họp dài, và thứ gì đó cục bộ, tức thì cho nhấn-để-nói.",
@@ -216,7 +209,8 @@
         "openrouterHint": "Dùng bởi các mô hình OpenRouter và xử lý hậu kỳ trên đám mây.",
         "gemini": "Gemini",
         "geminiHint": "Dùng bởi các mô hình Gemini, chép lời cuộc họp trực tiếp và nhận diện người nói.",
-        "clear": "Xóa"
+        "placeholder": "Dán khóa API của bạn",
+        "getKey": "Lấy khóa API →"
       },
       "activeModel": "Mô hình đang dùng",
       "browse": "Tất cả mô hình",
@@ -449,7 +443,10 @@
         "apiKey": {
           "title": "Khóa API",
           "description": "Khóa API cho nhà cung cấp đã chọn.",
-          "placeholder": "sk-..."
+          "placeholder": "sk-...",
+          "managedOnModels": "Dùng khóa từ trang Mô hình.",
+          "missingOnModels": "Chưa lưu khóa nào. Hãy thêm khóa ở trang Mô hình.",
+          "openModels": "Mở Mô hình"
         },
         "model": {
           "title": "Mô hình",

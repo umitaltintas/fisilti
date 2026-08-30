@@ -1050,7 +1050,14 @@ pub fn change_post_process_api_key_setting(
 ) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
     validate_provider_exists(&settings, &provider_id)?;
-    settings.post_process_api_keys.insert(provider_id, api_key);
+    // Google's credential lives in `gemini_api_key` — transcription needs it
+    // there too. Writing it into the map instead would create a second copy
+    // that nothing reads back.
+    if provider_id == settings::GOOGLE_PROVIDER_ID {
+        settings.gemini_api_key = api_key.trim().to_string();
+    } else {
+        settings.post_process_api_keys.insert(provider_id, api_key);
+    }
     settings::write_settings(&app, settings);
     Ok(())
 }
@@ -1182,12 +1189,7 @@ pub async fn fetch_post_process_models(
         }
     }
 
-    // Get API key
-    let api_key = settings
-        .post_process_api_keys
-        .get(&provider_id)
-        .cloned()
-        .unwrap_or_default();
+    let api_key = settings.post_process_key_for(&provider_id);
 
     // Skip fetching if no API key for providers that typically need one
     if api_key.trim().is_empty() && provider.id != "custom" {

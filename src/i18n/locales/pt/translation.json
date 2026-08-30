@@ -244,13 +244,6 @@
         "browseModels": "Procurar modelos →",
         "modelRequired": "Insira um identificador de modelo do OpenRouter (ex.: google/gemini-2.5-flash)."
       },
-      "gemini": {
-        "description": "Este modelo transcreve na nuvem, direto do Google. Seu áudio é enviado ao Google e cobrado por minuto. A mesma chave do Gemini é usada na transcrição de reuniões.",
-        "apiKeyPlaceholder": "Chave de API do Gemini",
-        "apiKeyStored": "Há uma chave salva. Cole uma nova para substituí-la.",
-        "getKey": "Obter uma chave de API →",
-        "keyRequired": "Insira sua chave de API do Gemini para usar este modelo."
-      },
       "meetingModel": {
         "title": "Modelo para reuniões",
         "description": "As reuniões podem usar um modelo diferente do ditado — um modelo em nuvem preciso para uma reunião longa e algo local e instantâneo para apertar e falar.",
@@ -266,7 +259,8 @@
         "openrouterHint": "Usada pelos modelos OpenRouter e pelo pós-processamento em nuvem.",
         "gemini": "Gemini",
         "geminiHint": "Usada pelos modelos Gemini, pela transcrição ao vivo de reuniões e pela atribuição de falantes.",
-        "clear": "Limpar"
+        "placeholder": "Cole a sua chave de API",
+        "getKey": "Obter uma chave de API →"
       },
       "activeModel": "Modelo ativo",
       "browse": "Todos os modelos",
@@ -449,7 +443,10 @@
         "apiKey": {
           "title": "Chave da API",
           "description": "Chave da API para o provedor selecionado.",
-          "placeholder": "sk-..."
+          "placeholder": "sk-...",
+          "managedOnModels": "Usa a chave da página Modelos.",
+          "missingOnModels": "Nenhuma chave salva ainda. Adicione uma na página Modelos.",
+          "openModels": "Abrir Modelos"
         },
         "model": {
           "title": "Modelo",

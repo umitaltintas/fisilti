@@ -244,13 +244,6 @@
         "browseModels": "Modellere göz at →",
         "modelRequired": "Bir OpenRouter model adı girin (örn. google/gemini-2.5-flash)."
       },
-      "gemini": {
-        "description": "Bu model, doğrudan Google üzerinden bulutta yazıya döker. Sesiniz Google'a gönderilir ve dakika başına ücretlendirilir. Aynı Gemini anahtarı toplantı transkripsiyonunda da kullanılır.",
-        "apiKeyPlaceholder": "Gemini API anahtarı",
-        "apiKeyStored": "Kayıtlı bir anahtar var. Değiştirmek için yenisini yapıştırın.",
-        "getKey": "API anahtarı al →",
-        "keyRequired": "Bu modeli kullanmak için Gemini API anahtarınızı girin."
-      },
       "meetingModel": {
         "title": "Toplantı modeli",
         "description": "Toplantılar dikteden farklı bir modelle çalışabilir — uzun bir toplantı için doğru sonuç veren bir bulut modeli, bas-konuş için yerel ve anında olan bir model.",
@@ -266,7 +259,8 @@
         "openrouterHint": "OpenRouter modelleri ve bulutta sonradan işleme tarafından kullanılır.",
         "gemini": "Gemini",
         "geminiHint": "Gemini modelleri, canlı toplantı transkripsiyonu ve konuşmacı tanıma tarafından kullanılır.",
-        "clear": "Temizle"
+        "placeholder": "API anahtarınızı yapıştırın",
+        "getKey": "API anahtarı al →"
       },
       "activeModel": "Aktif model",
       "browse": "Tüm modeller",
@@ -449,7 +443,10 @@
         "apiKey": {
           "title": "API Anahtarı",
           "description": "Seçili sağlayıcı için API anahtarı.",
-          "placeholder": "sk-..."
+          "placeholder": "sk-...",
+          "managedOnModels": "Modeller sayfasındaki anahtarı kullanır.",
+          "missingOnModels": "Henüz anahtar yok. Modeller sayfasından ekleyin.",
+          "openModels": "Modeller'i aç"
         },
         "model": {
           "title": "Model",

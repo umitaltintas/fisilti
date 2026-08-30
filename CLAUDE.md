@@ -291,10 +291,34 @@ cloud path. `meeting_gemini_finalize` survives in `AppSettings` only so
 `migrate_gemini_finalize_to_meeting_model` can read it off existing installs;
 nothing else may read it.
 
-API keys have one home each, on the Models page next to the active model.
-Meeting settings never grow a key field — Gemini Live needs the key even when
-the meeting model is local, so that page links to Models instead (a frontend
-`emit("navigate-section", "models")`, which `App.tsx` already listens for).
+API keys have one home each: the **API keys** panel on the Models page
+(`models/CloudKeysPanel.tsx`). No other page grows a key field — it links to
+Models instead, via `emit("navigate-section", "models")` (`App.tsx` listens for
+it). Meetings does this because Gemini Live needs the key even when the meeting
+model is local; AI editing does it because Google and OpenRouter bill the same
+account as the transcription engines.
+
+Two credentials, two storage locations, and the mapping is
+`lib/utils/model.ts`'s `keyHomeForProvider` on the frontend:
+
+| Key        | Stored in                             | Post-processing provider |
+| ---------- | ------------------------------------- | ------------------------ |
+| OpenRouter | `post_process_api_keys["openrouter"]` | `openrouter`             |
+| Gemini     | `gemini_api_key` (top level)          | `google`                 |
+
+The Google provider deliberately has **no** entry in `post_process_api_keys`.
+Reads go through `AppSettings::post_process_key_for`, which returns
+`gemini_api_key` for `GOOGLE_PROVIDER_ID` and ignores the map; writes are
+redirected the same way in `change_post_process_api_key_setting`; and
+`migrate_google_post_process_key_into_gemini_key` folds away entries left by
+older builds. Two copies of one credential means whichever was edited last
+silently decides whether the feature works, with nothing on screen saying which
+won — do not reintroduce a per-provider Google key "for separate billing".
+
+Every key field anywhere is `PostProcessingSettingsApi/ApiKeyField` — a
+password input with draft-then-commit-on-blur. Do not hand-roll a second key
+control (an earlier `CloudKeysPanel` mixed a bound field with a write-only one
+that showed its state in the placeholder; they read as unrelated widgets).
 
 Meetings is the one sidebar entry that is a **workspace** rather than a
 settings page, so it keeps its own Session / History / Settings tabs. Its

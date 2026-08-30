@@ -376,7 +376,10 @@
         "apiKey": {
           "title": "مفتاح API",
           "description": "مفتاح API للمزود المختار.",
-          "placeholder": "sk-..."
+          "placeholder": "sk-...",
+          "managedOnModels": "يستخدم المفتاح الموجود في صفحة النماذج.",
+          "missingOnModels": "لم يُحفظ أي مفتاح بعد. أضِف مفتاحًا من صفحة النماذج.",
+          "openModels": "فتح النماذج"
         },
         "model": {
           "title": "النموذج",
@@ -565,13 +568,6 @@
         "browseModels": "تصفح النماذج",
         "modelRequired": "أدخل معرف نموذج OpenRouter (مثال: google/gemini-2.5-flash)."
       },
-      "gemini": {
-        "description": "يُفرِّغ هذا النموذج الصوت في السحابة مباشرةً عبر Google. يُرسَل صوتك إلى Google ويُحاسَب بالدقيقة. ويُستخدم مفتاح Gemini نفسه لتفريغ الاجتماعات.",
-        "apiKeyPlaceholder": "مفتاح Gemini API",
-        "apiKeyStored": "هناك مفتاح محفوظ. الصق مفتاحًا جديدًا لاستبداله.",
-        "getKey": "احصل على مفتاح API ←",
-        "keyRequired": "أدخل مفتاح Gemini API لاستخدام هذا النموذج."
-      },
       "meetingModel": {
         "title": "نموذج الاجتماعات",
         "description": "يمكن للاجتماعات أن تعمل بنموذج مختلف عن الإملاء: نموذج سحابي دقيق للاجتماع الطويل، وشيء محلي وفوري لوضع اضغط-وتحدث.",
@@ -587,7 +583,8 @@
         "openrouterHint": "تستخدمه نماذج OpenRouter والمعالجة اللاحقة السحابية.",
         "gemini": "Gemini",
         "geminiHint": "تستخدمه نماذج Gemini والتفريغ المباشر للاجتماعات وتمييز المتحدثين.",
-        "clear": "مسح"
+        "placeholder": "الصق مفتاح API الخاص بك",
+        "getKey": "احصل على مفتاح API ←"
       },
       "activeModel": "النموذج النشط",
       "browse": "كل النماذج",

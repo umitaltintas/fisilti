@@ -746,6 +746,10 @@ fn default_post_process_provider_id() -> String {
     "openai".to_string()
 }
 
+/// The post-processing provider that talks to Gemini. Its credential lives in
+/// [`AppSettings::gemini_api_key`], not in `post_process_api_keys`.
+pub const GOOGLE_PROVIDER_ID: &str = "google";
+
 fn default_post_process_providers() -> Vec<PostProcessProvider> {
     let mut providers = vec![
         PostProcessProvider {
@@ -773,7 +777,7 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
             supports_structured_output: true,
         },
         PostProcessProvider {
-            id: "google".to_string(),
+            id: GOOGLE_PROVIDER_ID.to_string(),
             label: "Google Gemini".to_string(),
             // Google's OpenAI-compatible layer, so this rides the existing
             // chat-completions path rather than needing a second client.
@@ -917,6 +921,25 @@ fn migrate_meeting_vocabulary_into_custom_words(settings: &mut AppSettings) -> b
     }
     if added > 0 {
         debug!("Merged {added} meeting vocabulary term(s) into custom words");
+    }
+    true
+}
+
+/// Fold a second copy of the Google key back into [`AppSettings::gemini_api_key`].
+///
+/// The AI-editing tab used to offer its own key field for the Google provider,
+/// so installs can carry the same credential twice. Keep whichever copy is
+/// populated (the dedicated field wins, since that is the one the Models page
+/// still writes) and drop the map entry, so `post_process_key_for` has exactly
+/// one place to look.
+fn migrate_google_post_process_key_into_gemini_key(settings: &mut AppSettings) -> bool {
+    let Some(stray) = settings.post_process_api_keys.remove(GOOGLE_PROVIDER_ID) else {
+        return false;
+    };
+    let stray = stray.trim();
+    if !stray.is_empty() && settings.gemini_api_key.trim().is_empty() {
+        settings.gemini_api_key = stray.to_string();
+        debug!("Moved the Google post-processing key into gemini_api_key");
     }
     true
 }
@@ -1122,25 +1145,21 @@ pub fn get_default_settings() -> AppSettings {
 impl AppSettings {
     /// API key for a post-processing provider.
     ///
-    /// Google is special-cased: the Gemini key is already stored once for
-    /// meeting transcription, and making the user paste the same key a second
-    /// time under a different label — then wonder why post-processing is silent
-    /// when they don't — is a worse experience than a two-line fallback. An
-    /// explicit per-provider key still wins, so anyone wanting to bill
-    /// post-processing to a separate key can.
+    /// Google reads [`Self::gemini_api_key`] and nothing else. That key already
+    /// has a home on the Models page for transcription, and a second Google
+    /// entry under `post_process_api_keys` would be the same credential stored
+    /// twice — so whichever copy the user edited last would decide whether
+    /// post-processing worked, with no way to tell from the UI which one won.
+    /// [`migrate_google_post_process_key_into_gemini_key`] folds any existing
+    /// second copy back in.
     pub fn post_process_key_for(&self, provider_id: &str) -> String {
-        let explicit = self
-            .post_process_api_keys
-            .get(provider_id)
-            .map(|k| k.trim())
-            .unwrap_or_default();
-        if !explicit.is_empty() {
-            return explicit.to_string();
-        }
-        if provider_id == "google" {
+        if provider_id == GOOGLE_PROVIDER_ID {
             return self.gemini_api_key.trim().to_string();
         }
-        String::new()
+        self.post_process_api_keys
+            .get(provider_id)
+            .map(|k| k.trim().to_string())
+            .unwrap_or_default()
     }
 
     /// Which model transcribes meetings.
@@ -1228,6 +1247,7 @@ pub fn load_or_create_app_settings(app: &AppHandle) -> AppSettings {
     let mut migrated = ensure_post_process_defaults(&mut settings);
     migrated |= migrate_gemini_finalize_to_meeting_model(&mut settings);
     migrated |= migrate_meeting_vocabulary_into_custom_words(&mut settings);
+    migrated |= migrate_google_post_process_key_into_gemini_key(&mut settings);
     if migrated {
         store.set("settings", serde_json::to_value(&settings).unwrap());
     }
@@ -1255,6 +1275,7 @@ pub fn get_settings(app: &AppHandle) -> AppSettings {
     let mut migrated = ensure_post_process_defaults(&mut settings);
     migrated |= migrate_gemini_finalize_to_meeting_model(&mut settings);
     migrated |= migrate_meeting_vocabulary_into_custom_words(&mut settings);
+    migrated |= migrate_google_post_process_key_into_gemini_key(&mut settings);
     if migrated {
         store.set("settings", serde_json::to_value(&settings).unwrap());
     }
@@ -1297,6 +1318,52 @@ pub fn get_recording_retention_period(app: &AppHandle) -> RecordingRetentionPeri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn google_post_process_key_moves_into_the_gemini_field() {
+        let mut settings = get_default_settings();
+        settings
+            .post_process_api_keys
+            .insert("google".to_string(), "  stray-key  ".to_string());
+
+        assert!(migrate_google_post_process_key_into_gemini_key(
+            &mut settings
+        ));
+        assert_eq!(settings.gemini_api_key, "stray-key");
+        assert!(!settings.post_process_api_keys.contains_key("google"));
+        // Idempotent: nothing left to move on the next load.
+        assert!(!migrate_google_post_process_key_into_gemini_key(
+            &mut settings
+        ));
+    }
+
+    #[test]
+    fn an_existing_gemini_key_wins_over_the_stray_copy() {
+        let mut settings = get_default_settings();
+        settings.gemini_api_key = "models-page-key".to_string();
+        settings
+            .post_process_api_keys
+            .insert("google".to_string(), "stale-copy".to_string());
+
+        assert!(migrate_google_post_process_key_into_gemini_key(
+            &mut settings
+        ));
+        assert_eq!(settings.gemini_api_key, "models-page-key");
+        assert!(!settings.post_process_api_keys.contains_key("google"));
+    }
+
+    #[test]
+    fn post_process_key_for_google_reads_only_the_gemini_field() {
+        let mut settings = get_default_settings();
+        settings.gemini_api_key = "gemini-key".to_string();
+        settings
+            .post_process_api_keys
+            .insert("openrouter".to_string(), "or-key".to_string());
+
+        assert_eq!(settings.post_process_key_for("google"), "gemini-key");
+        assert_eq!(settings.post_process_key_for("openrouter"), "or-key");
+        assert_eq!(settings.post_process_key_for("groq"), "");
+    }
 
     #[test]
     fn the_old_gemini_finalize_toggle_becomes_the_gemini_meeting_model() {
@@ -1368,18 +1435,14 @@ mod tests {
     }
 
     #[test]
-    fn an_explicit_google_key_wins_over_the_fallback() {
+    fn a_stray_google_map_entry_cannot_shadow_the_gemini_key() {
         let mut settings = get_default_settings();
         settings.gemini_api_key = "meeting-key".to_string();
+        // An entry left behind by an older build must not decide which key is
+        // used — that is exactly the two-copies confusion this removed.
         settings
             .post_process_api_keys
-            .insert("google".to_string(), "billing-key".to_string());
-        assert_eq!(settings.post_process_key_for("google"), "billing-key");
-
-        // A blank explicit key is not a choice, it is an empty field.
-        settings
-            .post_process_api_keys
-            .insert("google".to_string(), "   ".to_string());
+            .insert("google".to_string(), "stale-copy".to_string());
         assert_eq!(settings.post_process_key_for("google"), "meeting-key");
     }
 

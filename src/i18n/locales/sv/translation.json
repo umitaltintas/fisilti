@@ -259,6 +259,15 @@
         "sameAsDictation": "Samma som diktering",
         "sameAsDictationNamed": "Samma som diktering ({{model}})"
       },
+      "keys": {
+        "title": "API-nycklar",
+        "description": "Molnmodeller och molnbaserad efterbearbetning använder dessa. En nyckel hör till ditt konto, inte till en modell, så den stannar här oavsett vilken modell som är vald.",
+        "openrouter": "OpenRouter",
+        "openrouterHint": "Används av OpenRouter-modellerna och molnbaserad efterbearbetning.",
+        "gemini": "Gemini",
+        "geminiHint": "Används av Gemini-modellerna, livetranskribering av möten och talarigenkänning.",
+        "clear": "Rensa"
+      },
       "activeModel": "Aktiv modell",
       "browse": "Alla modeller",
       "searchPlaceholder": "Sök efter modell eller språk",

@@ -259,6 +259,15 @@
         "sameAsDictation": "Dikte modeliyle aynı",
         "sameAsDictationNamed": "Dikte modeliyle aynı ({{model}})"
       },
+      "keys": {
+        "title": "API anahtarları",
+        "description": "Bulut modelleri ve bulutta sonradan işleme bunları kullanır. Anahtar tek bir modele değil hesabına aittir; hangi model seçili olursa olsun burada durur.",
+        "openrouter": "OpenRouter",
+        "openrouterHint": "OpenRouter modelleri ve bulutta sonradan işleme tarafından kullanılır.",
+        "gemini": "Gemini",
+        "geminiHint": "Gemini modelleri, canlı toplantı transkripsiyonu ve konuşmacı tanıma tarafından kullanılır.",
+        "clear": "Temizle"
+      },
       "activeModel": "Aktif model",
       "browse": "Tüm modeller",
       "searchPlaceholder": "Model veya dil ara",
@@ -781,9 +790,6 @@
       "transcribe": "Metin, insanlar konuştukça belirir. Canlı çeviriden yaklaşık dört kat daha ucuzdur. Toplantı bittiğinde konuşmacı adlarını almak için yukarıdaki seçeneği açık bırakın.",
       "translate": "Metin, insanlar konuştukça her satırın altında çevirisiyle birlikte belirir. En pahalı seçenektir ve konuşmacı adlarını alamayan tek seçenektir — ikinci bir geçiş çeviriyi kaybettirirdi."
     },
-    "customVocabularyLabel": "Özel sözlük",
-    "customVocabularyPlaceholder": "Her satıra bir terim: isimler, ürünler, jargon",
-    "customVocabularyDescription": "Gemini'nin duymayı beklemesi gereken sözcükler. En fazla 100 terim gönderilir; gerisi yok sayılır.",
     "transcriptSpeakerUnknown": "Konuşmacı",
     "subtitlesToggle": "Ekranda canlı altyazı göster",
     "subtitlesDescription": "Toplantı sürerken diğer katılımcıların söylediklerini ekranınızın altına yakın bir yerde gösterir; böylece görüşmeden ayrılmadan takip edebilirsiniz. Tıklamaları alttaki pencereye geçirir, ekran paylaşımında ve kayıtlarda görünmez. Yukarıda bir canlı mod seçili olmalıdır.",

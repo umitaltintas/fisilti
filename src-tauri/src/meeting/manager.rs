@@ -1365,9 +1365,10 @@ impl MeetingManager {
             api_key,
             model,
             language_codes: self.meeting_language_hints(&settings),
-            custom_vocabulary: crate::gemini_transcribe::parse_vocabulary(
-                &settings.meeting_custom_vocabulary,
-            ),
+            // One vocabulary for the whole app: the same terms that correct
+            // dictation also prime the meeting model. Two lists meant the user
+            // had to guess which one a name belonged in.
+            custom_vocabulary: settings.custom_words.clone(),
             mode: if settings.meeting_gemini_smart {
                 TranscriptionMode::Smart
             } else {

@@ -209,6 +209,15 @@
         "sameAsDictation": "Stejně jako diktování",
         "sameAsDictationNamed": "Stejně jako diktování ({{model}})"
       },
+      "keys": {
+        "title": "Klíče API",
+        "description": "Používají je cloudové modely a cloudové následné zpracování. Klíč patří k vašemu účtu, ne k modelu, takže zůstává zde bez ohledu na vybraný model.",
+        "openrouter": "OpenRouter",
+        "openrouterHint": "Používají ho modely OpenRouter a cloudové následné zpracování.",
+        "gemini": "Gemini",
+        "geminiHint": "Používají ho modely Gemini, živý přepis schůzek a rozpoznávání mluvčích.",
+        "clear": "Vymazat"
+      },
       "activeModel": "Aktivní model",
       "browse": "Všechny modely",
       "searchPlaceholder": "Hledat model nebo jazyk",

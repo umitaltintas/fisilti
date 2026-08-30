@@ -6,7 +6,6 @@ import {
   Dropdown,
   SettingContainer,
   SettingsGroup,
-  Textarea,
   ToggleSwitch,
 } from "../../ui";
 import type { DropdownOption } from "../../ui/Dropdown";
@@ -23,7 +22,6 @@ import {
   changeMeetingAutoEndGrace,
   changeMeetingAutoSummarize,
   changeMeetingCalendarNames,
-  changeMeetingCustomVocabulary,
   changeMeetingGeminiDiarize,
   changeMeetingGeminiSmart,
   changeMeetingLiveMode,
@@ -88,7 +86,6 @@ export const MeetingPreferences: React.FC = () => {
   const [liveTarget, setLiveTarget] = useState("en");
   const [geminiDiarize, setGeminiDiarize] = useState(true);
   const [geminiSmart, setGeminiSmart] = useState(true);
-  const [vocabulary, setVocabulary] = useState("");
   const [subtitles, setSubtitles] = useState(true);
   const [hasGeminiKey, setHasGeminiKey] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -115,7 +112,6 @@ export const MeetingPreferences: React.FC = () => {
         setLiveTarget(s.targetLanguage);
         setGeminiDiarize(s.diarize);
         setGeminiSmart(s.smart);
-        setVocabulary(s.customVocabulary);
         setSubtitles(s.subtitles);
         setHasGeminiKey(s.hasApiKey);
       }),
@@ -223,17 +219,6 @@ export const MeetingPreferences: React.FC = () => {
       await changeMeetingLiveTranslateTarget(language);
     } catch (e) {
       setLiveTarget(previous);
-      setError(String(e));
-    }
-  };
-
-  // Persisted on blur, like the API key: vocabulary is pasted in bulk and
-  // writing settings per keystroke is wasteful.
-  const handleVocabularyCommit = async () => {
-    setError(null);
-    try {
-      await changeMeetingCustomVocabulary(vocabulary);
-    } catch (e) {
       setError(String(e));
     }
   };
@@ -412,23 +397,6 @@ export const MeetingPreferences: React.FC = () => {
             description={t("meeting.geminiSmartDescription")}
             grouped
           />
-
-          <SettingContainer
-            title={t("meeting.customVocabularyLabel")}
-            description={t("meeting.customVocabularyDescription")}
-            descriptionMode="tooltip"
-            layout="stacked"
-            grouped
-          >
-            <Textarea
-              variant="compact"
-              value={vocabulary}
-              onChange={(e) => setVocabulary(e.target.value)}
-              onBlur={() => void handleVocabularyCommit()}
-              placeholder={t("meeting.customVocabularyPlaceholder")}
-              className="w-full"
-            />
-          </SettingContainer>
         </SettingsGroup>
       </CollapsibleGroup>
 

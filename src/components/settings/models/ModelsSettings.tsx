@@ -9,6 +9,7 @@ import { LANGUAGES } from "@/lib/constants/languages";
 import type { ModelInfo } from "@/bindings";
 import { getTranslatedModelName } from "@/lib/utils/modelTranslation";
 import { ActiveModelPanel } from "./ActiveModelPanel";
+import { CloudKeysPanel } from "./CloudKeysPanel";
 import { MeetingModelPanel } from "./MeetingModelPanel";
 import { ModelRow } from "./ModelRow";
 import { isCloudModel } from "@/lib/utils/model";
@@ -204,6 +205,7 @@ export const ModelsSettings: React.FC = () => {
     <div className="mx-auto w-full max-w-3xl space-y-6">
       <ActiveModelPanel model={currentModelInfo} />
       <MeetingModelPanel models={models} dictationModel={currentModelInfo} />
+      <CloudKeysPanel />
 
       <div className="space-y-3">
         <div className="flex items-center justify-between gap-3 px-1">

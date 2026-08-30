@@ -259,6 +259,15 @@
         "sameAsDictation": "與聽寫相同",
         "sameAsDictationNamed": "與聽寫相同（{{model}}）"
       },
+      "keys": {
+        "title": "API 金鑰",
+        "description": "雲端模型和雲端後處理會使用這些金鑰。金鑰屬於你的帳號而非某個模型，因此無論選擇哪個模型都留在這裡。",
+        "openrouter": "OpenRouter",
+        "openrouterHint": "供 OpenRouter 模型和雲端後處理使用。",
+        "gemini": "Gemini",
+        "geminiHint": "供 Gemini 模型、會議即時轉錄和說話者識別使用。",
+        "clear": "清除"
+      },
       "activeModel": "目前模型",
       "browse": "全部模型",
       "searchPlaceholder": "搜尋模型或語言",

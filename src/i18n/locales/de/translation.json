@@ -209,6 +209,15 @@
         "sameAsDictation": "Wie beim Diktat",
         "sameAsDictationNamed": "Wie beim Diktat ({{model}})"
       },
+      "keys": {
+        "title": "API-Schlüssel",
+        "description": "Cloud-Modelle und die Cloud-Nachbearbeitung verwenden diese. Ein Schlüssel gehört zu Ihrem Konto, nicht zu einem Modell, und bleibt daher hier, welches Modell auch ausgewählt ist.",
+        "openrouter": "OpenRouter",
+        "openrouterHint": "Wird von den OpenRouter-Modellen und der Cloud-Nachbearbeitung verwendet.",
+        "gemini": "Gemini",
+        "geminiHint": "Wird von den Gemini-Modellen, der Live-Besprechungstranskription und der Sprecherzuordnung verwendet.",
+        "clear": "Löschen"
+      },
       "activeModel": "Aktives Modell",
       "browse": "Alle Modelle",
       "searchPlaceholder": "Modell oder Sprache suchen",

@@ -580,6 +580,15 @@
         "sameAsDictation": "مثل الإملاء",
         "sameAsDictationNamed": "مثل الإملاء ({{model}})"
       },
+      "keys": {
+        "title": "مفاتيح API",
+        "description": "تستخدمها النماذج السحابية والمعالجة اللاحقة السحابية. المفتاح يخص حسابك لا نموذجًا بعينه، لذا يبقى هنا مهما كان النموذج المحدد.",
+        "openrouter": "OpenRouter",
+        "openrouterHint": "تستخدمه نماذج OpenRouter والمعالجة اللاحقة السحابية.",
+        "gemini": "Gemini",
+        "geminiHint": "تستخدمه نماذج Gemini والتفريغ المباشر للاجتماعات وتمييز المتحدثين.",
+        "clear": "مسح"
+      },
       "activeModel": "النموذج النشط",
       "browse": "كل النماذج",
       "searchPlaceholder": "ابحث عن نموذج أو لغة",

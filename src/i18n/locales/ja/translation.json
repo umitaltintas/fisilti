@@ -209,6 +209,15 @@
         "sameAsDictation": "音声入力と同じ",
         "sameAsDictationNamed": "音声入力と同じ ({{model}})"
       },
+      "keys": {
+        "title": "API キー",
+        "description": "クラウドモデルとクラウド後処理が使用します。キーはモデルではなくアカウントに属するため、どのモデルを選んでもここに残ります。",
+        "openrouter": "OpenRouter",
+        "openrouterHint": "OpenRouter のモデルとクラウド後処理で使われます。",
+        "gemini": "Gemini",
+        "geminiHint": "Gemini のモデル、会議のライブ文字起こし、話者の判別で使われます。",
+        "clear": "消去"
+      },
       "activeModel": "使用中のモデル",
       "browse": "すべてのモデル",
       "searchPlaceholder": "モデルまたは言語を検索",

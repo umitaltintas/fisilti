@@ -209,6 +209,15 @@
         "sameAsDictation": "Giống đọc chính tả",
         "sameAsDictationNamed": "Giống đọc chính tả ({{model}})"
       },
+      "keys": {
+        "title": "Khóa API",
+        "description": "Các mô hình đám mây và xử lý hậu kỳ trên đám mây dùng những khóa này. Khóa thuộc về tài khoản chứ không thuộc về một mô hình, nên nó ở đây bất kể mô hình nào đang được chọn.",
+        "openrouter": "OpenRouter",
+        "openrouterHint": "Dùng bởi các mô hình OpenRouter và xử lý hậu kỳ trên đám mây.",
+        "gemini": "Gemini",
+        "geminiHint": "Dùng bởi các mô hình Gemini, chép lời cuộc họp trực tiếp và nhận diện người nói.",
+        "clear": "Xóa"
+      },
       "activeModel": "Mô hình đang dùng",
       "browse": "Tất cả mô hình",
       "searchPlaceholder": "Tìm mô hình hoặc ngôn ngữ",

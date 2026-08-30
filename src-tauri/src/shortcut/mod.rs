@@ -745,21 +745,6 @@ pub fn change_meeting_subtitles_setting(app: AppHandle, enabled: bool) -> Result
     Ok(())
 }
 
-/// Meeting mode: store the custom vocabulary Gemini should prefer. Kept as the
-/// raw text the user typed so the settings field round-trips exactly; parsing
-/// into terms happens where it is used.
-#[tauri::command]
-#[specta::specta]
-pub fn change_meeting_custom_vocabulary_setting(
-    app: AppHandle,
-    vocabulary: String,
-) -> Result<(), String> {
-    let mut settings = settings::get_settings(&app);
-    settings.meeting_custom_vocabulary = vocabulary;
-    settings::write_settings(&app, settings);
-    Ok(())
-}
-
 /// Meeting mode: set the BCP-47 language live translation translates INTO.
 #[tauri::command]
 #[specta::specta]

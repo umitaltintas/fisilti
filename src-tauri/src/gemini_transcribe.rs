@@ -232,8 +232,18 @@ fn run_exchange(
 
     let value: Value = serde_json::from_str(&body)
         .map_err(|e| anyhow!("malformed transcription response: {}", e))?;
+    let segments = parse_response(&value);
+    if segments.is_empty() {
+        // A 2xx with nothing we recognise means the response shape moved, not
+        // that the user was silent. Without this the failure is a silent empty
+        // transcript with no way to tell the two apart.
+        log::warn!(
+            "gemini-transcribe: no transcript found in a successful response; body was {}",
+            truncate(&body, 1200)
+        );
+    }
     Ok(BatchTranscribeResult {
-        segments: parse_response(&value),
+        segments,
         // A batch call is one request, so there is no cumulative-vs-incremental
         // ambiguity to resolve here: whatever it reports is the whole cost.
         usage: crate::ai_usage::usage_of(&value).unwrap_or((0, 0)),
@@ -337,14 +347,77 @@ fn parse_response(value: &Value) -> Vec<DiarizedSegment> {
         return group_words(&words);
     }
 
-    match interaction["output_text"].as_str() {
-        Some(text) if !text.trim().is_empty() => vec![DiarizedSegment {
-            text: text.trim().to_string(),
-            speaker: None,
-            start_ms: 0,
-        }],
-        _ => Vec::new(),
+    // No word annotations: diarization was off, or the model chose not to
+    // annotate. The transcript then arrives as plain text, and which field
+    // carries it depends on the shape the API answered with — so try each
+    // known one rather than assuming a single spelling.
+    for text in [
+        interaction["output_text"].as_str(),
+        interaction["text"].as_str(),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        if !text.trim().is_empty() {
+            return vec![DiarizedSegment {
+                text: text.trim().to_string(),
+                speaker: None,
+                start_ms: 0,
+            }];
+        }
     }
+
+    let joined = collect_plain_text(interaction);
+    if joined.trim().is_empty() {
+        return Vec::new();
+    }
+    vec![DiarizedSegment {
+        text: joined.trim().to_string(),
+        speaker: None,
+        start_ms: 0,
+    }]
+}
+
+/// Join every plain-text content part, in order.
+///
+/// Covers the `steps[].content[].text` shape (an interaction that answered with
+/// ordinary content instead of word annotations) and the `candidates[]` shape
+/// the generateContent family uses.
+fn collect_plain_text(interaction: &Value) -> String {
+    let mut parts: Vec<&str> = Vec::new();
+
+    if let Some(steps) = interaction["steps"].as_array() {
+        for step in steps {
+            let Some(contents) = step["content"].as_array() else {
+                continue;
+            };
+            for content in contents {
+                if let Some(text) = content["text"].as_str() {
+                    parts.push(text);
+                }
+            }
+        }
+    }
+
+    if let Some(candidates) = interaction["candidates"].as_array() {
+        for candidate in candidates {
+            let Some(content_parts) = candidate["content"]["parts"].as_array() else {
+                continue;
+            };
+            for part in content_parts {
+                if let Some(text) = part["text"].as_str() {
+                    parts.push(text);
+                }
+            }
+        }
+    }
+
+    parts
+        .into_iter()
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// A single `word_info` annotation, flattened.
@@ -582,6 +655,45 @@ mod tests {
         assert_eq!(segments.len(), 3);
         assert_eq!(segments[2].start_ms, 900);
         assert_eq!(segments[2].speaker.as_deref(), Some("spk_1"));
+    }
+
+    #[test]
+    fn a_response_carrying_plain_content_parts_still_yields_a_transcript() {
+        // What a request with diarization off can answer with: ordinary text
+        // content and no word annotations, and no `output_text` either.
+        let response = json!({
+            "steps": [{
+                "content": [
+                    { "text": "  Merhaba, " },
+                    { "text": "bu bir testtir.  " }
+                ]
+            }]
+        });
+        assert_eq!(
+            parse_response(&response),
+            vec![DiarizedSegment {
+                text: "Merhaba, bu bir testtir.".into(),
+                speaker: None,
+                start_ms: 0,
+            }]
+        );
+    }
+
+    #[test]
+    fn a_candidates_shaped_response_still_yields_a_transcript() {
+        let response = json!({
+            "candidates": [{
+                "content": { "parts": [{ "text": "just the text" }] }
+            }]
+        });
+        assert_eq!(
+            parse_response(&response),
+            vec![DiarizedSegment {
+                text: "just the text".into(),
+                speaker: None,
+                start_ms: 0,
+            }]
+        );
     }
 
     #[test]

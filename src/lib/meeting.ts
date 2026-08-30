@@ -511,8 +511,6 @@ export interface MeetingGeminiSettings {
   diarize: boolean;
   /** Clean disfluencies and format, rather than transcribe verbatim. */
   smart: boolean;
-  /** Domain terms Gemini should prefer, one per line. */
-  customVocabulary: string;
   /** Float live subtitles near the bottom of the screen during a meeting. */
   subtitles: boolean;
   /** Whether a Gemini API key is stored. The key itself is never read back. */
@@ -524,7 +522,6 @@ const MEETING_GEMINI_DEFAULTS: MeetingGeminiSettings = {
   targetLanguage: "en",
   diarize: true,
   smart: true,
-  customVocabulary: "",
   subtitles: true,
   hasApiKey: false,
 };
@@ -537,7 +534,6 @@ export function getMeetingGeminiSettings(): Promise<MeetingGeminiSettings> {
     meeting_live_translate_target?: string;
     meeting_gemini_diarize?: boolean;
     meeting_gemini_smart?: boolean;
-    meeting_custom_vocabulary?: string;
     meeting_subtitles?: boolean;
     gemini_api_key?: string;
   }>("get_app_settings")
@@ -550,9 +546,6 @@ export function getMeetingGeminiSettings(): Promise<MeetingGeminiSettings> {
         MEETING_GEMINI_DEFAULTS.targetLanguage,
       diarize: s?.meeting_gemini_diarize ?? MEETING_GEMINI_DEFAULTS.diarize,
       smart: s?.meeting_gemini_smart ?? MEETING_GEMINI_DEFAULTS.smart,
-      customVocabulary:
-        s?.meeting_custom_vocabulary ??
-        MEETING_GEMINI_DEFAULTS.customVocabulary,
       subtitles: s?.meeting_subtitles ?? MEETING_GEMINI_DEFAULTS.subtitles,
       hasApiKey: (s?.gemini_api_key ?? "").trim().length > 0,
     }))
@@ -590,15 +583,6 @@ export function changeMeetingGeminiSmart(enabled: boolean): Promise<void> {
 /** Show or hide the live subtitle strip. */
 export function changeMeetingSubtitles(enabled: boolean): Promise<void> {
   return invoke<void>("change_meeting_subtitles_setting", { enabled });
-}
-
-/** Store the custom vocabulary Gemini should prefer (one term per line). */
-export function changeMeetingCustomVocabulary(
-  vocabulary: string,
-): Promise<void> {
-  return invoke<void>("change_meeting_custom_vocabulary_setting", {
-    vocabulary,
-  });
 }
 
 /** Store (or, with an empty string, clear) the Gemini API key. */

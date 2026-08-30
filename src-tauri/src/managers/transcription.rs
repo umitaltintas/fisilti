@@ -547,7 +547,10 @@ impl TranscriptionManager {
                 })?;
                 LoadedEngine::Canary(engine)
             }
-            EngineType::OpenRouter | EngineType::OpenRouterAsr | EngineType::Gemini => {
+            EngineType::OpenRouter
+            | EngineType::OpenRouterAsr
+            | EngineType::Gemini
+            | EngineType::GeminiLive => {
                 // Unreachable: cloud models return early above. Kept for match
                 // exhaustiveness.
                 let error_msg = "internal error: cloud model reached engine dispatch";
@@ -907,9 +910,21 @@ impl TranscriptionManager {
             } else {
                 preset_slug
             };
-            let is_gemini = selected_model_info
+            // GeminiLive has no batch endpoint. It reaches here only as the
+            // fallback when a streaming dictation produced nothing, or when a
+            // meeting is pointed at it — both want the batch sibling, not an
+            // error, so route them to the same client with the batch model.
+            let is_gemini = selected_model_info.as_ref().map_or(false, |m| {
+                matches!(m.engine_type, EngineType::Gemini | EngineType::GeminiLive)
+            });
+            let slug = if selected_model_info
                 .as_ref()
-                .map_or(false, |m| matches!(m.engine_type, EngineType::Gemini));
+                .is_some_and(|m| matches!(m.engine_type, EngineType::GeminiLive))
+            {
+                crate::gemini_transcribe::DEFAULT_BATCH_TRANSCRIBE_MODEL.to_string()
+            } else {
+                slug
+            };
             if is_gemini {
                 // Google direct: different endpoint, different key. Shares the
                 // batch client with the meeting finalize pass.

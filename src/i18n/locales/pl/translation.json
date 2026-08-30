@@ -209,6 +209,15 @@
         "sameAsDictation": "Tak jak dyktowanie",
         "sameAsDictationNamed": "Tak jak dyktowanie ({{model}})"
       },
+      "keys": {
+        "title": "Klucze API",
+        "description": "Używają ich modele w chmurze i chmurowe przetwarzanie końcowe. Klucz należy do konta, a nie do modelu, więc zostaje tutaj niezależnie od wybranego modelu.",
+        "openrouter": "OpenRouter",
+        "openrouterHint": "Używany przez modele OpenRouter i chmurowe przetwarzanie końcowe.",
+        "gemini": "Gemini",
+        "geminiHint": "Używany przez modele Gemini, transkrypcję spotkań na żywo i rozpoznawanie mówców.",
+        "clear": "Wyczyść"
+      },
       "activeModel": "Aktywny model",
       "browse": "Wszystkie modele",
       "searchPlaceholder": "Szukaj modelu lub języka",

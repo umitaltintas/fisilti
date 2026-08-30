@@ -17,6 +17,7 @@ export const cloudProviderOf = (
     case "OpenRouterAsr":
       return "openrouter";
     case "Gemini":
+    case "GeminiLive":
       return "gemini";
     default:
       return null;

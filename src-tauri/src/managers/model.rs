@@ -45,11 +45,19 @@ pub enum EngineType {
     /// This is the only cloud engine that can attribute speakers and stream
     /// live, which is why meetings can drive it beyond plain transcription.
     Gemini,
+    /// Streaming transcription over Gemini's Live API (WebSocket), fed while
+    /// the user is still speaking. Same key and slug-in-filename conventions as
+    /// [`EngineType::Gemini`], but it never goes through `transcribe()`: the
+    /// text already exists when the recording stops.
+    GeminiLive,
 }
 
 /// Catalogue id of the direct-Gemini entry. Referenced by the settings
 /// migration that moves pre-existing "finalize with Gemini" users onto it.
 pub const GEMINI_MODEL_ID: &str = "gemini-transcribe";
+
+/// Catalogue id of the streaming-Gemini entry.
+pub const GEMINI_LIVE_MODEL_ID: &str = "gemini-transcribe-live";
 
 impl EngineType {
     /// Whether this engine runs in the cloud. Cloud engines share the "not
@@ -58,7 +66,10 @@ impl EngineType {
     pub fn is_cloud(&self) -> bool {
         matches!(
             self,
-            EngineType::OpenRouter | EngineType::OpenRouterAsr | EngineType::Gemini
+            EngineType::OpenRouter
+                | EngineType::OpenRouterAsr
+                | EngineType::Gemini
+                | EngineType::GeminiLive
         )
     }
 }
@@ -359,6 +370,37 @@ impl ModelManager {
                 engine_type: EngineType::Gemini,
                 accuracy_score: 0.95,
                 speed_score: 0.5,
+                supports_translation: false,
+                is_recommended: false,
+                supported_languages: whisper_languages.clone(),
+                supports_language_selection: true,
+                is_custom: false,
+            },
+        );
+
+        // Streaming sibling of the entry above. Transcribes while you speak
+        // rather than uploading on stop, which is most of the wait on a short
+        // dictation. Costs more per minute and commits incrementally, so the
+        // batch entry stays the accuracy choice.
+        available_models.insert(
+            GEMINI_LIVE_MODEL_ID.to_string(),
+            ModelInfo {
+                id: GEMINI_LIVE_MODEL_ID.to_string(),
+                name: "Gemini Live Transcribe (Google)".to_string(),
+                description:
+                    "Streams to Google while you speak, so the text is ready when you stop. Needs a Gemini API key. Fastest cloud option; costs more than the batch model."
+                        .to_string(),
+                filename: crate::gemini_live::DEFAULT_LIVE_TRANSCRIBE_MODEL.to_string(),
+                url: None,
+                sha256: None,
+                size_mb: 0,
+                is_downloaded: true,
+                is_downloading: false,
+                partial_size: 0,
+                is_directory: false,
+                engine_type: EngineType::GeminiLive,
+                accuracy_score: 0.90,
+                speed_score: 0.95,
                 supports_translation: false,
                 is_recommended: false,
                 supported_languages: whisper_languages.clone(),

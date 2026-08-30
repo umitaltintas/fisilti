@@ -7,6 +7,7 @@ pub mod audio_toolkit;
 pub mod cli;
 mod clipboard;
 mod commands;
+mod dictation_live;
 mod gemini_live;
 mod gemini_transcribe;
 mod helpers;
@@ -405,7 +406,6 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_meeting_live_translate_target_setting,
             shortcut::change_meeting_gemini_diarize_setting,
             shortcut::change_meeting_gemini_smart_setting,
-            shortcut::change_meeting_custom_vocabulary_setting,
             shortcut::change_meeting_subtitles_setting,
             shortcut::change_meeting_selected_model_setting,
             shortcut::change_gemini_api_key_setting,

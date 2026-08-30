@@ -117,9 +117,15 @@ pub enum MicrophoneMode {
 
 /* ──────────────────────────────────────────────────────────────── */
 
+/// A sink that receives recorded audio as it arrives. Installed for the
+/// duration of one recording by a streaming transcriber; `None` the rest of the
+/// time, which is the normal buffer-then-transcribe path.
+pub type FrameSink = Arc<dyn Fn(&[f32]) + Send + Sync + 'static>;
+
 fn create_audio_recorder(
     vad_path: &str,
     app_handle: &tauri::AppHandle,
+    frame_sink: Arc<Mutex<Option<FrameSink>>>,
 ) -> Result<AudioRecorder, anyhow::Error> {
     let silero = SileroVad::new(vad_path, 0.3)
         .map_err(|e| anyhow::anyhow!("Failed to create SileroVad: {}", e))?;
@@ -135,6 +141,14 @@ fn create_audio_recorder(
             move |levels| {
                 utils::emit_levels(&app_handle, &levels);
             }
+        })
+        // Cloned out of the lock before calling, so a slow sink cannot hold the
+        // capture thread's mutex while it works.
+        .with_frame_callback(move |frames| {
+            let sink = frame_sink.lock().unwrap().clone();
+            if let Some(sink) = sink {
+                sink(frames);
+            }
         });
 
     Ok(recorder)
@@ -149,6 +163,7 @@ pub struct AudioRecordingManager {
     app_handle: tauri::AppHandle,
 
     recorder: Arc<Mutex<Option<AudioRecorder>>>,
+    frame_sink: Arc<Mutex<Option<FrameSink>>>,
     is_open: Arc<Mutex<bool>>,
     is_recording: Arc<Mutex<bool>>,
     did_mute: Arc<Mutex<bool>>,
@@ -172,6 +187,7 @@ impl AudioRecordingManager {
             app_handle: app.clone(),
 
             recorder: Arc::new(Mutex::new(None)),
+            frame_sink: Arc::new(Mutex::new(None)),
             is_open: Arc::new(Mutex::new(false)),
             is_recording: Arc::new(Mutex::new(false)),
             did_mute: Arc::new(Mutex::new(false)),
@@ -290,6 +306,7 @@ impl AudioRecordingManager {
             *recorder_opt = Some(create_audio_recorder(
                 vad_path.to_str().unwrap(),
                 &self.app_handle,
+                self.frame_sink.clone(),
             )?);
         }
 
@@ -459,6 +476,22 @@ impl AudioRecordingManager {
             _ => None,
         }
     }
+    /// Stream recorded audio to `sink` until [`Self::clear_frame_sink`].
+    ///
+    /// Installed before recording starts so a streaming transcriber sees the
+    /// whole utterance. Replacing an existing sink is intentional: only one
+    /// recording runs at a time, so a leftover sink would be a bug, not a
+    /// second listener to preserve.
+    pub fn set_frame_sink(&self, sink: FrameSink) {
+        *self.frame_sink.lock().unwrap() = Some(sink);
+    }
+
+    /// Stop streaming. Safe to call when no sink is installed, so the caller
+    /// can clear unconditionally on every stop path including cancellation.
+    pub fn clear_frame_sink(&self) {
+        *self.frame_sink.lock().unwrap() = None;
+    }
+
     pub fn is_recording(&self) -> bool {
         matches!(
             *self.state.lock().unwrap(),

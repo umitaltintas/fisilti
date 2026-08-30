@@ -512,6 +512,13 @@ pub struct AppSettings {
     /// Domain terms, names and product names Gemini should prefer, one per line
     /// (commas also accepted). Used by both Gemini transcription paths.
     #[serde(default)]
+    /// DEPRECATED, kept only so [`migrate_meeting_vocabulary_into_custom_words`]
+    /// can read it off existing installs.
+    ///
+    /// Meeting transcription used to keep its own term list while dictation had
+    /// [`Self::custom_words`], so the same name had to be typed twice — and it
+    /// was never obvious which list a term belonged in. Both now read
+    /// `custom_words`; the migration folds this one into it.
     pub meeting_custom_vocabulary: String,
     /// API key for Google's Gemini API, used by every Gemini meeting path.
     /// Separate from `post_process_api_keys` because that map is keyed by
@@ -886,6 +893,34 @@ fn migrate_gemini_finalize_to_meeting_model(settings: &mut AppSettings) -> bool 
     true
 }
 
+/// Fold the old meeting-only vocabulary into the shared `custom_words` list.
+///
+/// Order is preserved and existing entries win, so a term present in both does
+/// not end up duplicated. Returns whether anything changed.
+fn migrate_meeting_vocabulary_into_custom_words(settings: &mut AppSettings) -> bool {
+    if settings.meeting_custom_vocabulary.trim().is_empty() {
+        return false;
+    }
+    let extra = crate::gemini_transcribe::parse_vocabulary(&settings.meeting_custom_vocabulary);
+    settings.meeting_custom_vocabulary = String::new();
+
+    let mut added = 0usize;
+    for term in extra {
+        if !settings
+            .custom_words
+            .iter()
+            .any(|existing| existing.eq_ignore_ascii_case(&term))
+        {
+            settings.custom_words.push(term);
+            added += 1;
+        }
+    }
+    if added > 0 {
+        debug!("Merged {added} meeting vocabulary term(s) into custom words");
+    }
+    true
+}
+
 fn ensure_post_process_defaults(settings: &mut AppSettings) -> bool {
     let mut changed = false;
     for provider in default_post_process_providers() {
@@ -1192,6 +1227,7 @@ pub fn load_or_create_app_settings(app: &AppHandle) -> AppSettings {
 
     let mut migrated = ensure_post_process_defaults(&mut settings);
     migrated |= migrate_gemini_finalize_to_meeting_model(&mut settings);
+    migrated |= migrate_meeting_vocabulary_into_custom_words(&mut settings);
     if migrated {
         store.set("settings", serde_json::to_value(&settings).unwrap());
     }
@@ -1218,6 +1254,7 @@ pub fn get_settings(app: &AppHandle) -> AppSettings {
 
     let mut migrated = ensure_post_process_defaults(&mut settings);
     migrated |= migrate_gemini_finalize_to_meeting_model(&mut settings);
+    migrated |= migrate_meeting_vocabulary_into_custom_words(&mut settings);
     if migrated {
         store.set("settings", serde_json::to_value(&settings).unwrap());
     }

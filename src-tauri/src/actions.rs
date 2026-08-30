@@ -366,6 +366,11 @@ impl ShortcutAction for TranscribeAction {
         let tm = app.state::<Arc<TranscriptionManager>>();
         tm.initiate_model_load();
 
+        // Streaming models transcribe while the user speaks, so the session has
+        // to exist before the first frame is captured. Returns false for every
+        // other model, leaving the buffered path untouched.
+        crate::dictation_live::begin_if_selected(app);
+
         let binding_id = binding_id.to_string();
         change_tray_icon(app, TrayIconState::Recording);
         show_recording_overlay(app);
@@ -505,9 +510,18 @@ impl ShortcutAction for TranscribeAction {
                         crate::audio_toolkit::save_wav_file(&wav_path, &samples_for_wav)
                     });
 
-                    // Transcribe concurrently with WAV save
+                    // Transcribe concurrently with WAV save. A streaming
+                    // session has already done the work while the user spoke,
+                    // so prefer its text; an empty result means the socket
+                    // never delivered anything, and the buffered path still has
+                    // the audio to fall back on.
                     let transcription_time = Instant::now();
-                    let transcription_result = tm.transcribe(samples);
+                    let streamed = crate::dictation_live::finish_active(&ah)
+                        .filter(|text| !text.trim().is_empty());
+                    let transcription_result = match streamed {
+                        Some(text) => Ok(text),
+                        None => tm.transcribe(samples),
+                    };
 
                     // Await WAV save and verify
                     let wav_saved = match wav_handle.await {

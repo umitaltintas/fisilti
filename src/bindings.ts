@@ -155,6 +155,9 @@ async changeMeetingLiveModeSetting(mode: string) : Promise<Result<null, string>>
 }
 },
 /**
+ * Meeting mode: store the custom vocabulary Gemini should prefer. Kept as the
+ * raw text the user typed so the settings field round-trips exactly; parsing
+ * into terms happens where it is used.
  * Meeting mode: set the BCP-47 language live translation translates INTO.
  */
 async changeMeetingLiveTranslateTargetSetting(language: string) : Promise<Result<null, string>> {
@@ -184,19 +187,6 @@ async changeMeetingGeminiDiarizeSetting(enabled: boolean) : Promise<Result<null,
 async changeMeetingGeminiSmartSetting(enabled: boolean) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_meeting_gemini_smart_setting", { enabled }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Meeting mode: store the custom vocabulary Gemini should prefer. Kept as the
- * raw text the user typed so the settings field round-trips exactly; parsing
- * into terms happens where it is used.
- */
-async changeMeetingCustomVocabularySetting(vocabulary: string) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_meeting_custom_vocabulary_setting", { vocabulary }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1471,6 +1461,13 @@ meeting_subtitles?: boolean;
 /**
  * Domain terms, names and product names Gemini should prefer, one per line
  * (commas also accepted). Used by both Gemini transcription paths.
+ * DEPRECATED, kept only so [`migrate_meeting_vocabulary_into_custom_words`]
+ * can read it off existing installs.
+ * 
+ * Meeting transcription used to keep its own term list while dictation had
+ * [`Self::custom_words`], so the same name had to be typed twice — and it
+ * was never obvious which list a term belonged in. Both now read
+ * `custom_words`; the migration folds this one into it.
  */
 meeting_custom_vocabulary?: string; 
 /**
@@ -1510,7 +1507,14 @@ export type EngineType = "Whisper" | "Parakeet" | "Moonshine" | "MoonshineStream
  * This is the only cloud engine that can attribute speakers and stream
  * live, which is why meetings can drive it beyond plain transcription.
  */
-"Gemini"
+"Gemini" | 
+/**
+ * Streaming transcription over Gemini's Live API (WebSocket), fed while
+ * the user is still speaking. Same key and slug-in-filename conventions as
+ * [`EngineType::Gemini`], but it never goes through `transcribe()`: the
+ * text already exists when the recording stops.
+ */
+"GeminiLive"
 export type HistoryEntry = { id: number; file_name: string; timestamp: number; saved: boolean; title: string; transcription_text: string; post_processed_text: string | null; post_process_prompt: string | null; post_process_requested: boolean }
 export type HistoryUpdatePayload = { action: "added"; entry: HistoryEntry } | { action: "updated"; entry: HistoryEntry } | { action: "deleted"; id: number } | { action: "toggled"; id: number }
 /**

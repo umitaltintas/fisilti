@@ -209,6 +209,15 @@
         "sameAsDictation": "Comme la dictée",
         "sameAsDictationNamed": "Comme la dictée ({{model}})"
       },
+      "keys": {
+        "title": "Clés d'API",
+        "description": "Les modèles cloud et le post-traitement cloud les utilisent. Une clé appartient à votre compte, pas à un modèle : elle reste ici quel que soit le modèle sélectionné.",
+        "openrouter": "OpenRouter",
+        "openrouterHint": "Utilisée par les modèles OpenRouter et le post-traitement cloud.",
+        "gemini": "Gemini",
+        "geminiHint": "Utilisée par les modèles Gemini, la transcription de réunion en direct et l'attribution des locuteurs.",
+        "clear": "Effacer"
+      },
       "activeModel": "Modèle actif",
       "browse": "Tous les modèles",
       "searchPlaceholder": "Rechercher un modèle ou une langue",

@@ -209,6 +209,15 @@
         "sameAsDictation": "Come la dettatura",
         "sameAsDictationNamed": "Come la dettatura ({{model}})"
       },
+      "keys": {
+        "title": "Chiavi API",
+        "description": "I modelli cloud e il post-processing cloud le usano. Una chiave appartiene al tuo account, non a un modello, quindi resta qui qualunque modello sia selezionato.",
+        "openrouter": "OpenRouter",
+        "openrouterHint": "Usata dai modelli OpenRouter e dal post-processing cloud.",
+        "gemini": "Gemini",
+        "geminiHint": "Usata dai modelli Gemini, dalla trascrizione in diretta delle riunioni e dall'attribuzione dei parlanti.",
+        "clear": "Cancella"
+      },
       "activeModel": "Modello attivo",
       "browse": "Tutti i modelli",
       "searchPlaceholder": "Cerca un modello o una lingua",

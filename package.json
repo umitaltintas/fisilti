@@ -8,6 +8,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "build:mac": "tauri build --config src-tauri/tauri.macsign.conf.json",
+    "build:mac:release": "bash scripts/build-mac-release.sh",
     "preview": "vite preview",
     "tauri": "tauri",
     "lint": "eslint src",

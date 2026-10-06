@@ -58,6 +58,13 @@ it happens. Whether that trade is worth making is your call, not a default.
 - **Crash recovery** — a meeting interrupted by a crash, or one whose
   transcription failed, keeps its audio and can be re-transcribed later.
   Nothing is discarded just because a transcription pass came back empty
+- **Transcribe a recording** — drop a voice memo or conference recording (m4a,
+  mp3, wav, flac, ogg, caf…) on Meetings and it becomes a regular meeting with a
+  transcript, title and summary, through the same model as a live meeting
+- **Markdown export** — export any meeting as Markdown, or pick a folder (an
+  Obsidian vault, a notes repo) and every finished meeting is written there
+  automatically, with front matter, and kept current as its title, summary or
+  notes change
 - Tray menu shortcuts: start/stop a meeting and open the past-meetings list
   without opening the main window
 
@@ -138,20 +145,63 @@ different code-signing identity — macOS then treats each rebuild as a new app
 and silently drops its permission grants (Accessibility is the most visible
 victim: the checkbox looks enabled but no longer applies).
 
-`bun run build:mac` instead signs with a certificate named
-**"Fisilti Dev Signing"** from your login keychain, so permissions are granted
-once and persist across rebuilds. Create the certificate once (no Apple
-account needed):
+`bun run build:mac` instead signs with the identity named in
+`src-tauri/tauri.macsign.conf.json` — the maintainer's Developer ID (see
+below) — so permissions are granted once and persist across rebuilds. Without
+that certificate, create a self-signed one (no Apple account needed) and point
+the config at it:
 
 1. Open **Keychain Access** → menu **Keychain Access → Certificate Assistant →
    Create a Certificate…**
 2. Name: `Fisilti Dev Signing` — Identity Type: _Self-Signed Root_ —
    Certificate Type: **Code Signing** → Create.
-3. Build with `bun run build:mac`. On the first build macOS asks to allow
-   `codesign` to use the key — choose **Always Allow**.
+3. Set `signingIdentity` in `src-tauri/tauri.macsign.conf.json` to
+   `Fisilti Dev Signing` (don't commit it) and build with `bun run build:mac`.
+   On the first build macOS asks to allow `codesign` to use the key — choose
+   **Always Allow**.
 
 If you switch from ad-hoc builds, reset the stale permission entries once:
 `tccutil reset All com.umitaltintas.fisilti`, then re-grant on next launch.
+
+### Signed & notarized release (Developer ID)
+
+Builds for other people are signed with a **Developer ID Application**
+certificate and notarized by Apple; otherwise Gatekeeper refuses to open the
+downloaded app. Notarization authenticates with an **App Store Connect API
+key** (Users and Access → Integrations → Team Keys, role _Developer_), so no
+Apple ID password or two-factor prompt is involved.
+
+**CI.** The release workflow (`.github/workflows/release.yml` → `build.yml`)
+signs and notarizes when these repository secrets exist, and produces ad-hoc
+builds otherwise:
+
+| Secret                       | Value                                        |
+| ---------------------------- | -------------------------------------------- |
+| `APPLE_CERTIFICATE`          | base64 of the Developer ID `.p12` (with key) |
+| `APPLE_CERTIFICATE_PASSWORD` | the `.p12` export password                   |
+| `KEYCHAIN_PASSWORD`          | any random string (temporary CI keychain)    |
+| `APPLE_API_KEY`              | API key id                                   |
+| `APPLE_API_ISSUER`           | issuer id (shown above the key list)         |
+| `APPLE_API_KEY_P8`           | contents of `AuthKey_<id>.p8`                |
+| `APPLE_TEAM_ID`              | team id                                      |
+
+```bash
+R=umitaltintas/fisilti
+base64 -i fisilti.p12 | gh secret set APPLE_CERTIFICATE -R $R
+gh secret set APPLE_API_KEY_P8 -R $R < AuthKey_XXXXXXXXXX.p8
+# …and the rest the same way
+```
+
+**Locally.** `bun run build:mac` signs with the Developer ID identity named in
+`src-tauri/tauri.macsign.conf.json` (a stable identity, so macOS permissions
+survive rebuilds). `bun run build:mac:release` additionally notarizes, reading
+`APPLE_API_KEY`, `APPLE_API_ISSUER` and `APPLE_API_KEY_PATH` from
+`~/.fisilti-signing/notary.env`, and finishes with an `spctl` check that should
+report `source=Notarized Developer ID`.
+
+Switching an installed app from the self-signed "Fisilti Dev Signing" build to
+a Developer ID build changes its identity, so reset permissions once:
+`tccutil reset All com.umitaltintas.fisilti`.
 
 > **macOS tip:** if the build fails with a CMake policy error, prefix the
 > command with `CMAKE_POLICY_VERSION_MINIMUM=3.5`:
@@ -165,16 +215,13 @@ tip applies).
 
 ## Install (macOS)
 
-There is no notarized release yet, so you install the app you build yourself
-(see [Build from source](#build-from-source) above). A successful
-`bun run tauri build` produces the app bundle at:
+Download the latest **signed and notarized** DMG from
+[Releases](https://github.com/umitaltintas/fisilti/releases/latest) —
+`aarch64` for Apple Silicon, `x64` for Intel Macs — open it and drag Fısıltı
+into Applications. Gatekeeper opens it without warnings.
 
-```
-src-tauri/target/release/bundle/macos/Fısıltı.app
-```
-
-**1. Move it to your Applications folder** so it behaves like a normal app
-(launchable from Spotlight, Launchpad, and the Dock):
+**Building it yourself instead?** A successful build produces the app bundle
+at `src-tauri/target/release/bundle/macos/Fısıltı.app`; install it with
 
 ```bash
 # from the repo root, after building
@@ -182,19 +229,10 @@ ditto "src-tauri/target/release/bundle/macos/Fısıltı.app" "/Applications/Fıs
 ```
 
 (`ditto` preserves the code signature; a plain Finder drag-and-drop into
-`Applications` works too.)
-
-**2. First launch — Gatekeeper.** The build is ad-hoc signed (not notarized by
-Apple), so macOS may refuse to open it the first time ("Fısıltı can't be opened
-because Apple cannot check it for malicious software"). Either:
-
-- **Right-click** the app in `Applications` → **Open** → **Open** in the dialog
-  (only needed once), or
-- clear the quarantine flag from the terminal:
-
-  ```bash
-  xattr -dr com.apple.quarantine "/Applications/Fısıltı.app"
-  ```
+`Applications` works too.) An ad-hoc signed build (plain `bun run tauri build`)
+is not notarized, so macOS may refuse to open it the first time. Either
+right-click the app → **Open** → **Open** (only needed once), or clear the
+quarantine flag: `xattr -dr com.apple.quarantine "/Applications/Fısıltı.app"`.
 
 **3. Grant permissions on first run.** macOS will prompt for these the first
 time each is needed — approve them in **System Settings → Privacy & Security**:

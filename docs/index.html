@@ -815,7 +815,7 @@
           stays there.
         </p>
         <div class="cta-row">
-          <a class="btn btn-primary" href="#install">Build from source</a>
+          <a class="btn btn-primary" href="https://github.com/umitaltintas/fisilti/releases/latest">Download for Mac</a>
           <a class="btn btn-ghost" href="https://github.com/umitaltintas/fisilti"
             >View on GitHub</a
           >
@@ -948,6 +948,12 @@
               And when the room goes quiet, it asks whether the meeting is
               over — then wraps up on its own if you've already left.
             </p>
+            <p>
+              Recorded the talk on your phone instead? Drop the voice memo on
+              Fısıltı and it gets the same treatment —
+              <strong>transcript, title and summary</strong> — as a meeting it
+              captured itself.
+            </p>
             <ul class="feature-list">
               <li>
                 <span
@@ -983,6 +989,18 @@
                 <span
                   ><b>Nothing lost to a crash</b> — an interrupted session keeps
                   its audio and can be transcribed later.</span
+                >
+              </li>
+              <li>
+                <span
+                  ><b>Transcribe a recording</b> — m4a, mp3, wav, flac, ogg
+                  from any phone or recorder.</span
+                >
+              </li>
+              <li>
+                <span
+                  ><b>Straight into your notes</b> — every meeting written as
+                  Markdown to a folder you choose, Obsidian-ready.</span
                 >
               </li>
             </ul>
@@ -1061,7 +1079,7 @@
 
       <section class="section wrap" id="install">
         <p class="eyebrow">Install</p>
-        <h2>You build it. <em>It's yours.</em></h2>
+        <h2>Download it. <em>Or build it.</em></h2>
         <div class="terminal reveal">
           <div class="terminal-bar" aria-hidden="true">
             <i></i><i></i><i></i><em>zsh — fisilti</em>
@@ -1073,9 +1091,12 @@
         </div>
         <div class="install-notes reveal">
           <div>
-            <b>No notarized release yet</b>
-            There's no download button on purpose — you compile Fısıltı from
-            source, so what runs is exactly what you can read. Prerequisites:
+            <b>Signed &amp; notarized</b>
+            Grab the DMG from
+            <a href="https://github.com/umitaltintas/fisilti/releases/latest">Releases</a> — <code>aarch64</code> for Apple
+            Silicon, <code>x64</code> for Intel — and drag Fısıltı into
+            Applications. Rather read every line first? The commands above
+            build the same app from source; you need
             <a href="https://rustup.rs/">Rust</a> and
             <a href="https://bun.sh/">Bun</a>.
           </div>

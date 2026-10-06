@@ -10,5 +10,9 @@
     <true/>
     <key>com.apple.security.device.screen-capture</key>
     <true/>
+    <!-- Hardened-runtime resource access for meeting naming (EventKit). A
+         Developer ID build without it is denied calendar access silently. -->
+    <key>com.apple.security.personal-information.calendars</key>
+    <true/>
   </dict>
 </plist>

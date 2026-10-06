@@ -1,7 +1,7 @@
 {
   "bundle": {
     "macOS": {
-      "signingIdentity": "Fisilti Dev Signing"
+      "signingIdentity": "Developer ID Application: Umit Altintas (XC6V57LBAB)"
     }
   }
 }

@@ -458,6 +458,11 @@ pub struct AppSettings {
     /// regardless.
     #[serde(default)]
     pub meeting_calendar_names: bool,
+    /// Meeting mode: folder every completed meeting is also written to as a
+    /// Markdown file (an Obsidian vault, a notes repo). Empty = off. The file is
+    /// rewritten when the meeting's title, summary or notes change.
+    #[serde(default)]
+    pub meeting_export_dir: String,
     /// Seconds the "end meeting?" prompt waits for a response before the
     /// session is ended automatically.
     #[serde(default = "default_meeting_auto_end_grace_secs")]
@@ -1126,6 +1131,7 @@ pub fn get_default_settings() -> AppSettings {
         meeting_auto_detect: false,
         meeting_auto_end: default_meeting_auto_end(),
         meeting_calendar_names: false,
+        meeting_export_dir: String::new(),
         meeting_silence_timeout_secs: default_meeting_silence_timeout_secs(),
         meeting_auto_end_grace_secs: default_meeting_auto_end_grace_secs(),
         meeting_live_mode: default_meeting_live_mode(),

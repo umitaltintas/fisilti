@@ -18,10 +18,14 @@ CMAKE_POLICY_VERSION_MINIMUM=3.5 bun run tauri dev
 # Build for production (ad-hoc signed; CI uses this)
 bun run tauri build
 
-# Build for LOCAL install (signs with the stable "Fisilti Dev Signing"
-# keychain identity so macOS TCC permissions survive rebuilds — always
-# prefer this when the build will be installed to /Applications)
+# Build for LOCAL install (signs with the Developer ID identity in
+# src-tauri/tauri.macsign.conf.json so macOS TCC permissions survive
+# rebuilds — always prefer this when the build will be installed to
+# /Applications)
 bun run build:mac
+
+# Same, plus Apple notarization (API key from ~/.fisilti-signing/notary.env)
+bun run build:mac:release
 
 # Linting and formatting (run before committing)
 bun run lint              # ESLint for frontend
@@ -219,6 +223,36 @@ a bare Meet room code) → the existing LLM auto-title on stop → datetime.
   `change_meeting_calendar_names_setting`. The toggle lives in the meeting
   "Settings" tab (`MeetingPreferences.tsx`) and requests calendar access
   before persisting the setting
+
+## Recording Import & Markdown Export (macOS)
+
+**Import** turns a recording made elsewhere (phone voice memo, conference
+recording) into a normal completed meeting.
+
+- `src-tauri/src/meeting/import.rs` - symphonia decode → 16 kHz mono, the
+  recording date (file tag → creation time → mtime − duration), and
+  `title_from_path` (recorder default names like "New Recording 12" return
+  `None` so the LLM auto-title runs instead). Opus is unsupported (no
+  symphonia decoder).
+- `MeetingManager::import_recording` reuses the finalize machinery: Gemini
+  batch when Gemini is the meeting model (pieces ≤ 50 min, diarized only when
+  the whole file fits the 30-min limit), else the local final model over
+  `chunk_for_finalize` windows. The whole file is one source labelled
+  `others`. Title and summary run inline, so the meeting opens complete.
+- An import and a live meeting exclude each other (`importing` flag checked
+  under the `state` lock); `is_active()` covers both so the engine stays put.
+- Nothing is saved when transcription fails — the user still has the file.
+- Commands: `import_meeting_recording`, `cancel_meeting_import`,
+  `get_meeting_import_progress`, `get_supported_import_extensions`. Events:
+  `meeting-import-progress`, `meeting-import-finished`. UI:
+  `meeting/ImportRecording.tsx` (under the idle hero and atop History; file
+  picker + window drag-and-drop).
+
+**Export**: `src-tauri/src/meeting/export.rs` renders Markdown with YAML front
+matter (`fisilti_id`). With `meeting_export_dir` set, `MeetingManager::
+export_markdown(id)` rewrites the meeting's file whenever it completes or its
+title/summary/notes change; the previous file is found by date prefix +
+`fisilti_id` and removed after a rename. Only `completed` rows are exported.
 
 ## Settings Information Architecture
 

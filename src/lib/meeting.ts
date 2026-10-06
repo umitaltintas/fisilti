@@ -721,3 +721,78 @@ export function getMeetingCalendarNames(): Promise<boolean> {
     .then((s) => s?.meeting_calendar_names ?? false)
     .catch(() => false);
 }
+
+/** Persist the folder completed meetings are also written to as Markdown
+ * (`meeting_export_dir`); an empty string turns the copy off. Rejects when the
+ * folder does not exist. */
+export function changeMeetingExportDir(dir: string): Promise<void> {
+  return invoke<void>("change_meeting_export_dir_setting", { dir });
+}
+
+/** Read the Markdown export folder; `""` when the copy is off. */
+export function getMeetingExportDir(): Promise<string> {
+  return invoke<{ meeting_export_dir?: string }>("get_app_settings")
+    .then((s) => s?.meeting_export_dir ?? "")
+    .catch(() => "");
+}
+
+/** Which step of a recording import is running. Mirrors Rust
+ * `MeetingImportStage`. */
+export type MeetingImportStage = "decoding" | "transcribing" | "summarizing";
+
+/** Payload of `"meeting-import-progress"`. Mirrors Rust
+ * `MeetingImportProgress`. */
+export interface MeetingImportProgress {
+  file_name: string;
+  stage: MeetingImportStage;
+  /** 0..1 within the stage; `null` when the stage cannot measure itself. */
+  progress: number | null;
+}
+
+/** Payload of `"meeting-import-finished"`. Mirrors Rust
+ * `MeetingImportFinished`. */
+export interface MeetingImportFinished {
+  id: number | null;
+  error: string | null;
+}
+
+/** Error text the backend uses for a cancelled import (`import::CANCELLED`);
+ * a cancel is not shown as a failure. */
+export const MEETING_IMPORT_CANCELLED = "Import cancelled.";
+
+/** Import a recording file (voice memo, conference recording) as a meeting.
+ * Slow: resolves with the new meeting id once it is transcribed and saved. */
+export function importMeetingRecording(path: string): Promise<number> {
+  return invoke<number>("import_meeting_recording", { path });
+}
+
+/** Ask the running import to stop at its next checkpoint. */
+export function cancelMeetingImport(): Promise<void> {
+  return invoke<void>("cancel_meeting_import");
+}
+
+/** Progress of the running import, or `null` when nothing is importing. */
+export function getMeetingImportProgress(): Promise<MeetingImportProgress | null> {
+  return invoke<MeetingImportProgress | null>("get_meeting_import_progress");
+}
+
+/** File extensions the import accepts (lower-case, no dot). */
+export function getSupportedImportExtensions(): Promise<string[]> {
+  return invoke<string[]>("get_supported_import_extensions");
+}
+
+export function listenMeetingImportProgress(
+  cb: (progress: MeetingImportProgress) => void,
+): Promise<UnlistenFn> {
+  return listen<MeetingImportProgress>("meeting-import-progress", (event) => {
+    cb(event.payload);
+  });
+}
+
+export function listenMeetingImportFinished(
+  cb: (result: MeetingImportFinished) => void,
+): Promise<UnlistenFn> {
+  return listen<MeetingImportFinished>("meeting-import-finished", (event) => {
+    cb(event.payload);
+  });
+}

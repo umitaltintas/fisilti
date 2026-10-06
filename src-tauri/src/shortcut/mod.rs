@@ -822,6 +822,21 @@ pub fn change_meeting_calendar_names_setting(app: AppHandle, enabled: bool) -> R
     Ok(())
 }
 
+/// Set (or clear, with an empty string) the folder completed meetings are
+/// copied to as Markdown. Existing meetings are not back-filled.
+#[tauri::command]
+#[specta::specta]
+pub fn change_meeting_export_dir_setting(app: AppHandle, dir: String) -> Result<(), String> {
+    let dir = dir.trim().to_string();
+    if !dir.is_empty() && !std::path::Path::new(&dir).is_dir() {
+        return Err(format!("Folder not found: {}", dir));
+    }
+    let mut settings = settings::get_settings(&app);
+    settings.meeting_export_dir = dir;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn change_meeting_auto_end_setting(app: AppHandle, enabled: bool) -> Result<(), String> {

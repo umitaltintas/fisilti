@@ -10,7 +10,8 @@ use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::meeting::{
-    InterruptedMeeting, MeetingListItem, MeetingManager, MeetingRecord, MeetingState,
+    InterruptedMeeting, MeetingImportProgress, MeetingListItem, MeetingManager, MeetingRecord,
+    MeetingState,
 };
 
 /// Event emitted (with payload `"running"` or `"idle"`) whenever a meeting
@@ -230,6 +231,7 @@ pub async fn regenerate_meeting_summary(
         .store()
         .update_summary(id, &content)
         .map_err(|e| format!("Failed to persist summary: {}", e))?;
+    meeting_manager.export_markdown(id);
     Ok(content)
 }
 
@@ -561,7 +563,9 @@ pub fn update_meeting_title(
     meeting_manager
         .store()
         .update_title(id, &title)
-        .map_err(|e| format!("Failed to update meeting title: {}", e))
+        .map_err(|e| format!("Failed to update meeting title: {}", e))?;
+    meeting_manager.export_markdown(id);
+    Ok(())
 }
 
 /// Save the user's own editable notes for a meeting (Phase 2 item 3). Distinct
@@ -576,7 +580,9 @@ pub fn update_meeting_notes(
     meeting_manager
         .store()
         .update_notes(id, &notes)
-        .map_err(|e| format!("Failed to update meeting notes: {}", e))
+        .map_err(|e| format!("Failed to update meeting notes: {}", e))?;
+    meeting_manager.export_markdown(id);
+    Ok(())
 }
 
 /// Export a meeting as a clean Markdown document (Phase 2 item 6): title,
@@ -592,78 +598,7 @@ pub fn export_meeting_markdown(
         .store()
         .get_meeting(id)
         .map_err(|e| format!("Failed to load meeting: {}", e))?;
-    Ok(render_meeting_markdown(&record))
-}
-
-/// Render a `MeetingRecord` as a Markdown document. Pure/testable.
-fn render_meeting_markdown(record: &MeetingRecord) -> String {
-    use crate::meeting::manager::TranscriptSource;
-    use chrono::{DateTime, Local};
-    use std::fmt::Write as _;
-
-    let mut out = String::new();
-    let _ = writeln!(out, "# {}", record.title.trim());
-    out.push('\n');
-
-    if let Some(dt) = DateTime::from_timestamp_millis(record.started_at) {
-        let local = dt.with_timezone(&Local);
-        let _ = writeln!(out, "- **Date:** {}", local.format("%B %e, %Y"));
-        let _ = writeln!(out, "- **Time:** {}", local.format("%l:%M %p"));
-    }
-    let total_secs = (record.duration_ms / 1000).max(0);
-    let _ = writeln!(
-        out,
-        "- **Duration:** {}h {}m {}s",
-        total_secs / 3600,
-        (total_secs % 3600) / 60,
-        total_secs % 60
-    );
-    out.push('\n');
-
-    if let Some(notes) = record.notes.as_deref() {
-        if !notes.trim().is_empty() {
-            let _ = writeln!(out, "## Notes\n\n{}\n", notes.trim());
-        }
-    }
-
-    if let Some(summary) = record.summary.as_deref() {
-        if !summary.trim().is_empty() {
-            let _ = writeln!(out, "## Summary\n\n{}\n", summary.trim());
-        }
-    }
-
-    let _ = writeln!(out, "## Transcript\n");
-    if record.segments.is_empty() {
-        // No per-segment labels available; emit the raw transcript.
-        let _ = writeln!(out, "{}", record.transcript.trim());
-    } else {
-        let mut ordered: Vec<&_> = record.segments.iter().collect();
-        ordered.sort_by_key(|s| s.timestamp_ms);
-        for seg in ordered {
-            let text = seg.text.trim();
-            if text.is_empty() {
-                continue;
-            }
-            // A resolved speaker is strictly more informative than "Others",
-            // so it wins when the finalize pass managed to attribute the line.
-            let label = match (&seg.speaker, seg.source) {
-                (Some(speaker), _) if !speaker.trim().is_empty() => speaker.trim(),
-                (_, TranscriptSource::Mic) => "You",
-                (_, TranscriptSource::System) => "Others",
-            };
-            let ts = seg.timestamp_ms / 1000;
-            let _ = writeln!(
-                out,
-                "- **[{:02}:{:02}] {}:** {}",
-                ts / 60,
-                ts % 60,
-                label,
-                text
-            );
-        }
-    }
-
-    out
+    Ok(crate::meeting::export::render_meeting_markdown(&record))
 }
 
 /// List meetings interrupted by a crash/OS-kill (still in `recording` status),
@@ -696,6 +631,51 @@ pub async fn recover_meeting(
     tauri::async_runtime::spawn_blocking(move || manager.recover_meeting(id))
         .await
         .map_err(|e| format!("Recovery task failed: {}", e))?
+}
+
+/// Import a recording made elsewhere (a phone voice memo, a conference
+/// recording) as a meeting: decode, transcribe with the meeting model, title
+/// and summarize, save to History. Returns the new meeting id. Progress arrives
+/// as `"meeting-import-progress"`, the outcome also as
+/// `"meeting-import-finished"`.
+#[tauri::command]
+#[specta::specta]
+pub async fn import_meeting_recording(
+    meeting_manager: State<'_, Arc<MeetingManager>>,
+    path: String,
+) -> Result<i64, String> {
+    let manager = (*meeting_manager).clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        manager.import_recording(std::path::Path::new(&path))
+    })
+    .await
+    .map_err(|e| format!("Import task failed: {}", e))?
+}
+
+/// Cancel the running import at its next checkpoint.
+#[tauri::command]
+#[specta::specta]
+pub fn cancel_meeting_import(meeting_manager: State<Arc<MeetingManager>>) {
+    meeting_manager.cancel_import();
+}
+
+/// Where the running import is, or `None` when nothing is importing.
+#[tauri::command]
+#[specta::specta]
+pub fn get_meeting_import_progress(
+    meeting_manager: State<Arc<MeetingManager>>,
+) -> Option<MeetingImportProgress> {
+    meeting_manager.import_progress()
+}
+
+/// File extensions the import accepts, for the file picker and drag-and-drop.
+#[tauri::command]
+#[specta::specta]
+pub fn get_supported_import_extensions() -> Vec<String> {
+    crate::meeting::import::SUPPORTED_EXTENSIONS
+        .iter()
+        .map(|e| e.to_string())
+        .collect()
 }
 
 /// User accepted the auto-detection "start transcription?" prompt: hides the
@@ -752,67 +732,4 @@ pub async fn request_calendar_access() -> Result<bool, String> {
     tauri::async_runtime::spawn_blocking(crate::meeting_naming::request_calendar_access)
         .await
         .map_err(|e| format!("Calendar access request failed: {}", e))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::render_meeting_markdown;
-    use crate::meeting::manager::{TranscriptSegment, TranscriptSource};
-    use crate::meeting::MeetingRecord;
-
-    fn record_with(segments: Vec<TranscriptSegment>, transcript: &str) -> MeetingRecord {
-        MeetingRecord {
-            id: 1,
-            started_at: 0,
-            ended_at: 65_000,
-            duration_ms: 65_000,
-            title: "Weekly Sync".to_string(),
-            transcript: transcript.to_string(),
-            segments,
-            summary: Some("AI summary text".to_string()),
-            created_at: 0,
-            audio_path: None,
-            notes: Some("My own notes".to_string()),
-            status: "completed".to_string(),
-            usage: None,
-        }
-    }
-
-    #[test]
-    fn markdown_includes_title_notes_summary_and_labeled_transcript() {
-        let segments = vec![
-            TranscriptSegment {
-                text: "Hello team.".to_string(),
-                timestamp_ms: 0,
-                source: TranscriptSource::Mic,
-                translation: None,
-                speaker: None,
-            },
-            TranscriptSegment {
-                text: "Hi there.".to_string(),
-                timestamp_ms: 5000,
-                source: TranscriptSource::System,
-                translation: None,
-                speaker: None,
-            },
-        ];
-        let md = render_meeting_markdown(&record_with(segments, "Hello team. Hi there."));
-        assert!(md.starts_with("# Weekly Sync"));
-        assert!(md.contains("## Notes"));
-        assert!(md.contains("My own notes"));
-        assert!(md.contains("## Summary"));
-        assert!(md.contains("AI summary text"));
-        assert!(md.contains("## Transcript"));
-        assert!(md.contains("You:** Hello team."));
-        assert!(md.contains("Others:** Hi there."));
-        // Duration line present (65s -> 0h 1m 5s).
-        assert!(md.contains("0h 1m 5s"));
-    }
-
-    #[test]
-    fn markdown_falls_back_to_raw_transcript_without_segments() {
-        let md = render_meeting_markdown(&record_with(Vec::new(), "raw transcript body"));
-        assert!(md.contains("## Transcript"));
-        assert!(md.contains("raw transcript body"));
-    }
 }

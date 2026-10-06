@@ -116,6 +116,36 @@ pub struct MeetingAudioLevel {
     pub peak: f32,
 }
 
+/// Which step of an import is running, for `"meeting-import-progress"`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "lowercase")]
+pub enum MeetingImportStage {
+    Decoding,
+    Transcribing,
+    Summarizing,
+}
+
+/// Event payload emitted on `"meeting-import-progress"` while a recording file
+/// is imported. `progress` is 0..1 within the current stage, `None` when the
+/// stage cannot measure itself (a single cloud request).
+#[derive(Clone, Debug, Serialize, Type)]
+pub struct MeetingImportProgress {
+    pub file_name: String,
+    pub stage: MeetingImportStage,
+    pub progress: Option<f32>,
+}
+
+/// Event payload emitted on `"meeting-import-finished"` when an import ends,
+/// however it ends. Lets a window that did not start the import (or was
+/// reopened mid-way) settle its progress card.
+#[derive(Clone, Debug, Serialize, Type)]
+pub struct MeetingImportFinished {
+    /// Row id of the saved meeting on success.
+    pub id: Option<i64>,
+    /// Why it failed; `import::CANCELLED` when the user cancelled.
+    pub error: Option<String>,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MeetingState {
     Idle,
@@ -208,6 +238,16 @@ pub struct MeetingManager {
     /// unless) the background resolution succeeds. When set, it names the
     /// persisted row and suppresses the LLM auto-title on stop.
     session_title: Arc<Mutex<Option<String>>>,
+    /// True while a recording FILE is being imported (`import_recording`).
+    /// An import owns the engine and the shared usage tally exactly like a
+    /// live session does, so the two exclude each other.
+    importing: Arc<AtomicBool>,
+    /// Set by `cancel_import`; checked between decode packets and between
+    /// transcription windows.
+    import_cancel: Arc<AtomicBool>,
+    /// Last progress reported by the running import, so a window that opens
+    /// mid-import can show where it is instead of nothing.
+    import_progress: Arc<Mutex<Option<MeetingImportProgress>>>,
 }
 
 /// Tally of transcription failures seen during a finalize pass, used to tell
@@ -542,13 +582,17 @@ impl MeetingManager {
             session_usage: Arc::new(Mutex::new(crate::ai_usage::MeetingUsage::default())),
             last_finalize_error: Arc::new(Mutex::new(None)),
             session_title: Arc::new(Mutex::new(None)),
+            importing: Arc::new(AtomicBool::new(false)),
+            import_cancel: Arc::new(AtomicBool::new(false)),
+            import_progress: Arc::new(Mutex::new(None)),
         }
     }
 
-    /// Whether a meeting session is currently running. Consulted by the
-    /// TranscriptionManager idle-watcher to keep the model loaded.
+    /// Whether a meeting session (or a recording import) currently owns the
+    /// transcription engine. Consulted by the TranscriptionManager idle-watcher
+    /// to keep the model loaded, and by dictation to leave the engine alone.
     pub fn is_active(&self) -> bool {
-        self.active.load(Ordering::Relaxed)
+        self.active.load(Ordering::Relaxed) || self.importing.load(Ordering::Relaxed)
     }
 
     pub fn status(&self) -> MeetingState {
@@ -603,6 +647,12 @@ impl MeetingManager {
         let mut state = self.state.lock().unwrap();
         if *state == MeetingState::Running {
             return Err("Meeting already running".to_string());
+        }
+        if self.importing.load(Ordering::SeqCst) {
+            return Err(
+                "A recording is being imported. Wait for it to finish or cancel it first."
+                    .to_string(),
+            );
         }
 
         #[cfg(not(target_os = "macos"))]
@@ -806,6 +856,7 @@ impl MeetingManager {
                     Ok(()) => {
                         log::info!("Finalized meeting row {} (completed)", id);
                         self.persist_usage(id);
+                        self.export_markdown(id);
                         *self.last_saved_meeting_id.lock().unwrap() = Some(id);
                         *self.current_meeting_id.lock().unwrap() = None;
                     }
@@ -834,6 +885,7 @@ impl MeetingManager {
                 match self.store.save_meeting(&record) {
                     Ok(id) => {
                         log::info!("Persisted meeting session as row {}", id);
+                        self.export_markdown(id);
                         *self.last_saved_meeting_id.lock().unwrap() = Some(id);
                     }
                     Err(e) => log::error!("Failed to persist meeting session: {}", e),
@@ -890,7 +942,15 @@ impl MeetingManager {
         };
         self.store
             .update_summary(id, summary)
-            .map_err(|e| format!("Failed to update meeting summary: {}", e))
+            .map_err(|e| format!("Failed to update meeting summary: {}", e))?;
+        self.export_markdown(id);
+        Ok(())
+    }
+
+    /// Refresh meeting `id`'s copy in the user's export folder (Obsidian vault
+    /// etc.), when one is configured. Best-effort, never fails the caller.
+    pub fn export_markdown(&self, id: i64) {
+        super::export::sync_to_export_dir(&self.app_handle, &self.store, id);
     }
 
     /// TITLE (naming): resolve an explicit session title from the calendar
@@ -930,6 +990,7 @@ impl MeetingManager {
             log::error!("meeting title: failed to persist: {}", e);
             return;
         }
+        self.export_markdown(id);
         use tauri::Emitter;
         let _ = self.app_handle.emit(
             "meeting-title-update",
@@ -1070,6 +1131,7 @@ impl MeetingManager {
             .map_err(|e| format!("Failed to finalize recovered meeting: {}", e))?;
         // The recovery pass ran real cloud transcription; charge it too.
         self.persist_usage(id);
+        self.export_markdown(id);
         log::info!("meeting: recovered interrupted row {} (completed)", id);
         Ok(final_transcript)
     }
@@ -1116,7 +1178,14 @@ impl MeetingManager {
                         Ok(p) => chunk_for_finalize(&audio, p),
                         Err(_) => chunk_fixed(&audio),
                     };
-                    self.transcribe_windows(&audio, &windows, source, &mut out, &mut errors);
+                    self.transcribe_windows(
+                        &audio,
+                        &windows,
+                        source,
+                        &mut out,
+                        &mut errors,
+                        |_, _| true,
+                    );
                 }
                 _ => {}
             }
@@ -1147,6 +1216,281 @@ impl MeetingManager {
         }
     }
 
+    /// Progress of the running import, or `None` when nothing is importing.
+    pub fn import_progress(&self) -> Option<MeetingImportProgress> {
+        self.import_progress.lock().unwrap().clone()
+    }
+
+    /// Ask the running import to stop at its next checkpoint. A no-op when
+    /// nothing is importing.
+    pub fn cancel_import(&self) {
+        if self.importing.load(Ordering::SeqCst) {
+            self.import_cancel.store(true, Ordering::SeqCst);
+        }
+    }
+
+    /// Import a recording made elsewhere (a phone voice memo, a conference
+    /// recording) as a completed meeting, and return its row id.
+    ///
+    /// Runs the same transcription the on-stop finalize pass uses — Gemini
+    /// batch when Gemini is the meeting model, the local final model in
+    /// windows otherwise — then the usual auto-title and auto-summary, so the
+    /// result is a normal meeting in History. Blocking: call it off the main
+    /// thread. Nothing is saved when transcription fails; the user still has
+    /// the file and can simply try again.
+    pub fn import_recording(&self, path: &std::path::Path) -> Result<i64, String> {
+        {
+            let state = self.state.lock().unwrap();
+            if *state == MeetingState::Running {
+                return Err("Stop the current meeting before importing a recording.".to_string());
+            }
+            if self.importing.swap(true, Ordering::SeqCst) {
+                return Err("Another recording is already being imported.".to_string());
+            }
+        }
+        self.import_cancel.store(false, Ordering::SeqCst);
+
+        #[cfg(target_os = "macos")]
+        let result = self.run_import(path);
+        #[cfg(not(target_os = "macos"))]
+        let result: Result<i64, String> = {
+            let _ = path;
+            Err("Importing recordings is only supported on macOS".to_string())
+        };
+
+        *self.import_progress.lock().unwrap() = None;
+        self.importing.store(false, Ordering::SeqCst);
+        {
+            use tauri::Emitter;
+            let _ = self.app_handle.emit(
+                "meeting-import-finished",
+                MeetingImportFinished {
+                    id: result.as_ref().ok().copied(),
+                    error: result.as_ref().err().cloned(),
+                },
+            );
+        }
+        result
+    }
+
+    fn report_import(&self, file_name: &str, stage: MeetingImportStage, progress: Option<f32>) {
+        let update = MeetingImportProgress {
+            file_name: file_name.to_string(),
+            stage,
+            progress,
+        };
+        *self.import_progress.lock().unwrap() = Some(update.clone());
+        use tauri::Emitter;
+        let _ = self.app_handle.emit("meeting-import-progress", update);
+    }
+
+    #[cfg(target_os = "macos")]
+    fn run_import(&self, path: &std::path::Path) -> Result<i64, String> {
+        use super::import;
+
+        let file_name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+
+        self.report_import(&file_name, MeetingImportStage::Decoding, Some(0.0));
+        let decoded = import::decode_file(path, &self.import_cancel, |p| {
+            self.report_import(&file_name, MeetingImportStage::Decoding, Some(p))
+        })?;
+        if decoded.samples.is_empty() {
+            return Err("The file contains no audio.".to_string());
+        }
+        let duration_ms = decoded.duration_ms();
+        log::info!(
+            "meeting import: decoded {:?} ({} s)",
+            file_name,
+            duration_ms / 1000
+        );
+
+        // The usage tally is per session; an import is one.
+        *self.session_usage.lock().unwrap() = crate::ai_usage::MeetingUsage::default();
+        let segments = self.transcribe_import(&decoded.samples, &file_name)?;
+        if self.import_cancel.load(Ordering::SeqCst) {
+            return Err(import::CANCELLED.to_string());
+        }
+        if !segments.iter().any(|s| !s.text.trim().is_empty()) {
+            return Err("No speech was found in the recording.".to_string());
+        }
+
+        let started_at = import::recording_started_at(path, decoded.recorded_at_ms, duration_ms);
+        let file_title = import::title_from_path(path);
+        let transcript = join_segments(&segments);
+        let record = MeetingRecordInput {
+            started_at,
+            ended_at: started_at + duration_ms,
+            duration_ms,
+            title: file_title
+                .clone()
+                .unwrap_or_else(|| default_meeting_title(started_at)),
+            transcript: transcript.clone(),
+            segments,
+            summary: None,
+            audio_path: None,
+        };
+        let id = self
+            .store
+            .save_meeting(&record)
+            .map_err(|e| format!("Failed to save the imported meeting: {}", e))?;
+        self.persist_usage(id);
+        if let Err(e) = self.write_meeting_wav(id, &decoded.samples) {
+            // The transcript is the point; playback is a nicety.
+            log::warn!("meeting import: playback audio not saved: {}", e);
+        }
+        drop(decoded);
+
+        // Title and summary run inline (not spawned like after a live stop):
+        // the import is already a background job the user is waiting on, and
+        // this way the meeting opens complete instead of filling in later.
+        let settings = crate::settings::get_settings(&self.app_handle);
+        if file_title.is_none() || settings.meeting_auto_summarize {
+            self.report_import(&file_name, MeetingImportStage::Summarizing, None);
+        }
+        if file_title.is_none() {
+            match tauri::async_runtime::block_on(crate::commands::meeting::generate_title(
+                &self.app_handle,
+                &transcript,
+            )) {
+                Ok(title) if !title.trim().is_empty() => self.apply_title(id, title.trim()),
+                Ok(_) => {}
+                Err(e) => log::info!("meeting import: auto-title skipped: {}", e),
+            }
+        }
+        if settings.meeting_auto_summarize {
+            match tauri::async_runtime::block_on(crate::commands::meeting::summarize_transcript(
+                &self.app_handle,
+                &transcript,
+            )) {
+                Ok(summary) => {
+                    if let Err(e) = self.store.update_summary(id, &summary) {
+                        log::error!("meeting import: failed to save summary: {}", e);
+                    }
+                }
+                Err(e) => log::warn!("meeting import: auto-summary failed: {}", e),
+            }
+        }
+
+        self.export_markdown(id);
+        log::info!("meeting import: saved {:?} as row {}", file_name, id);
+        Ok(id)
+    }
+
+    /// Transcribe an imported recording. The whole file is one source: a
+    /// phone on the table cannot tell "you" from "others", so everything is
+    /// labelled as the room ("others"), which is also the stream Gemini may
+    /// diarize.
+    #[cfg(target_os = "macos")]
+    fn transcribe_import(
+        &self,
+        audio: &[f32],
+        file_name: &str,
+    ) -> Result<Vec<TranscriptSegment>, String> {
+        use crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE;
+        let source = TranscriptSource::System;
+
+        if let Some(config) = self.gemini_finalize_config() {
+            let duration_secs = audio.len() as u64 / WHISPER_SAMPLE_RATE as u64;
+            let mut request = config.clone();
+            // Speaker numbers only mean something within one request, so
+            // diarize only when the whole recording fits in one.
+            request.diarize =
+                config.diarize && crate::gemini_transcribe::supports_diarization(duration_secs);
+            let pieces = gemini_import_pieces(audio.len());
+            let mut speakers = SpeakerLabels::default();
+            let mut segments = Vec::new();
+            for (index, &(start, end)) in pieces.iter().enumerate() {
+                if self.import_cancel.load(Ordering::SeqCst) {
+                    return Err(super::import::CANCELLED.to_string());
+                }
+                let progress = (pieces.len() > 1).then(|| index as f32 / pieces.len() as f32);
+                self.report_import(file_name, MeetingImportStage::Transcribing, progress);
+                let result = crate::gemini_transcribe::transcribe_samples(
+                    &request,
+                    &audio[start..end],
+                    WHISPER_SAMPLE_RATE,
+                    &format!("import-{}", index + 1),
+                )
+                .map_err(|e| e.to_string())?;
+                let offset_ms = start as u64 * 1000 / WHISPER_SAMPLE_RATE as u64;
+                self.absorb_gemini_result(
+                    &request.model,
+                    result,
+                    offset_ms,
+                    source,
+                    &mut speakers,
+                    &mut segments,
+                );
+            }
+            segments.sort_by_key(|s| s.timestamp_ms);
+            return Ok(segments);
+        }
+
+        self.report_import(file_name, MeetingImportStage::Transcribing, Some(0.0));
+        self.transcription_manager.initiate_model_load_for(
+            crate::settings::get_settings(&self.app_handle).meeting_model_id(),
+        );
+        let restore_model = self.swap_in_final_model();
+        let windows = {
+            use tauri::Manager;
+            match self.app_handle.path().resolve(
+                "resources/models/silero_vad_v4.onnx",
+                tauri::path::BaseDirectory::Resource,
+            ) {
+                Ok(vad) => chunk_for_finalize(audio, &vad),
+                Err(_) => chunk_fixed(audio),
+            }
+        };
+        let mut segments = Vec::new();
+        let mut errors = FinalizeErrors::default();
+        self.transcribe_windows(
+            audio,
+            &windows,
+            source,
+            &mut segments,
+            &mut errors,
+            |index, total| {
+                self.report_import(
+                    file_name,
+                    MeetingImportStage::Transcribing,
+                    Some(index as f32 / total.max(1) as f32),
+                );
+                !self.import_cancel.load(Ordering::SeqCst)
+            },
+        );
+        self.restore_model(restore_model);
+
+        if self.import_cancel.load(Ordering::SeqCst) {
+            return Err(super::import::CANCELLED.to_string());
+        }
+        if errors.count > 0 && !segments.iter().any(|s| !s.text.trim().is_empty()) {
+            return Err(errors
+                .first
+                .unwrap_or_else(|| "Transcription failed.".to_string()));
+        }
+        Ok(segments)
+    }
+
+    /// Write 16 kHz mono `samples` as the playback WAV of meeting `id`
+    /// (`{app_data_dir}/meetings/{id}.wav`) and record the path on the row.
+    #[cfg(target_os = "macos")]
+    fn write_meeting_wav(&self, id: i64, samples: &[f32]) -> Result<std::path::PathBuf, String> {
+        use crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE;
+        let dir = crate::portable::app_data_dir(&self.app_handle)
+            .map_err(|e| e.to_string())?
+            .join("meetings");
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let wav_path = dir.join(format!("{}.wav", id));
+        write_f32_wav(&wav_path, samples, WHISPER_SAMPLE_RATE).map_err(|e| e.to_string())?;
+        self.store
+            .update_audio_path(id, &wav_path.to_string_lossy())
+            .map_err(|e| e.to_string())?;
+        Ok(wav_path)
+    }
+
     /// macOS recovery helper: write the mixed playback WAV for a recovered
     /// meeting from its mixed temp buffer and record the path on the row.
     #[cfg(target_os = "macos")]
@@ -1155,19 +1499,8 @@ impl MeetingManager {
             Ok(m) if !m.is_empty() => m,
             _ => return,
         };
-        let dir = match crate::portable::app_data_dir(&self.app_handle) {
-            Ok(d) => d.join("meetings"),
-            Err(_) => return,
-        };
-        if std::fs::create_dir_all(&dir).is_err() {
-            return;
-        }
-        let wav_path = dir.join(format!("{}.wav", id));
-        use crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE;
-        if write_f32_wav(&wav_path, &mixed, WHISPER_SAMPLE_RATE).is_ok() {
-            let _ = self
-                .store
-                .update_audio_path(id, &wav_path.to_string_lossy());
+        if let Err(e) = self.write_meeting_wav(id, &mixed) {
+            log::warn!("meeting recovery: playback audio not saved: {}", e);
         }
     }
 
@@ -1271,6 +1604,7 @@ impl MeetingManager {
                         source,
                         &mut final_segments,
                         &mut errors,
+                        |_, _| true,
                     );
                 }
                 Ok(_) => {}
@@ -1438,20 +1772,14 @@ impl MeetingManager {
                 &format!("meeting-{}", label),
             ) {
                 Ok(result) => {
-                    self.record_usage(&request.model, result.usage.0, result.usage.1);
-                    for segment in result.segments {
-                        let text = segment.text.trim();
-                        if text.is_empty() {
-                            continue;
-                        }
-                        segments.push(TranscriptSegment {
-                            text: text.to_string(),
-                            timestamp_ms: segment.start_ms,
-                            source,
-                            translation: None,
-                            speaker: segment.speaker.as_deref().map(|raw| speakers.label(raw)),
-                        });
-                    }
+                    self.absorb_gemini_result(
+                        &request.model,
+                        result,
+                        0,
+                        source,
+                        &mut speakers,
+                        &mut segments,
+                    );
                 }
                 Err(e) => {
                     log::warn!("meeting finalize: gemini {} stream failed: {}", label, e);
@@ -1489,6 +1817,35 @@ impl MeetingManager {
 
         log::warn!("meeting finalize: gemini returned no text; keeping live transcript");
         GeminiFinalizeOutcome::Done
+    }
+
+    /// Record what a Gemini batch request cost and turn its segments into
+    /// transcript segments, shifted by `offset_ms` (non-zero when a long
+    /// recording was sent in several pieces).
+    #[cfg(target_os = "macos")]
+    fn absorb_gemini_result(
+        &self,
+        model: &str,
+        result: crate::gemini_transcribe::BatchTranscribeResult,
+        offset_ms: u64,
+        source: TranscriptSource,
+        speakers: &mut SpeakerLabels,
+        out: &mut Vec<TranscriptSegment>,
+    ) {
+        self.record_usage(model, result.usage.0, result.usage.1);
+        for segment in result.segments {
+            let text = segment.text.trim();
+            if text.is_empty() {
+                continue;
+            }
+            out.push(TranscriptSegment {
+                text: text.to_string(),
+                timestamp_ms: offset_ms + segment.start_ms,
+                source,
+                translation: None,
+                speaker: segment.speaker.as_deref().map(|raw| speakers.label(raw)),
+            });
+        }
     }
 
     /// Whether the user's selected transcription model is a cloud (OpenRouter)
@@ -1590,12 +1947,18 @@ impl MeetingManager {
         source: TranscriptSource,
         out: &mut Vec<TranscriptSegment>,
         errors: &mut FinalizeErrors,
+        mut on_window: impl FnMut(usize, usize) -> bool,
     ) {
         use crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE;
         // Tail text of the previous window for this source, used to de-dup the
         // overlapping region (Item 6).
         let mut prev_tail: Option<String> = None;
-        for &(start, end) in windows {
+        for (index, &(start, end)) in windows.iter().enumerate() {
+            // `on_window` reports progress and returns false to stop early
+            // (a cancelled import).
+            if !on_window(index, windows.len()) {
+                return;
+            }
             let slice = &audio[start..end];
             match self
                 .transcription_manager
@@ -3414,6 +3777,25 @@ fn chunk_for_finalize(audio: &[f32], vad_path: &std::path::Path) -> Vec<(usize, 
     windows
 }
 
+/// Longest piece of an imported recording sent to Gemini in one request. The
+/// API takes an hour of plain transcription per request; staying well under
+/// it leaves room for its own accounting.
+#[cfg(target_os = "macos")]
+const GEMINI_IMPORT_PIECE_SECS: usize = 50 * 60;
+
+/// Split `len` samples into consecutive pieces of at most
+/// `GEMINI_IMPORT_PIECE_SECS`. Pieces are cut at fixed points: at one cut per
+/// 50 minutes, a clipped word is cheaper than another windowing heuristic.
+#[cfg(target_os = "macos")]
+fn gemini_import_pieces(len: usize) -> Vec<(usize, usize)> {
+    use crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE;
+    let piece = GEMINI_IMPORT_PIECE_SECS * WHISPER_SAMPLE_RATE as usize;
+    (0..len)
+        .step_by(piece)
+        .map(|start| (start, (start + piece).min(len)))
+        .collect()
+}
+
 /// Fallback chunker: fixed `FINALIZE_MAX_SAMPLES`-sized windows with
 /// `FINALIZE_OVERLAP_SAMPLES` overlap (Item 6), no VAD.
 #[cfg(target_os = "macos")]
@@ -3777,6 +4159,8 @@ mod tests {
         downsample_wave, empty_session_outcome, EmptySessionOutcome, TranscriptSegment,
         TranscriptSource,
     };
+    #[cfg(target_os = "macos")]
+    use super::{gemini_import_pieces, GEMINI_IMPORT_PIECE_SECS};
 
     #[test]
     fn transcript_source_serializes_as_you_and_others() {
@@ -3801,6 +4185,18 @@ mod tests {
         assert_eq!(seg.source, TranscriptSource::Mic);
         assert_eq!(seg.text, "hello");
         assert_eq!(seg.timestamp_ms, 1200);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn long_imports_go_to_gemini_in_pieces_that_cover_every_sample() {
+        let piece = GEMINI_IMPORT_PIECE_SECS * 16_000;
+        assert_eq!(gemini_import_pieces(10), vec![(0, 10)]);
+        assert_eq!(
+            gemini_import_pieces(piece * 2 + 5),
+            vec![(0, piece), (piece, piece * 2), (piece * 2, piece * 2 + 5)]
+        );
+        assert!(gemini_import_pieces(0).is_empty());
     }
 
     #[cfg(target_os = "macos")]

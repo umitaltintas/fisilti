@@ -7,6 +7,7 @@ import { LiveSession } from "./LiveSession";
 import { MeetingHistory } from "./MeetingHistory";
 import { MeetingDetail } from "./MeetingDetail";
 import { MeetingPreferences } from "./MeetingPreferences";
+import { ImportRecording } from "./ImportRecording";
 import { NOTES_AUTOSAVE_MS, SEARCH_DEBOUNCE_MS } from "./shared";
 import {
   deleteMeeting,
@@ -21,6 +22,7 @@ import {
   listMeetings,
   listenMeetingError,
   listenMeetingFinalizing,
+  listenMeetingImportFinished,
   listenMeetingState,
   listenMeetingSummary,
   listenMeetingTitle,
@@ -270,6 +272,13 @@ export const MeetingSettings: React.FC = () => {
         } else {
           stopTimer();
         }
+      }),
+    );
+
+    // An import may finish while another tab is showing; keep the list current.
+    register(
+      listenMeetingImportFinished(({ id }) => {
+        if (id != null) void loadPastMeetings();
       }),
     );
 
@@ -578,6 +587,9 @@ export const MeetingSettings: React.FC = () => {
           onRecover={handleRecover}
           onDiscardInterrupted={handleDiscardInterrupted}
           onCopy={copyText}
+          importSlot={
+            <ImportRecording disabled={isRunning} onImported={openDetail} />
+          }
         />
       )}
 
@@ -595,17 +607,20 @@ export const MeetingSettings: React.FC = () => {
             setDetail={setDetail}
           />
         ) : (
-          <MeetingHistory
-            meetings={pastMeetings}
-            error={pastError}
-            searchQuery={searchQuery}
-            onSearchChange={setSearchQuery}
-            confirmDeleteId={confirmDeleteId}
-            onRequestDelete={setConfirmDeleteId}
-            onCancelDelete={() => setConfirmDeleteId(null)}
-            onConfirmDelete={handleDelete}
-            onOpen={openDetail}
-          />
+          <div className="space-y-4">
+            <ImportRecording disabled={isRunning} onImported={openDetail} />
+            <MeetingHistory
+              meetings={pastMeetings}
+              error={pastError}
+              searchQuery={searchQuery}
+              onSearchChange={setSearchQuery}
+              confirmDeleteId={confirmDeleteId}
+              onRequestDelete={setConfirmDeleteId}
+              onCancelDelete={() => setConfirmDeleteId(null)}
+              onConfirmDelete={handleDelete}
+              onOpen={openDetail}
+            />
+          </div>
         ))}
 
       {tab === "settings" && <MeetingPreferences />}

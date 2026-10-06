@@ -69,6 +69,9 @@ interface LiveSessionProps {
   onRecover: (id: number) => void;
   onDiscardInterrupted: (id: number) => void;
   onCopy: (text: string) => void;
+  /** The "import a recording" card, shown under the idle hero as the other
+   * way to get a meeting transcript. */
+  importSlot?: React.ReactNode;
 }
 
 // The "Session" tab: a state-driven workspace. Idle shows a start hero +
@@ -209,6 +212,8 @@ export const LiveSession: React.FC<LiveSessionProps> = (props) => {
               </p>
             )}
           </div>
+
+          {props.importSlot}
 
           {props.recentMeetings.length > 0 && (
             <div className="space-y-2">

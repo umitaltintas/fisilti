@@ -6,8 +6,10 @@
 //
 // It is ADDITIVE and ISOLATED from the dictation flow.
 
+pub mod export;
+pub mod import;
 pub mod manager;
 pub mod store;
 
-pub use manager::{MeetingManager, MeetingState};
+pub use manager::{MeetingImportProgress, MeetingManager, MeetingState};
 pub use store::{InterruptedMeeting, MeetingListItem, MeetingRecord};

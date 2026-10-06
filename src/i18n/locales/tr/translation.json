@@ -793,7 +793,28 @@
     "stillProcessing": "Yazıya dökülüyor",
     "costEstimate": "~${{amount}}",
     "costTooltip": "API'nin bildirdiği token sayılarından, herkese açık fiyatların bir anlık görüntüsüne göre hesaplanır. Önizleme fiyat değişiklikleri ile ücretsiz kota ve faturalandırma indirimleri hesaba katılmaz, bu yüzden faturayla birebir uyuşmaz. Sondaki + işareti, bir modelin yayımlanmış fiyatı olmadığını ve gerçek maliyetin daha yüksek olduğunu gösterir.",
-    "cloudBadge": "Ses {{providers}} hizmetine gönderiliyor"
+    "cloudBadge": "Ses {{providers}} hizmetine gönderiliyor",
+    "import": {
+      "title": "Bir kaydı yazıya dök",
+      "description": "Sesli not ya da konferans kaydı: m4a, mp3, wav, flac, ogg… Dosya seç veya buraya bırak.",
+      "busyMeeting": "Devam eden toplantı bitince kullanılabilir.",
+      "choose": "Dosya seç",
+      "dropHere": "Yazıya dökmek için bırak",
+      "unsupported": "Bu dosya türü desteklenmiyor. m4a, mp3, wav, flac veya ogg deneyin.",
+      "fileFilter": "Ses kayıtları",
+      "stage": {
+        "decoding": "Ses okunuyor",
+        "transcribing": "Yazıya dökülüyor",
+        "summarizing": "Başlık ve özet yazılıyor"
+      }
+    },
+    "exportDir": {
+      "title": "Markdown olarak klasöre kaydet",
+      "description": "Biten her toplantı bu klasöre Markdown notu olarak da yazılır (ör. bir Obsidian kasası); başlığı, özeti veya notları değişince güncellenir.",
+      "choose": "Klasör seç",
+      "change": "Değiştir",
+      "off": "Kapat"
+    }
   },
   "meetingPrompt": {
     "startTitle": "Toplantı algılandı",

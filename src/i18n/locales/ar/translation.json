@@ -771,7 +771,28 @@
     "liveTranslateTargetDescription": "اللغة التي يُترجم إليها الكلام المباشر.",
     "geminiSection": "التفريغ المباشر (Gemini)",
     "geminiNeedsKey": "يتطلب التفريغ المباشر وتمييز المتحدثين مفتاح Gemini API.",
-    "geminiOpenModels": "فتح النماذج"
+    "geminiOpenModels": "فتح النماذج",
+    "import": {
+      "title": "Transcribe a recording",
+      "description": "A voice memo or a conference recording: m4a, mp3, wav, flac, ogg… Choose a file or drop it here.",
+      "busyMeeting": "Available once the current meeting ends.",
+      "choose": "Choose file",
+      "dropHere": "Drop to transcribe",
+      "unsupported": "This file type is not supported. Try m4a, mp3, wav, flac or ogg.",
+      "fileFilter": "Audio recordings",
+      "stage": {
+        "decoding": "Reading audio",
+        "transcribing": "Transcribing",
+        "summarizing": "Writing title and summary"
+      }
+    },
+    "exportDir": {
+      "title": "Save as Markdown to a folder",
+      "description": "Every finished meeting is also written to this folder as a Markdown note (e.g. an Obsidian vault) and kept up to date when its title, summary or notes change.",
+      "choose": "Choose folder",
+      "change": "Change",
+      "off": "Turn off"
+    }
   },
   "meetingPrompt": {
     "startTitle": "تم اكتشاف اجتماع",

@@ -16,12 +16,14 @@ import { useModelStore } from "@/stores/modelStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { cloudProviderOf } from "@/lib/utils/model";
 import { emit } from "@tauri-apps/api/event";
+import { open } from "@tauri-apps/plugin-dialog";
 import {
   changeMeetingAutoDetect,
   changeMeetingAutoEnd,
   changeMeetingAutoEndGrace,
   changeMeetingAutoSummarize,
   changeMeetingCalendarNames,
+  changeMeetingExportDir,
   changeMeetingGeminiDiarize,
   changeMeetingGeminiSmart,
   changeMeetingLiveMode,
@@ -31,6 +33,7 @@ import {
   getMeetingAutoDetectSettings,
   getMeetingAutoSummarize,
   getMeetingCalendarNames,
+  getMeetingExportDir,
   getMeetingGeminiSettings,
   requestCalendarAccess,
   type MeetingLiveMode,
@@ -78,6 +81,7 @@ export const MeetingPreferences: React.FC = () => {
   const [loaded, setLoaded] = useState(false);
   const [autoSummarize, setAutoSummarize] = useState(false);
   const [calendarNames, setCalendarNames] = useState(false);
+  const [exportDir, setExportDir] = useState("");
   const [autoDetect, setAutoDetect] = useState(false);
   const [autoEnd, setAutoEnd] = useState(true);
   const [silenceTimeoutSecs, setSilenceTimeoutSecs] = useState(180);
@@ -98,6 +102,9 @@ export const MeetingPreferences: React.FC = () => {
       }),
       getMeetingCalendarNames().then((v) => {
         if (!cancelled) setCalendarNames(v);
+      }),
+      getMeetingExportDir().then((v) => {
+        if (!cancelled) setExportDir(v);
       }),
       getMeetingAutoDetectSettings().then((s) => {
         if (cancelled) return;
@@ -171,6 +178,22 @@ export const MeetingPreferences: React.FC = () => {
       await changeMeetingCalendarNames(false);
     } catch (e) {
       setCalendarNames(true);
+      setError(String(e));
+    }
+  };
+
+  const handleExportDir = async (pick: boolean) => {
+    setError(null);
+    let next = "";
+    if (pick) {
+      const picked = await open({ directory: true, multiple: false });
+      if (typeof picked !== "string") return;
+      next = picked;
+    }
+    try {
+      await changeMeetingExportDir(next);
+      setExportDir(next);
+    } catch (e) {
       setError(String(e));
     }
   };
@@ -293,6 +316,43 @@ export const MeetingPreferences: React.FC = () => {
           description={t("meeting.calendarNamesDescription")}
           grouped
         />
+
+        <SettingContainer
+          title={t("meeting.exportDir.title")}
+          description={t("meeting.exportDir.description")}
+          descriptionMode="tooltip"
+          grouped
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            {exportDir && (
+              <span
+                className="max-w-56 truncate text-xs font-mono text-text/60"
+                title={exportDir}
+                dir="rtl"
+              >
+                {exportDir}
+              </span>
+            )}
+            <Button
+              onClick={() => void handleExportDir(true)}
+              variant="secondary"
+              size="sm"
+            >
+              {exportDir
+                ? t("meeting.exportDir.change")
+                : t("meeting.exportDir.choose")}
+            </Button>
+            {exportDir && (
+              <Button
+                onClick={() => void handleExportDir(false)}
+                variant="ghost"
+                size="sm"
+              >
+                {t("meeting.exportDir.off")}
+              </Button>
+            )}
+          </div>
+        </SettingContainer>
       </SettingsGroup>
 
       <CollapsibleGroup

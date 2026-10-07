@@ -849,6 +849,10 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
 fn default_post_process_api_keys() -> HashMap<String, String> {
     let mut map = HashMap::new();
     for provider in default_post_process_providers() {
+        // Google's key lives in `gemini_api_key`; see `post_process_key_for`.
+        if provider.id == GOOGLE_PROVIDER_ID {
+            continue;
+        }
         map.insert(provider.id, String::new());
     }
     map
@@ -978,7 +982,12 @@ fn ensure_post_process_defaults(settings: &mut AppSettings) -> bool {
             }
         }
 
-        if !settings.post_process_api_keys.contains_key(&provider.id) {
+        // Google has no map entry by design (its key is `gemini_api_key`).
+        // Inserting one here would be removed again by the Google-key
+        // migration, reporting a change — and a store write — on every read.
+        if provider.id != GOOGLE_PROVIDER_ID
+            && !settings.post_process_api_keys.contains_key(&provider.id)
+        {
             settings
                 .post_process_api_keys
                 .insert(provider.id.clone(), String::new());
@@ -1190,6 +1199,7 @@ impl AppSettings {
             .find(|provider| provider.id == self.post_process_provider_id)
     }
 
+    #[allow(dead_code)]
     pub fn post_process_provider(&self, provider_id: &str) -> Option<&PostProcessProvider> {
         self.post_process_providers
             .iter()
@@ -1206,95 +1216,283 @@ impl AppSettings {
     }
 }
 
-pub fn load_or_create_app_settings(app: &AppHandle) -> AppSettings {
-    // Initialize store
-    let store = app
-        .store(crate::portable::store_path(SETTINGS_STORE_PATH))
-        .expect("Failed to initialize store");
-
-    let mut settings = if let Some(settings_value) = store.get("settings") {
-        // Parse the entire settings object
-        match serde_json::from_value::<AppSettings>(settings_value) {
-            Ok(mut settings) => {
-                debug!("Found existing settings: {:?}", settings);
-                let default_settings = get_default_settings();
-                let mut updated = false;
-
-                // Merge default bindings into existing settings
-                for (key, value) in default_settings.bindings {
-                    if !settings.bindings.contains_key(&key) {
-                        debug!("Adding missing binding: {}", key);
-                        settings.bindings.insert(key, value);
-                        updated = true;
-                    }
-                }
-
-                if updated {
-                    debug!("Settings updated with new bindings");
-                    store.set("settings", serde_json::to_value(&settings).unwrap());
-                }
-
-                settings
-            }
-            Err(e) => {
-                warn!("Failed to parse settings: {}", e);
-                // Fall back to default settings if parsing fails
-                let default_settings = get_default_settings();
-                store.set("settings", serde_json::to_value(&default_settings).unwrap());
-                default_settings
-            }
-        }
-    } else {
-        let default_settings = get_default_settings();
-        store.set("settings", serde_json::to_value(&default_settings).unwrap());
-        default_settings
-    };
-
-    let mut migrated = ensure_post_process_defaults(&mut settings);
-    migrated |= migrate_gemini_finalize_to_meeting_model(&mut settings);
-    migrated |= migrate_meeting_vocabulary_into_custom_words(&mut settings);
-    migrated |= migrate_google_post_process_key_into_gemini_key(&mut settings);
-    if migrated {
-        store.set("settings", serde_json::to_value(&settings).unwrap());
+/// Parse a stored settings object without discarding more than it must.
+///
+/// The strict parse is tried first. When it fails, every top-level field of the
+/// stored object is laid over the defaults one at a time and kept only if the
+/// result still parses, so one malformed field (a renamed enum variant, a wrong
+/// type written by an older build) resets that field alone instead of taking
+/// the API keys, prompts and shortcuts down with it. Object-valued fields that
+/// fail as a whole are retried entry by entry for the same reason.
+///
+/// Returns the settings plus the names of the fields that had to be reset; an
+/// empty list means the strict parse succeeded.
+pub(crate) fn parse_settings_lenient(raw: &serde_json::Value) -> (AppSettings, Vec<String>) {
+    if let Ok(settings) = serde_json::from_value::<AppSettings>(raw.clone()) {
+        return (settings, Vec::new());
     }
 
+    let defaults = get_default_settings();
+    let Some(raw_obj) = raw.as_object() else {
+        return (defaults, vec!["<root>".to_string()]);
+    };
+    let Ok(mut merged) = serde_json::to_value(&defaults) else {
+        return (defaults, vec!["<root>".to_string()]);
+    };
+
+    let parses =
+        |candidate: &serde_json::Value| serde_json::from_value::<AppSettings>(candidate.clone()).is_ok();
+
+    let mut reset = Vec::new();
+    for (key, value) in raw_obj {
+        let Some(default_value) = merged.get(key).cloned() else {
+            // Unknown key (a field this build no longer has): ignored, exactly
+            // as the strict parse would.
+            continue;
+        };
+
+        let mut candidate = merged.clone();
+        candidate[key] = value.clone();
+        if parses(&candidate) {
+            merged = candidate;
+            continue;
+        }
+
+        // Whole field rejected. For maps (bindings, API keys, models) keep the
+        // individual entries that are still valid.
+        let mut kept_any = false;
+        if let (Some(value_obj), Some(_)) = (value.as_object(), default_value.as_object()) {
+            for (sub_key, sub_value) in value_obj {
+                let mut candidate = merged.clone();
+                candidate[key][sub_key] = sub_value.clone();
+                if parses(&candidate) {
+                    merged = candidate;
+                    kept_any = true;
+                }
+            }
+        }
+        reset.push(if kept_any {
+            format!("{key} (partially)")
+        } else {
+            key.clone()
+        });
+    }
+
+    match serde_json::from_value::<AppSettings>(merged) {
+        Ok(settings) => (settings, reset),
+        // Every step above was checked to parse, so this is unreachable in
+        // practice; defaults remain the only safe answer if it ever happens.
+        Err(_) => (defaults, vec!["<root>".to_string()]),
+    }
+}
+
+/// File name for a backup of unreadable settings taken at `stamp`.
+pub(crate) fn settings_backup_file_name(stamp: &chrono::DateTime<chrono::Local>) -> String {
+    format!(
+        "{}.bak.{}",
+        SETTINGS_STORE_PATH,
+        stamp.format("%Y%m%d-%H%M%S")
+    )
+}
+
+/// Copy the stored settings JSON aside before it is rewritten after a parse
+/// failure, so nothing the user configured is lost for good even when the
+/// lenient merge had to drop a field.
+fn backup_raw_settings(app: &AppHandle, raw: &serde_json::Value) {
+    let dir = match crate::portable::app_data_dir(app) {
+        Ok(dir) => dir,
+        Err(e) => {
+            log::error!("Cannot back up unreadable settings: no app data dir ({e})");
+            return;
+        }
+    };
+    let path = dir.join(settings_backup_file_name(&chrono::Local::now()));
+    let body = serde_json::to_string_pretty(raw).unwrap_or_else(|_| raw.to_string());
+    match std::fs::create_dir_all(&dir).and_then(|_| std::fs::write(&path, body)) {
+        Ok(()) => warn!("Backed up the unreadable settings to {}", path.display()),
+        Err(e) => log::error!("Failed to back up settings to {}: {e}", path.display()),
+    }
+}
+
+/// Apply every load-time migration. Returns whether anything changed.
+fn apply_migrations(settings: &mut AppSettings) -> bool {
+    let mut migrated = ensure_post_process_defaults(settings);
+    migrated |= migrate_gemini_finalize_to_meeting_model(settings);
+    migrated |= migrate_meeting_vocabulary_into_custom_words(settings);
+    migrated |= migrate_google_post_process_key_into_gemini_key(settings);
+    migrated
+}
+
+// --- Write serialization -----------------------------------------------------
+//
+// Every settings change is a read-modify-write of one JSON blob. Two commands
+// racing each other (the frontend fires several from one page) would otherwise
+// each read the old blob, and the second write would silently undo the first.
+// The lock is re-entrant per thread so a helper that writes from inside an
+// `update_settings` closure cannot deadlock itself.
+
+struct WriteLockState {
+    owner: Option<std::thread::ThreadId>,
+    depth: usize,
+}
+
+static WRITE_LOCK: std::sync::Mutex<WriteLockState> = std::sync::Mutex::new(WriteLockState {
+    owner: None,
+    depth: 0,
+});
+static WRITE_LOCK_CV: std::sync::Condvar = std::sync::Condvar::new();
+
+struct WriteLockGuard;
+
+fn lock_settings_writes() -> WriteLockGuard {
+    let me = std::thread::current().id();
+    let mut state = WRITE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    loop {
+        match state.owner {
+            None => {
+                state.owner = Some(me);
+                state.depth = 1;
+                break;
+            }
+            Some(owner) if owner == me => {
+                state.depth += 1;
+                break;
+            }
+            Some(_) => {
+                state = WRITE_LOCK_CV
+                    .wait(state)
+                    .unwrap_or_else(|e| e.into_inner());
+            }
+        }
+    }
+    WriteLockGuard
+}
+
+impl Drop for WriteLockGuard {
+    fn drop(&mut self) {
+        let mut state = WRITE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        state.depth = state.depth.saturating_sub(1);
+        if state.depth == 0 {
+            state.owner = None;
+            WRITE_LOCK_CV.notify_one();
+        }
+    }
+}
+
+fn settings_store(app: &AppHandle) -> std::sync::Arc<tauri_plugin_store::Store<tauri::Wry>> {
+    app.store(crate::portable::store_path(SETTINGS_STORE_PATH))
+        .expect("Failed to initialize store")
+}
+
+fn store_settings(store: &tauri_plugin_store::Store<tauri::Wry>, settings: &AppSettings) {
+    match serde_json::to_value(settings) {
+        Ok(value) => store.set("settings", value),
+        Err(e) => log::error!("Failed to serialize settings: {e}"),
+    }
+}
+
+/// Read the settings out of the store, repairing (and persisting) them when the
+/// stored copy is missing, unreadable or needs a migration. Writes back only
+/// when something actually changed.
+fn read_settings(app: &AppHandle, merge_default_bindings: bool) -> AppSettings {
+    let store = settings_store(app);
+    let (settings, dirty) = compute_settings(app, &store, merge_default_bindings, false);
+    if !dirty {
+        return settings;
+    }
+
+    // Repair needed. Redo it under the write lock against a fresh read, so a
+    // writer that landed since the read above is not overwritten with stale
+    // data.
+    let _guard = lock_settings_writes();
+    let (settings, dirty) = compute_settings(app, &store, merge_default_bindings, true);
+    if dirty {
+        store_settings(&store, &settings);
+    }
     settings
+}
+
+/// Parse + repair the stored settings. Returns them with whether they differ
+/// from what is stored. Backs up an unreadable blob only when `backup` is set,
+/// so the unlocked first pass in [`read_settings`] never writes anything.
+fn compute_settings(
+    app: &AppHandle,
+    store: &tauri_plugin_store::Store<tauri::Wry>,
+    merge_default_bindings: bool,
+    backup: bool,
+) -> (AppSettings, bool) {
+    let (mut settings, mut dirty) = match store.get("settings") {
+        Some(raw) => {
+            let (settings, reset) = parse_settings_lenient(&raw);
+            if reset.is_empty() {
+                (settings, false)
+            } else {
+                if backup {
+                    log::error!(
+                        "Stored settings could not be read in full; reset to defaults: {}",
+                        reset.join(", ")
+                    );
+                    backup_raw_settings(app, &raw);
+                }
+                (settings, true)
+            }
+        }
+        None => (get_default_settings(), true),
+    };
+
+    if merge_default_bindings {
+        for (key, value) in get_default_settings().bindings {
+            if !settings.bindings.contains_key(&key) {
+                debug!("Adding missing binding: {}", key);
+                settings.bindings.insert(key, value);
+                dirty = true;
+            }
+        }
+    }
+
+    dirty |= apply_migrations(&mut settings);
+
+    (settings, dirty)
+}
+
+pub fn load_or_create_app_settings(app: &AppHandle) -> AppSettings {
+    let _guard = lock_settings_writes();
+    read_settings(app, true)
 }
 
 pub fn get_settings(app: &AppHandle) -> AppSettings {
-    let store = app
-        .store(crate::portable::store_path(SETTINGS_STORE_PATH))
-        .expect("Failed to initialize store");
-
-    let mut settings = if let Some(settings_value) = store.get("settings") {
-        serde_json::from_value::<AppSettings>(settings_value).unwrap_or_else(|_| {
-            let default_settings = get_default_settings();
-            store.set("settings", serde_json::to_value(&default_settings).unwrap());
-            default_settings
-        })
-    } else {
-        let default_settings = get_default_settings();
-        store.set("settings", serde_json::to_value(&default_settings).unwrap());
-        default_settings
-    };
-
-    let mut migrated = ensure_post_process_defaults(&mut settings);
-    migrated |= migrate_gemini_finalize_to_meeting_model(&mut settings);
-    migrated |= migrate_meeting_vocabulary_into_custom_words(&mut settings);
-    migrated |= migrate_google_post_process_key_into_gemini_key(&mut settings);
-    if migrated {
-        store.set("settings", serde_json::to_value(&settings).unwrap());
-    }
-
-    settings
+    read_settings(app, false)
 }
 
+/// Overwrite the stored settings. Prefer [`update_settings`], which reads the
+/// current value under the same lock and so cannot lose a concurrent change.
+#[allow(dead_code)] // kept for callers on other branches; new code uses update_settings
 pub fn write_settings(app: &AppHandle, settings: AppSettings) {
-    let store = app
-        .store(crate::portable::store_path(SETTINGS_STORE_PATH))
-        .expect("Failed to initialize store");
+    let _guard = lock_settings_writes();
+    store_settings(&settings_store(app), &settings);
+}
 
-    store.set("settings", serde_json::to_value(&settings).unwrap());
+/// Read-modify-write the settings atomically with respect to every other
+/// writer in the process.
+pub fn update_settings<R>(app: &AppHandle, f: impl FnOnce(&mut AppSettings) -> R) -> R {
+    let _guard = lock_settings_writes();
+    let mut settings = read_settings(app, false);
+    let result = f(&mut settings);
+    store_settings(&settings_store(app), &settings);
+    result
+}
+
+/// [`update_settings`] for a change that can be rejected: nothing is written
+/// when the closure returns `Err`.
+pub fn try_update_settings<R, E>(
+    app: &AppHandle,
+    f: impl FnOnce(&mut AppSettings) -> Result<R, E>,
+) -> Result<R, E> {
+    let _guard = lock_settings_writes();
+    let mut settings = read_settings(app, false);
+    let result = f(&mut settings)?;
+    store_settings(&settings_store(app), &settings);
+    Ok(result)
 }
 
 pub fn get_bindings(app: &AppHandle) -> HashMap<String, ShortcutBinding> {
@@ -1463,6 +1661,94 @@ mod tests {
             .post_process_providers
             .iter()
             .any(|p| p.id == "google"));
+    }
+
+    #[test]
+    fn migrations_are_a_no_op_on_settings_that_need_none() {
+        // Regression: the Google provider used to get a map entry inserted by
+        // `ensure_post_process_defaults` and removed again by the key
+        // migration, so every single read reported a change and rewrote the
+        // store.
+        let mut settings = get_default_settings();
+        assert!(!settings.post_process_api_keys.contains_key("google"));
+        assert!(!apply_migrations(&mut settings));
+        assert!(!apply_migrations(&mut settings));
+    }
+
+    #[test]
+    fn a_valid_blob_parses_strictly_with_nothing_reset() {
+        let raw = serde_json::to_value(get_default_settings()).unwrap();
+        let (_, reset) = parse_settings_lenient(&raw);
+        assert!(reset.is_empty());
+    }
+
+    #[test]
+    fn one_bad_field_resets_only_that_field() {
+        let mut stored = get_default_settings();
+        stored.gemini_api_key = "keep-me".to_string();
+        stored
+            .post_process_api_keys
+            .insert("openrouter".to_string(), "or-key".to_string());
+        stored.custom_words = vec!["Fısıltı".to_string()];
+        stored.selected_model = "turbo".to_string();
+        let mut raw = serde_json::to_value(&stored).unwrap();
+        raw["overlay_position"] = serde_json::json!("sideways");
+        raw["paste_delay_ms"] = serde_json::json!("not a number");
+
+        let (settings, reset) = parse_settings_lenient(&raw);
+
+        assert_eq!(settings.gemini_api_key, "keep-me");
+        assert_eq!(settings.post_process_key_for("openrouter"), "or-key");
+        assert_eq!(settings.custom_words, vec!["Fısıltı".to_string()]);
+        assert_eq!(settings.selected_model, "turbo");
+        assert_eq!(settings.overlay_position, default_overlay_position());
+        assert_eq!(settings.paste_delay_ms, default_paste_delay_ms());
+        assert_eq!(reset.len(), 2, "{reset:?}");
+        assert!(reset.contains(&"overlay_position".to_string()));
+        assert!(reset.contains(&"paste_delay_ms".to_string()));
+    }
+
+    #[test]
+    fn a_bad_map_entry_keeps_the_good_entries() {
+        let mut stored = get_default_settings();
+        stored.bindings.get_mut("transcribe").unwrap().current_binding = "ctrl+k".to_string();
+        let mut raw = serde_json::to_value(&stored).unwrap();
+        raw["bindings"]["cancel"] = serde_json::json!({ "id": 5 });
+
+        let (settings, reset) = parse_settings_lenient(&raw);
+
+        assert_eq!(settings.bindings["transcribe"].current_binding, "ctrl+k");
+        // The broken entry falls back to its default.
+        assert_eq!(settings.bindings["cancel"].current_binding, "escape");
+        assert_eq!(reset, vec!["bindings (partially)".to_string()]);
+    }
+
+    #[test]
+    fn unknown_fields_are_ignored_rather_than_reported() {
+        let mut raw = serde_json::to_value(get_default_settings()).unwrap();
+        raw["overlay_position"] = serde_json::json!(42);
+        raw["field_from_the_future"] = serde_json::json!(true);
+        let (_, reset) = parse_settings_lenient(&raw);
+        assert_eq!(reset, vec!["overlay_position".to_string()]);
+    }
+
+    #[test]
+    fn a_non_object_blob_falls_back_to_defaults() {
+        let (settings, reset) = parse_settings_lenient(&serde_json::json!("garbage"));
+        assert_eq!(reset, vec!["<root>".to_string()]);
+        assert_eq!(settings.selected_language, "auto");
+    }
+
+    #[test]
+    fn backup_names_carry_a_sortable_timestamp() {
+        use chrono::TimeZone;
+        let stamp = chrono::Local
+            .with_ymd_and_hms(2026, 3, 4, 5, 6, 7)
+            .unwrap();
+        assert_eq!(
+            settings_backup_file_name(&stamp),
+            "settings_store.json.bak.20260304-050607"
+        );
     }
 
     #[test]

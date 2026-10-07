@@ -333,9 +333,18 @@ type LiveBuilder = Arc<Mutex<LiveSegmentBuilder>>;
 
 #[cfg(target_os = "macos")]
 impl LiveSessions {
+    /// Ask both sessions to end their audio streams, then wait (bounded) for
+    /// the server to flush the last turn and its usage report.
     fn stop(&self) {
         self.mic.stop();
         self.system.stop();
+        let deadline = Instant::now() + std::time::Duration::from_millis(2_500);
+        for session in [&self.mic, &self.system] {
+            let left = deadline.saturating_duration_since(Instant::now());
+            if !session.wait_finished(left) {
+                log::warn!("gemini-live: session did not finish flushing in time");
+            }
+        }
     }
 }
 

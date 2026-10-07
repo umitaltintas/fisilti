@@ -32,13 +32,13 @@
 //! and supplies a Gemini API key.
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 
 use anyhow::{anyhow, Result};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{json, Value};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Notify};
 use tokio_tungstenite::tungstenite::Message;
 
 /// Default Live API model for speech-to-speech translation. Overridable from
@@ -218,6 +218,13 @@ impl LiveConfig {
 pub struct LiveSession {
     audio_tx: mpsc::Sender<Vec<f32>>,
     stop: Arc<AtomicBool>,
+    /// Wakes the worker out of its `select!` the moment `stop()` is called.
+    /// The flag alone was only noticed on the next inbound message, so the
+    /// worker usually never got to send `audioStreamEnd` before the session
+    /// was dropped — losing the final turn and the closing usage report.
+    stop_notify: Arc<Notify>,
+    /// Set (and signalled) when the worker loop has fully exited.
+    finished: Arc<(Mutex<bool>, Condvar)>,
     /// Chunks the capture loop had to drop because the worker was behind.
     /// Reported once at shutdown rather than logged per drop.
     dropped: Arc<AtomicU64>,
@@ -228,6 +235,10 @@ pub struct LiveSession {
     /// audio we never sent was never billed.
     frames_sent: Arc<AtomicU64>,
 }
+
+/// How long the worker keeps reading after `audioStreamEnd` for the server to
+/// flush the last turn (and its usage report) before closing the socket.
+const STOP_FLUSH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 
 impl LiveSession {
     /// Open a session and start streaming. `on_transcript` is invoked from the
@@ -245,25 +256,36 @@ impl LiveSession {
         let label = label.into();
         let (audio_tx, audio_rx) = mpsc::channel::<Vec<f32>>(AUDIO_QUEUE_CHUNKS);
         let stop = Arc::new(AtomicBool::new(false));
+        let stop_notify = Arc::new(Notify::new());
+        let finished = Arc::new((Mutex::new(false), Condvar::new()));
         let dropped = Arc::new(AtomicU64::new(0));
 
-        let worker_stop = stop.clone();
+        let worker = WorkerControl {
+            stop: stop.clone(),
+            notify: stop_notify.clone(),
+        };
+        let worker_finished = finished.clone();
         let worker_label = label.clone();
         tauri::async_runtime::spawn(async move {
             run_session_loop(
                 config,
                 worker_label,
                 audio_rx,
-                worker_stop,
+                worker,
                 Arc::new(on_transcript),
                 worker_usage,
             )
             .await;
+            let (done, signal) = &*worker_finished;
+            *done.lock().unwrap() = true;
+            signal.notify_all();
         });
 
         Self {
             audio_tx,
             stop,
+            stop_notify,
+            finished,
             dropped,
             label,
             usage,
@@ -286,9 +308,15 @@ impl LiveSession {
             .fetch_add(frames.len() as u64, Ordering::Relaxed);
     }
 
-    /// Signal the worker to close the socket and stop reconnecting.
+    /// Signal the worker to end the audio stream, flush, close the socket and
+    /// stop reconnecting. Returns immediately; see [`Self::wait_finished`].
     pub fn stop(&self) {
-        self.stop.store(true, Ordering::Relaxed);
+        if self.stop.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        // `notify_one` stores a permit when the worker is not parked in its
+        // select! right now, so the wake-up can never be lost.
+        self.stop_notify.notify_one();
         let dropped = self.dropped.load(Ordering::Relaxed);
         if dropped > 0 {
             log::warn!(
@@ -297,6 +325,18 @@ impl LiveSession {
                 dropped
             );
         }
+    }
+
+    /// Block until the worker has flushed and exited, or `timeout` passes.
+    /// Returns whether it finished. Call after `stop()`, before reading the
+    /// final transcript fragments and usage.
+    pub fn wait_finished(&self, timeout: std::time::Duration) -> bool {
+        let (done, signal) = &*self.finished;
+        let guard = done.lock().unwrap();
+        let (guard, _) = signal
+            .wait_timeout_while(guard, timeout, |done| !*done)
+            .unwrap();
+        *guard
     }
 }
 
@@ -319,6 +359,18 @@ impl LiveSession {
 impl Drop for LiveSession {
     fn drop(&mut self) {
         self.stop();
+    }
+}
+
+/// The worker's view of the stop request.
+struct WorkerControl {
+    stop: Arc<AtomicBool>,
+    notify: Arc<Notify>,
+}
+
+impl WorkerControl {
+    fn stopped(&self) -> bool {
+        self.stop.load(Ordering::SeqCst)
     }
 }
 
@@ -355,7 +407,7 @@ async fn run_session_loop<F>(
     config: LiveConfig,
     label: String,
     mut audio_rx: mpsc::Receiver<Vec<f32>>,
-    stop: Arc<AtomicBool>,
+    control: WorkerControl,
     on_transcript: Arc<F>,
     usage: Arc<Mutex<crate::ai_usage::UsageAccumulator>>,
 ) where
@@ -364,12 +416,12 @@ async fn run_session_loop<F>(
     let mut resumption_handle: Option<String> = None;
     let mut consecutive_failures: u32 = 0;
 
-    while !stop.load(Ordering::Relaxed) {
+    while !control.stopped() {
         match run_one_connection(
             &config,
             &label,
             &mut audio_rx,
-            &stop,
+            &control,
             &on_transcript,
             resumption_handle.as_deref(),
             &usage,
@@ -382,7 +434,7 @@ async fn run_session_loop<F>(
                 if outcome.handle.is_some() {
                     resumption_handle = outcome.handle;
                 }
-                if stop.load(Ordering::Relaxed) {
+                if control.stopped() {
                     break;
                 }
                 if outcome.rejected {
@@ -394,7 +446,7 @@ async fn run_session_loop<F>(
                         consecutive_failures
                     );
                     let delay = RECONNECT_DELAY_MS * u64::from(consecutive_failures.min(8));
-                    tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+                    backoff(&control, delay).await;
                 } else {
                     consecutive_failures = 0;
                     log::info!("gemini-live[{}]: reconnecting to continue session", label);
@@ -411,11 +463,152 @@ async fn run_session_loop<F>(
                 // Back off linearly, capped, so a persistent failure (bad key,
                 // no network) doesn't hammer the endpoint for a whole meeting.
                 let delay = RECONNECT_DELAY_MS * u64::from(consecutive_failures.min(8));
-                tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+                backoff(&control, delay).await;
             }
         }
     }
     log::info!("gemini-live[{}]: session loop ended", label);
+}
+
+/// Sleep `delay_ms` before reconnecting, cut short by a stop request.
+async fn backoff(control: &WorkerControl, delay_ms: u64) {
+    tokio::select! {
+        _ = tokio::time::sleep(std::time::Duration::from_millis(delay_ms)) => {}
+        _ = control.notify.notified() => {}
+    }
+}
+
+/// What an inbound server message told the connection loop.
+struct Absorbed {
+    /// The server announced it is about to close this connection.
+    going_away: bool,
+    /// The message closed a turn (used to end the stop flush early).
+    turn_complete: bool,
+}
+
+/// Per-connection bookkeeping shared by the normal read path and the stop
+/// flush.
+struct ConnectionState {
+    transcripts_seen: u64,
+    handle: Option<String>,
+    seen_shapes: std::collections::HashSet<String>,
+    usage_logged: bool,
+}
+
+/// Process one inbound JSON message: usage, resumption handle, `goAway`, and
+/// transcript fragments (forwarded to `on_transcript`).
+fn absorb_message<F>(
+    value: &Value,
+    state: &mut ConnectionState,
+    config: &LiveConfig,
+    label: &str,
+    on_transcript: &Arc<F>,
+    usage: &Arc<Mutex<crate::ai_usage::UsageAccumulator>>,
+) -> Absorbed
+where
+    F: Fn(LiveTranscript) + Send + Sync + 'static,
+{
+    // Log the SHAPE of each distinct message once — key names only, never
+    // values, so meeting content stays out of the log. Sampling the opening of
+    // a stream misses exactly the rare message types worth knowing about — a
+    // usage report, a turn boundary — because the stream opens with hundreds
+    // of identical partials.
+    {
+        let top: Vec<&str> = value
+            .as_object()
+            .map(|o| o.keys().map(String::as_str).collect())
+            .unwrap_or_default();
+        let inner: Vec<&str> = value["serverContent"]
+            .as_object()
+            .map(|o| o.keys().map(String::as_str).collect())
+            .unwrap_or_default();
+        let signature = format!("{:?}/{:?}", top, inner);
+        if state.seen_shapes.insert(signature.clone()) {
+            log::debug!("gemini-live[{}]: new message shape {}", label, signature);
+        }
+    }
+
+    // Token counts are numbers, not content, so the whole object is safe to
+    // log — and its real field names are the thing we do not know.
+    if let Some(usage) = value
+        .get("usageMetadata")
+        .or_else(|| value["serverContent"].get("usageMetadata"))
+    {
+        if !state.usage_logged {
+            state.usage_logged = true;
+            log::debug!("gemini-live[{}]: usageMetadata {}", label, usage);
+        }
+    }
+
+    if let Some((input, output)) = crate::ai_usage::usage_of(value) {
+        usage.lock().unwrap().record(input, output);
+    }
+    if let Some(new_handle) = resumption_handle_of(value) {
+        state.handle = Some(new_handle);
+    }
+    let going_away = match go_away_of(value) {
+        Some(time_left) => {
+            log::info!(
+                "gemini-live[{}]: server going away in {}; will resume",
+                label,
+                time_left
+            );
+            true
+        }
+        None => false,
+    };
+
+    let transcript = transcript_of(value, &config.mode);
+    let turn_complete = transcript.turn_complete;
+    if !transcript.is_empty() {
+        state.transcripts_seen += 1;
+        on_transcript(transcript);
+    }
+    Absorbed {
+        going_away,
+        turn_complete,
+    }
+}
+
+/// Decode a WebSocket message into JSON. `Err(())` means the server closed.
+fn decode_message(message: Message, label: &str) -> std::result::Result<Option<Value>, ()> {
+    let text = match message {
+        Message::Text(t) => t.to_string(),
+        // The API also frames responses as binary JSON.
+        Message::Binary(b) => match String::from_utf8(b.to_vec()) {
+            Ok(t) => t,
+            Err(_) => return Ok(None),
+        },
+        Message::Close(frame) => {
+            // The server explains a rejected setup here. Dropping this frame
+            // is what turned a precise error message into a silent reconnect
+            // loop.
+            match &frame {
+                Some(f) => log::info!(
+                    "gemini-live[{}]: server closed ({}): {}",
+                    label,
+                    f.code,
+                    f.reason
+                ),
+                None => log::info!("gemini-live[{}]: server closed", label),
+            }
+            return Err(());
+        }
+        _ => return Ok(None),
+    };
+    Ok(serde_json::from_str::<Value>(&text).ok())
+}
+
+fn audio_message(frames: &[f32]) -> Message {
+    let payload = json!({
+        "realtimeInput": {
+            "audio": {
+                "data": BASE64.encode(pcm16_bytes(frames)),
+                "mimeType": "audio/pcm;rate=16000",
+            }
+        }
+    });
+    Message::Text(payload.to_string().into())
 }
 
 /// One WebSocket connection's lifetime. Returns the most recent resumption
@@ -424,7 +617,7 @@ async fn run_one_connection<F>(
     config: &LiveConfig,
     label: &str,
     audio_rx: &mut mpsc::Receiver<Vec<f32>>,
-    stop: &Arc<AtomicBool>,
+    control: &WorkerControl,
     on_transcript: &Arc<F>,
     resumption_handle: Option<&str>,
     usage: &Arc<Mutex<crate::ai_usage::UsageAccumulator>>,
@@ -455,18 +648,23 @@ where
     );
 
     let opened_at = std::time::Instant::now();
-    let mut transcripts_seen: u64 = 0;
-    let mut handle: Option<String> = resumption_handle.map(str::to_string);
-    // Set when the server warns it is about to close, so we stop feeding audio
-    // into a socket that is going away and reconnect promptly.
-    let mut going_away = false;
-    let mut seen_shapes: std::collections::HashSet<String> = std::collections::HashSet::new();
-    let mut usage_logged = false;
+    let mut state = ConnectionState {
+        transcripts_seen: 0,
+        handle: resumption_handle.map(str::to_string),
+        seen_shapes: std::collections::HashSet::new(),
+        usage_logged: false,
+    };
 
     loop {
-        if stop.load(Ordering::Relaxed) {
-            // Tell the server the microphone closed so it flushes any pending
-            // transcript, then let the socket close.
+        if control.stopped() {
+            // Hand over whatever audio was still queued, then tell the server
+            // the microphone closed so it flushes the pending transcript, and
+            // keep reading until it does (bounded) before closing.
+            while let Ok(frames) = audio_rx.try_recv() {
+                if writer.send(audio_message(&frames)).await.is_err() {
+                    break;
+                }
+            }
             let _ = writer
                 .send(Message::Text(
                     json!({ "realtimeInput": { "audioStreamEnd": true } })
@@ -474,31 +672,58 @@ where
                         .into(),
                 ))
                 .await;
+            let deadline = tokio::time::Instant::now() + STOP_FLUSH_TIMEOUT;
+            loop {
+                match tokio::time::timeout_at(deadline, reader.next()).await {
+                    Ok(Some(Ok(message))) => match decode_message(message, label) {
+                        Ok(Some(value)) => {
+                            let absorbed = absorb_message(
+                                &value,
+                                &mut state,
+                                config,
+                                label,
+                                on_transcript,
+                                usage,
+                            );
+                            if absorbed.turn_complete {
+                                break;
+                            }
+                        }
+                        Ok(None) => {}
+                        Err(()) => break,
+                    },
+                    // Read error, stream end, or the flush deadline passed.
+                    _ => break,
+                }
+            }
             let _ = writer.send(Message::Close(None)).await;
-            return Ok(ConnectionOutcome::new(handle, opened_at, transcripts_seen));
+            return Ok(ConnectionOutcome::new(
+                state.handle,
+                opened_at,
+                state.transcripts_seen,
+            ));
         }
 
         tokio::select! {
+            // A stop request: loop back to the flush above.
+            _ = control.notify.notified() => {}
+
             // Outbound: audio from the capture loop.
-            chunk = audio_rx.recv(), if !going_away => {
+            chunk = audio_rx.recv() => {
                 match chunk {
                     Some(frames) => {
-                        let payload = json!({
-                            "realtimeInput": {
-                                "audio": {
-                                    "data": BASE64.encode(pcm16_bytes(&frames)),
-                                    "mimeType": "audio/pcm;rate=16000",
-                                }
-                            }
-                        });
-                        if let Err(e) = writer.send(Message::Text(payload.to_string().into())).await {
+                        if let Err(e) = writer.send(audio_message(&frames)).await {
                             return Err(anyhow!("send audio: {}", e));
                         }
                     }
                     // The sender was dropped: the meeting ended.
                     None => {
                         let _ = writer.send(Message::Close(None)).await;
-                        return Ok(ConnectionOutcome::new(handle, opened_at, transcripts_seen));
+                        return Ok(ConnectionOutcome::new(
+                            state.handle,
+                            opened_at,
+                            state.transcripts_seen,
+                        ));
                     }
                 }
             }
@@ -507,98 +732,33 @@ where
             incoming = reader.next() => {
                 let Some(message) = incoming else {
                     // Stream ended — reconnect and resume.
-                    return Ok(ConnectionOutcome::new(handle, opened_at, transcripts_seen));
+                    return Ok(ConnectionOutcome::new(
+                        state.handle,
+                        opened_at,
+                        state.transcripts_seen,
+                    ));
                 };
                 let message = message.map_err(|e| anyhow!("read: {}", e))?;
-                let text = match message {
-                    Message::Text(t) => t.to_string(),
-                    // The API also frames responses as binary JSON.
-                    Message::Binary(b) => match String::from_utf8(b.to_vec()) {
-                        Ok(t) => t,
-                        Err(_) => continue,
-                    },
-                    Message::Close(frame) => {
-                        // The server explains a rejected setup here. Dropping
-                        // this frame is what turned a precise error message
-                        // into a silent reconnect loop.
-                        match &frame {
-                            Some(f) => log::info!(
-                                "gemini-live[{}]: server closed ({}): {}",
-                                label,
-                                f.code,
-                                f.reason
-                            ),
-                            None => log::info!("gemini-live[{}]: server closed", label),
-                        }
-                        return Ok(ConnectionOutcome::new(handle, opened_at, transcripts_seen));
+                let value = match decode_message(message, label) {
+                    Ok(Some(value)) => value,
+                    Ok(None) => continue,
+                    Err(()) => {
+                        return Ok(ConnectionOutcome::new(
+                            state.handle,
+                            opened_at,
+                            state.transcripts_seen,
+                        ));
                     }
-                    _ => continue,
                 };
-                let Ok(value) = serde_json::from_str::<Value>(&text) else {
-                    continue;
-                };
-
-                // Log the SHAPE of the first few messages — key names only,
-                // never values, so meeting content stays out of the log. Two
-                // rounds of this API were debugged by guessing at field
-                // placement; the names it actually sends are worth a few lines.
-                // Log each DISTINCT message shape once rather than the first N
-                // messages. Sampling the opening of a stream misses exactly the
-                // rare message types worth knowing about — a usage report, a
-                // turn boundary — because the stream opens with hundreds of
-                // identical partials.
-                {
-                    let top: Vec<&str> = value
-                        .as_object()
-                        .map(|o| o.keys().map(String::as_str).collect())
-                        .unwrap_or_default();
-                    let inner: Vec<&str> = value["serverContent"]
-                        .as_object()
-                        .map(|o| o.keys().map(String::as_str).collect())
-                        .unwrap_or_default();
-                    let signature = format!("{:?}/{:?}", top, inner);
-                    if seen_shapes.insert(signature.clone()) {
-                        log::debug!("gemini-live[{}]: new message shape {}", label, signature);
-                    }
-                }
-
-                // Token counts are numbers, not content, so the whole object is
-                // safe to log — and its real field names are the thing we do
-                // not know.
-                if let Some(usage) = value
-                    .get("usageMetadata")
-                    .or_else(|| value["serverContent"].get("usageMetadata"))
-                {
-                    if !usage_logged {
-                        usage_logged = true;
-                        log::debug!("gemini-live[{}]: usageMetadata {}", label, usage);
-                    }
-                }
-
-                if let Some((input, output)) = crate::ai_usage::usage_of(&value) {
-                    usage.lock().unwrap().record(input, output);
-                }
-                if let Some(new_handle) = resumption_handle_of(&value) {
-                    handle = Some(new_handle);
-                }
-                if let Some(time_left) = go_away_of(&value) {
-                    log::info!(
-                        "gemini-live[{}]: server going away in {}; will resume",
-                        label,
-                        time_left
-                    );
-                    going_away = true;
-                }
-
-                let transcript = transcript_of(&value, &config.mode);
-                if !transcript.is_empty() {
-                    transcripts_seen += 1;
-                    on_transcript(transcript);
-                }
-
-                if going_away {
+                let absorbed =
+                    absorb_message(&value, &mut state, config, label, on_transcript, usage);
+                if absorbed.going_away {
                     let _ = writer.send(Message::Close(None)).await;
-                    return Ok(ConnectionOutcome::new(handle, opened_at, transcripts_seen));
+                    return Ok(ConnectionOutcome::new(
+                        state.handle,
+                        opened_at,
+                        state.transcripts_seen,
+                    ));
                 }
             }
         }

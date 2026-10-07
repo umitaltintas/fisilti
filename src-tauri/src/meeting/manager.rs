@@ -1643,22 +1643,28 @@ impl MeetingManager {
             "audio conversion: {} meeting(s) to convert to MP3",
             pending.len()
         );
-        let never = AtomicBool::new(false);
         for (id, wav) in pending {
-            let path = std::path::Path::new(&wav);
-            if !path.exists() {
+            let wav = std::path::PathBuf::from(wav);
+            if !wav.exists() {
                 continue;
             }
-            let samples = match super::import::decode_file(path, &never, |_| {}) {
-                Ok(decoded) => decoded.samples,
-                Err(e) => {
-                    log::warn!("audio conversion: cannot read {:?}: {}", path, e);
-                    continue;
+            // Streamed, not decoded whole: one forgotten session ran for
+            // seven hours (1.6 GB of WAV).
+            let mp3 = wav.with_extension("mp3");
+            use crate::audio_toolkit::mp3;
+            if let Err(e) = mp3::transcode_wav_file(&wav, &mp3, mp3::STORAGE_BITRATE) {
+                log::warn!("audio conversion: meeting {} failed: {}", id, e);
+                continue;
+            }
+            match self.store.update_audio_path(id, &mp3.to_string_lossy()) {
+                Ok(()) => {
+                    let _ = std::fs::remove_file(&wav);
+                    log::info!("audio conversion: meeting {} -> {:?}", id, mp3);
                 }
-            };
-            match self.write_meeting_audio(id, &samples) {
-                Ok(mp3) => log::info!("audio conversion: meeting {} -> {:?}", id, mp3),
-                Err(e) => log::warn!("audio conversion: meeting {} failed: {}", id, e),
+                Err(e) => {
+                    log::warn!("audio conversion: meeting {} not updated: {}", id, e);
+                    let _ = std::fs::remove_file(&mp3);
+                }
             }
         }
     }

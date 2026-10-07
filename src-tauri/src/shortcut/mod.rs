@@ -1036,7 +1036,10 @@ pub fn change_auto_submit_key_setting(app: AppHandle, key: String) -> Result<(),
 pub fn change_post_process_enabled_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
     let binding = settings::update_settings(&app, |settings| {
         settings.post_process_enabled = enabled;
-        settings.bindings.get("transcribe_with_post_process").cloned()
+        settings
+            .bindings
+            .get("transcribe_with_post_process")
+            .cloned()
     });
 
     // Register or unregister the post-processing shortcut

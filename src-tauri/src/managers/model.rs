@@ -1553,20 +1553,20 @@ impl ModelManager {
                     return Ok(());
                 }
 
-                let chunk =
-                    match tokio::time::timeout(Duration::from_secs(1), stream.next()).await {
-                        Ok(Some(chunk)) => chunk?,
-                        Ok(None) => break,
-                        Err(_) => {
-                            if last_byte_at.elapsed() >= DOWNLOAD_STALL_TIMEOUT {
-                                return Err(anyhow::anyhow!(
-                                    "Download stalled: no data for {}s",
-                                    DOWNLOAD_STALL_TIMEOUT.as_secs()
-                                ));
-                            }
-                            continue;
+                let chunk = match tokio::time::timeout(Duration::from_secs(1), stream.next()).await
+                {
+                    Ok(Some(chunk)) => chunk?,
+                    Ok(None) => break,
+                    Err(_) => {
+                        if last_byte_at.elapsed() >= DOWNLOAD_STALL_TIMEOUT {
+                            return Err(anyhow::anyhow!(
+                                "Download stalled: no data for {}s",
+                                DOWNLOAD_STALL_TIMEOUT.as_secs()
+                            ));
                         }
-                    };
+                        continue;
+                    }
+                };
                 last_byte_at = Instant::now();
 
                 file.write_all(&chunk)?;
@@ -2109,7 +2109,10 @@ mod tests {
             classify_resume(416, 1200, Some("bytes */1000")),
             ResumeOutcome::DiscardPartial
         );
-        assert_eq!(classify_resume(416, 1000, None), ResumeOutcome::DiscardPartial);
+        assert_eq!(
+            classify_resume(416, 1000, None),
+            ResumeOutcome::DiscardPartial
+        );
         assert_eq!(
             classify_resume(416, 1000, Some("garbage")),
             ResumeOutcome::DiscardPartial

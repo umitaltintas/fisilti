@@ -173,7 +173,9 @@ impl MeetingTranscribeOpts {
 /// the engine slot), so refusing to continue would only turn one failed
 /// transcription into a permanently dead app.
 fn lock_or_recover<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    mutex
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 /// Best-effort text of a caught panic payload.
@@ -583,11 +585,11 @@ impl TranscriptionManager {
         // Create appropriate engine based on model type. Failures are
         // reported (event + last_load_error) by `load_model`.
         let loaded_engine = match model_info.engine_type {
-            EngineType::Whisper => LoadedEngine::Whisper(
-                WhisperEngine::load(&model_path).map_err(|e| {
+            EngineType::Whisper => {
+                LoadedEngine::Whisper(WhisperEngine::load(&model_path).map_err(|e| {
                     anyhow::anyhow!("Failed to load whisper model {}: {}", model_id, e)
-                })?,
-            ),
+                })?)
+            }
             EngineType::Parakeet => LoadedEngine::Parakeet(
                 ParakeetModel::load(&model_path, &Quantization::Int8).map_err(|e| {
                     anyhow::anyhow!("Failed to load parakeet model {}: {}", model_id, e)
@@ -617,16 +619,16 @@ impl TranscriptionManager {
                     anyhow::anyhow!("Failed to load SenseVoice model {}: {}", model_id, e)
                 })?,
             ),
-            EngineType::GigaAM => LoadedEngine::GigaAM(
-                GigaAMModel::load(&model_path, &Quantization::Int8).map_err(|e| {
-                    anyhow::anyhow!("Failed to load gigaam model {}: {}", model_id, e)
-                })?,
-            ),
-            EngineType::Canary => LoadedEngine::Canary(
-                CanaryModel::load(&model_path, &Quantization::Int8).map_err(|e| {
-                    anyhow::anyhow!("Failed to load canary model {}: {}", model_id, e)
-                })?,
-            ),
+            EngineType::GigaAM => {
+                LoadedEngine::GigaAM(GigaAMModel::load(&model_path, &Quantization::Int8).map_err(
+                    |e| anyhow::anyhow!("Failed to load gigaam model {}: {}", model_id, e),
+                )?)
+            }
+            EngineType::Canary => {
+                LoadedEngine::Canary(CanaryModel::load(&model_path, &Quantization::Int8).map_err(
+                    |e| anyhow::anyhow!("Failed to load canary model {}: {}", model_id, e),
+                )?)
+            }
             EngineType::OpenRouter
             | EngineType::OpenRouterAsr
             | EngineType::Gemini
@@ -1202,7 +1204,9 @@ impl TranscriptionManager {
                         // Success or normal error — put the engine back, unless
                         // a load/unload replaced it while it was out.
                         if !self.lock_engine().check_in(engine, generation) {
-                            debug!("Engine was replaced during transcription; dropping the old one");
+                            debug!(
+                                "Engine was replaced during transcription; dropping the old one"
+                            );
                         }
                         inner_result?
                     }

@@ -1240,8 +1240,9 @@ pub(crate) fn parse_settings_lenient(raw: &serde_json::Value) -> (AppSettings, V
         return (defaults, vec!["<root>".to_string()]);
     };
 
-    let parses =
-        |candidate: &serde_json::Value| serde_json::from_value::<AppSettings>(candidate.clone()).is_ok();
+    let parses = |candidate: &serde_json::Value| {
+        serde_json::from_value::<AppSettings>(candidate.clone()).is_ok()
+    };
 
     let mut reset = Vec::new();
     for (key, value) in raw_obj {
@@ -1359,9 +1360,7 @@ fn lock_settings_writes() -> WriteLockGuard {
                 break;
             }
             Some(_) => {
-                state = WRITE_LOCK_CV
-                    .wait(state)
-                    .unwrap_or_else(|e| e.into_inner());
+                state = WRITE_LOCK_CV.wait(state).unwrap_or_else(|e| e.into_inner());
             }
         }
     }
@@ -1442,9 +1441,9 @@ fn compute_settings(
 
     if merge_default_bindings {
         for (key, value) in get_default_settings().bindings {
-            if !settings.bindings.contains_key(&key) {
-                debug!("Adding missing binding: {}", key);
-                settings.bindings.insert(key, value);
+            if let std::collections::hash_map::Entry::Vacant(slot) = settings.bindings.entry(key) {
+                debug!("Adding missing binding: {}", slot.key());
+                slot.insert(value);
                 dirty = true;
             }
         }
@@ -1711,7 +1710,11 @@ mod tests {
     #[test]
     fn a_bad_map_entry_keeps_the_good_entries() {
         let mut stored = get_default_settings();
-        stored.bindings.get_mut("transcribe").unwrap().current_binding = "ctrl+k".to_string();
+        stored
+            .bindings
+            .get_mut("transcribe")
+            .unwrap()
+            .current_binding = "ctrl+k".to_string();
         let mut raw = serde_json::to_value(&stored).unwrap();
         raw["bindings"]["cancel"] = serde_json::json!({ "id": 5 });
 
@@ -1742,9 +1745,7 @@ mod tests {
     #[test]
     fn backup_names_carry_a_sortable_timestamp() {
         use chrono::TimeZone;
-        let stamp = chrono::Local
-            .with_ymd_and_hms(2026, 3, 4, 5, 6, 7)
-            .unwrap();
+        let stamp = chrono::Local.with_ymd_and_hms(2026, 3, 4, 5, 6, 7).unwrap();
         assert_eq!(
             settings_backup_file_name(&stamp),
             "settings_store.json.bak.20260304-050607"

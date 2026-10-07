@@ -313,13 +313,32 @@ const GENERIC_TITLES: &[&str] = &[
 /// treated as a strippable suffix / generic value).
 #[cfg(any(target_os = "macos", test))]
 fn clean_window_title(raw: &str, app_name: &str) -> Option<String> {
-    let mut title = raw.trim();
+    // Notification badges: Chrome tab titles arrive as "⁷Meet - …" (a
+    // superscript unread count) or "(3) Meet - …".
+    let mut title = raw
+        .trim()
+        .trim_start_matches(|c: char| "⁰¹²³⁴⁵⁶⁷⁸⁹".contains(c))
+        .trim_start();
+    if let Some(rest) = title.strip_prefix('(') {
+        if let Some((count, after)) = rest.split_once(") ") {
+            if !count.is_empty() && count.chars().all(|c| c.is_ascii_digit() || c == '+') {
+                title = after.trim_start();
+            }
+        }
+    }
 
     // Strip decorative prefixes some apps prepend (recording dot, mute state).
     for prefix in ["● ", "🔴 ", "* "] {
         if let Some(rest) = title.strip_prefix(prefix) {
             title = rest.trim_start();
         }
+    }
+
+    // In a browser the window title is just the front tab, which during a
+    // call is as likely to be Reddit as the meeting. Only a tab that names a
+    // meeting service says anything about the meeting.
+    if BROWSER_APPS.contains(&app_name) && !names_meeting_service(title) {
+        return None;
     }
 
     // Repeatedly strip "<sep> <product>" suffixes: "Standup - Google Chrome",
@@ -357,8 +376,18 @@ fn clean_window_title(raw: &str, app_name: &str) -> Option<String> {
     if cleaned.len() < 3 {
         return None;
     }
-    let lower = cleaned.to_lowercase();
+    let lower = cleaned
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase();
     if lower == app_name.to_lowercase() || GENERIC_TITLES.contains(&lower.as_str()) {
+        return None;
+    }
+    // Zoom's own helper windows ("zoom share statusbar window", "zoom
+    // annotation entrypoint") and the free-plan "Zoom Meeting 40-minutes"
+    // banner are not meeting names.
+    if lower.starts_with("zoom meeting") || (lower.starts_with("zoom ") && cleaned == lower) {
         return None;
     }
     // A bare Google Meet room code ("abc-defg-hij") names nothing.
@@ -367,6 +396,33 @@ fn clean_window_title(raw: &str, app_name: &str) -> Option<String> {
     }
 
     Some(truncate_title(cleaned))
+}
+
+/// Display names (from `meeting_detector::MEETING_APPS`) of the browsers,
+/// whose window title is whatever tab is in front.
+#[cfg(any(target_os = "macos", test))]
+const BROWSER_APPS: &[&str] = &[
+    "Chrome", "Safari", "Firefox", "Edge", "Arc", "Brave", "Vivaldi", "Opera", "Chromium", "Zen",
+];
+
+/// Whether a browser tab title belongs to a web meeting service.
+#[cfg(any(target_os = "macos", test))]
+fn names_meeting_service(title: &str) -> bool {
+    let lower = title.to_lowercase();
+    ["meet – ", "meet - ", "meet — "]
+        .iter()
+        .any(|p| lower.starts_with(p))
+        || [
+            "google meet",
+            "microsoft teams",
+            "zoom",
+            "whereby",
+            "jitsi",
+            "webex",
+            "around",
+        ]
+        .iter()
+        .any(|service| lower.contains(service))
 }
 
 /// True for Google Meet room codes like "abc-defg-hij" (3-4-3 lowercase
@@ -405,13 +461,58 @@ mod tests {
     #[test]
     fn strips_browser_suffix() {
         assert_eq!(
-            clean_window_title("Weekly Sync - Google Chrome", "Chrome"),
+            clean_window_title("Weekly Sync | Microsoft Teams - Google Chrome", "Chrome"),
             Some("Weekly Sync".to_string())
         );
         assert_eq!(
-            clean_window_title("Retro — Mozilla Firefox", "Firefox"),
+            clean_window_title("Meet — Retro — Mozilla Firefox", "Firefox"),
             Some("Retro".to_string())
         );
+    }
+
+    #[test]
+    fn ignores_browser_tabs_that_are_not_a_meeting() {
+        // The front tab during a Meet call, seen in a real session.
+        assert_eq!(
+            clean_window_title(
+                "⁸Kendi Planladığın (Tursuz) Mısır Gezisi İçin İpuçları : r/travel - Google Chrome",
+                "Chrome"
+            ),
+            None
+        );
+        assert_eq!(
+            clean_window_title("Weekly Sync - Google Chrome", "Chrome"),
+            None
+        );
+    }
+
+    #[test]
+    fn strips_tab_notification_badges() {
+        assert_eq!(
+            clean_window_title("⁷Meet - aja-yirt-nxv - Google Chrome", "Chrome"),
+            None
+        );
+        assert_eq!(
+            clean_window_title("²Meet - Project Daily - Google Chrome", "Chrome"),
+            Some("Project Daily".to_string())
+        );
+        assert_eq!(
+            clean_window_title("(3) Meet - Project Daily - Google Chrome", "Chrome"),
+            Some("Project Daily".to_string())
+        );
+    }
+
+    #[test]
+    fn rejects_zoom_helper_windows() {
+        assert_eq!(
+            clean_window_title("zoom share statusbar window", "Zoom"),
+            None
+        );
+        assert_eq!(
+            clean_window_title("zoom annotation entrypoint", "Zoom"),
+            None
+        );
+        assert_eq!(clean_window_title("Zoom Meeting  40-minutes", "Zoom"), None);
     }
 
     #[test]

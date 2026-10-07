@@ -86,11 +86,28 @@ fn build_headers(provider: &PostProcessProvider, api_key: &str) -> Result<Header
     Ok(headers)
 }
 
+/// Upper bound on one chat-completion request. Summaries of long meetings on
+/// thinking models legitimately take a while, so this is generous.
+const REQUEST_TIMEOUT_SECS: u64 = 180;
+
+/// Attempts per chat completion when the provider reports a transient
+/// failure (overloaded, rate limited, gateway error, refused connection).
+const MAX_ATTEMPTS: u32 = 3;
+
+/// HTTP statuses worth retrying: the request was fine, the provider was not.
+fn is_transient(status: reqwest::StatusCode) -> bool {
+    matches!(status.as_u16(), 408 | 429 | 500 | 502 | 503 | 504)
+}
+
 /// Create an HTTP client with provider-specific headers
 fn create_client(provider: &PostProcessProvider, api_key: &str) -> Result<reqwest::Client, String> {
     let headers = build_headers(provider, api_key)?;
     reqwest::Client::builder()
         .default_headers(headers)
+        // A provider under load can hold a request open for minutes before
+        // answering 503; better to fail (and retry) than hang a meeting's
+        // title/summary indefinitely.
+        .timeout(std::time::Duration::from_secs(REQUEST_TIMEOUT_SECS))
         .build()
         .map_err(|e| format!("Failed to build HTTP client: {}", e))
 }
@@ -158,24 +175,41 @@ pub async fn send_chat_completion_with_schema(
         response_format,
     };
 
-    let response = client
-        .post(&url)
-        .json(&request_body)
-        .send()
-        .await
-        .map_err(|e| format!("HTTP request failed: {}", e))?;
-
-    let status = response.status();
-    if !status.is_success() {
-        let error_text = response
-            .text()
-            .await
-            .unwrap_or_else(|_| "Failed to read error response".to_string());
-        return Err(format!(
-            "API request failed with status {}: {}",
-            status, error_text
-        ));
-    }
+    let mut attempt = 0;
+    let response = loop {
+        attempt += 1;
+        let failure = match client.post(&url).json(&request_body).send().await {
+            Ok(response) if response.status().is_success() => break response,
+            Ok(response) => {
+                let status = response.status();
+                let error_text = response
+                    .text()
+                    .await
+                    .unwrap_or_else(|_| "Failed to read error response".to_string());
+                let message = format!("API request failed with status {}: {}", status, error_text);
+                if !is_transient(status) {
+                    return Err(message);
+                }
+                message
+            }
+            // A refused connection is worth another try; a timeout is not —
+            // it already cost REQUEST_TIMEOUT_SECS, and dictation is waiting.
+            Err(e) if e.is_connect() => format!("HTTP request failed: {}", e),
+            Err(e) => return Err(format!("HTTP request failed: {}", e)),
+        };
+        if attempt >= MAX_ATTEMPTS {
+            return Err(failure);
+        }
+        let delay = std::time::Duration::from_secs(2u64.pow(attempt));
+        log::warn!(
+            "chat completion attempt {}/{} failed ({}); retrying in {:?}",
+            attempt,
+            MAX_ATTEMPTS,
+            failure.lines().next().unwrap_or_default(),
+            delay
+        );
+        tokio::time::sleep(delay).await;
+    };
 
     let completion: ChatCompletionResponse = response
         .json()

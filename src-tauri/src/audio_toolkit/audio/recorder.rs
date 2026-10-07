@@ -4,7 +4,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
         mpsc, Arc, Mutex,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use cpal::{
@@ -21,7 +21,7 @@ use crate::audio_toolkit::{
 
 enum Cmd {
     Start,
-    Stop(mpsc::Sender<Vec<f32>>),
+    Stop(mpsc::Sender<StopOutcome>),
     Shutdown,
 }
 
@@ -30,17 +30,56 @@ enum AudioChunk {
     EndOfStream,
 }
 
+/// What a recording produced, plus how it ended.
+#[derive(Debug, Default)]
+pub struct StopOutcome {
+    /// 16 kHz mono samples, VAD-filtered.
+    pub samples: Vec<f32>,
+    /// The device stopped delivering audio before the stop (unplugged,
+    /// Bluetooth profile switch, sleep): the recording is probably cut short.
+    pub device_stalled: bool,
+    /// The recording hit [`MAX_RECORDING_SAMPLES`] and the rest was dropped.
+    pub truncated: bool,
+}
+
+/// How long the capture loop waits for audio before checking for commands.
+/// Bounds how long a Stop/Shutdown can go unseen when the device has gone
+/// silent; the old blocking `recv()` waited forever.
+const POLL_INTERVAL: Duration = Duration::from_millis(50);
+
+/// No audio for this long while recording counts as a stalled device.
+const DEVICE_STALL: Duration = Duration::from_secs(2);
+
+/// Longest the caller of `stop()` waits for the capture thread to answer.
+/// Normally it answers within a few hundred milliseconds; this only guards
+/// against the thread itself being wedged.
+const STOP_REPLY_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Longest `close()` waits for the capture thread to exit before detaching
+/// it. Dropping a stream on a vanished device can block inside the driver.
+const CLOSE_TIMEOUT: Duration = Duration::from_secs(3);
+
+/// Upper bound on one recording: 30 minutes at 16 kHz (~115 MB of f32).
+/// Past this the buffer would only grow until the app runs out of memory.
+pub const MAX_RECORDING_SAMPLES: usize = constants::WHISPER_SAMPLE_RATE as usize * 60 * 30;
+
 pub struct AudioRecorder {
     device: Option<Device>,
     cmd_tx: Option<mpsc::Sender<Cmd>>,
     worker_handle: Option<std::thread::JoinHandle<()>>,
+    /// Fires when the worker thread has fully exited (stream dropped).
+    worker_done: Option<mpsc::Receiver<()>>,
     vad: Option<Arc<Mutex<Box<dyn vad::VoiceActivityDetector>>>>,
     level_cb: Option<Arc<dyn Fn(Vec<f32>) + Send + Sync + 'static>>,
     frame_cb: Option<FrameCallback>,
+    limit_cb: Option<LimitCallback>,
 }
 
 /// Observer for the 16 kHz mono frames as they are recorded.
 type FrameCallback = Arc<dyn Fn(&[f32]) + Send + Sync + 'static>;
+
+/// Called once per recording when it reaches [`MAX_RECORDING_SAMPLES`].
+type LimitCallback = Arc<dyn Fn() + Send + Sync + 'static>;
 
 impl AudioRecorder {
     pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
@@ -48,10 +87,23 @@ impl AudioRecorder {
             device: None,
             cmd_tx: None,
             worker_handle: None,
+            worker_done: None,
             vad: None,
             level_cb: None,
             frame_cb: None,
+            limit_cb: None,
         })
+    }
+
+    /// Called (on the capture thread, once per recording) when a recording
+    /// reaches [`MAX_RECORDING_SAMPLES`]. Audio past the limit is dropped, so
+    /// the owner should stop the recording. Must not block.
+    pub fn with_limit_callback<F>(mut self, cb: F) -> Self
+    where
+        F: Fn() + Send + Sync + 'static,
+    {
+        self.limit_cb = Some(Arc::new(cb));
+        self
     }
 
     pub fn with_vad(mut self, vad: Box<dyn VoiceActivityDetector>) -> Self {
@@ -104,8 +156,12 @@ impl AudioRecorder {
         // Move the optional level callback into the worker thread
         let level_cb = self.level_cb.clone();
         let frame_cb = self.frame_cb.clone();
+        let limit_cb = self.limit_cb.clone();
+        let (done_tx, done_rx) = mpsc::channel::<()>();
 
         let worker = std::thread::spawn(move || {
+            // Dropped last (declared first), after the stream: signals close().
+            let _done = DoneSignal(done_tx);
             let stop_flag = Arc::new(AtomicBool::new(false));
             let stop_flag_for_stream = stop_flag.clone();
             let init_result = (|| -> Result<(cpal::Stream, u32), String> {
@@ -185,8 +241,11 @@ impl AudioRecorder {
                         vad,
                         sample_rx,
                         cmd_rx,
-                        level_cb,
-                        frame_cb,
+                        Callbacks {
+                            level: level_cb,
+                            frame: frame_cb,
+                            limit: limit_cb,
+                        },
                         stop_flag,
                     );
                     drop(stream);
@@ -203,6 +262,7 @@ impl AudioRecorder {
                 self.device = Some(device);
                 self.cmd_tx = Some(cmd_tx);
                 self.worker_handle = Some(worker);
+                self.worker_done = Some(done_rx);
                 Ok(())
             }
             Ok(Err(error_message)) => {
@@ -232,19 +292,55 @@ impl AudioRecorder {
     }
 
     pub fn stop(&self) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+        Ok(self.stop_with_outcome()?.samples)
+    }
+
+    /// Stop recording and return the samples along with how the recording
+    /// ended. Never blocks for more than [`STOP_REPLY_TIMEOUT`], even when the
+    /// device has stopped delivering audio.
+    pub fn stop_with_outcome(&self) -> Result<StopOutcome, Box<dyn std::error::Error>> {
         let (resp_tx, resp_rx) = mpsc::channel();
-        if let Some(tx) = &self.cmd_tx {
-            tx.send(Cmd::Stop(resp_tx))?;
+        let Some(tx) = &self.cmd_tx else {
+            return Err("Recorder is not open".into());
+        };
+        tx.send(Cmd::Stop(resp_tx))?;
+        match resp_rx.recv_timeout(STOP_REPLY_TIMEOUT) {
+            Ok(outcome) => Ok(outcome),
+            Err(mpsc::RecvTimeoutError::Timeout) => Err(Box::new(Error::new(
+                std::io::ErrorKind::TimedOut,
+                "The microphone did not respond to stop",
+            ))),
+            Err(mpsc::RecvTimeoutError::Disconnected) => Err(Box::new(Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "The microphone capture thread is gone",
+            ))),
         }
-        Ok(resp_rx.recv()?) // wait for the samples
     }
 
     pub fn close(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(tx) = self.cmd_tx.take() {
             let _ = tx.send(Cmd::Shutdown);
         }
+        let done = self.worker_done.take();
         if let Some(h) = self.worker_handle.take() {
-            let _ = h.join();
+            // Join only once the worker has signalled it is finished; if the
+            // driver wedges while the stream is dropped, detach the thread
+            // rather than hang the caller (and every lock it holds) forever.
+            let finished = match done {
+                Some(rx) => !matches!(
+                    rx.recv_timeout(CLOSE_TIMEOUT),
+                    Err(mpsc::RecvTimeoutError::Timeout)
+                ),
+                None => true,
+            };
+            if finished {
+                let _ = h.join();
+            } else {
+                log::warn!(
+                    "Microphone thread did not exit within {:?}; detaching it",
+                    CLOSE_TIMEOUT
+                );
+            }
         }
         self.device = None;
         Ok(())
@@ -396,23 +492,80 @@ mod tests {
     }
 }
 
+/// Sends on drop, so `close()` learns the worker thread has finished.
+struct DoneSignal(mpsc::Sender<()>);
+
+impl Drop for DoneSignal {
+    fn drop(&mut self) {
+        let _ = self.0.send(());
+    }
+}
+
+struct Callbacks {
+    level: Option<Arc<dyn Fn(Vec<f32>) + Send + Sync + 'static>>,
+    frame: Option<FrameCallback>,
+    limit: Option<LimitCallback>,
+}
+
+/// The recording buffer, capped at [`MAX_RECORDING_SAMPLES`].
+struct RecordingBuffer {
+    samples: Vec<f32>,
+    cap: usize,
+    truncated: bool,
+}
+
+impl RecordingBuffer {
+    fn new(cap: usize) -> Self {
+        Self {
+            samples: Vec::new(),
+            cap,
+            truncated: false,
+        }
+    }
+
+    fn reset(&mut self) {
+        self.samples.clear();
+        self.truncated = false;
+    }
+
+    /// Append as much of `buf` as fits. Returns the part that was kept, and
+    /// whether this call is the one that hit the cap.
+    fn push<'a>(&mut self, buf: &'a [f32]) -> (&'a [f32], bool) {
+        let room = self.cap.saturating_sub(self.samples.len());
+        let kept = &buf[..buf.len().min(room)];
+        self.samples.extend_from_slice(kept);
+        let just_hit = !self.truncated && kept.len() < buf.len();
+        if kept.len() < buf.len() {
+            self.truncated = true;
+        }
+        (kept, just_hit)
+    }
+}
+
 fn run_consumer(
     in_sample_rate: u32,
     vad: Option<Arc<Mutex<Box<dyn vad::VoiceActivityDetector>>>>,
     sample_rx: mpsc::Receiver<AudioChunk>,
     cmd_rx: mpsc::Receiver<Cmd>,
-    level_cb: Option<Arc<dyn Fn(Vec<f32>) + Send + Sync + 'static>>,
-    frame_cb: Option<FrameCallback>,
+    callbacks: Callbacks,
     stop_flag: Arc<AtomicBool>,
 ) {
+    let Callbacks {
+        level: level_cb,
+        frame: frame_cb,
+        limit: limit_cb,
+    } = callbacks;
+
     let mut frame_resampler = FrameResampler::new(
         in_sample_rate as usize,
         constants::WHISPER_SAMPLE_RATE as usize,
         Duration::from_millis(30),
     );
 
-    let mut processed_samples = Vec::<f32>::new();
+    let mut buffer = RecordingBuffer::new(MAX_RECORDING_SAMPLES);
     let mut recording = false;
+    let mut last_chunk_at = Instant::now();
+    let mut stream_closed = false;
 
     // ---------- spectrum visualisation setup ---------------------------- //
     const BUCKETS: usize = 16;
@@ -429,8 +582,9 @@ fn run_consumer(
         samples: &[f32],
         recording: bool,
         vad: &Option<Arc<Mutex<Box<dyn vad::VoiceActivityDetector>>>>,
-        out_buf: &mut Vec<f32>,
+        out_buf: &mut RecordingBuffer,
         frame_cb: &Option<FrameCallback>,
+        limit_cb: &Option<LimitCallback>,
     ) {
         if !recording {
             return;
@@ -440,14 +594,25 @@ fn run_consumer(
         // a streaming transcriber and the final buffer can never disagree about
         // what was recorded.
         let mut keep = |buf: &[f32]| {
-            out_buf.extend_from_slice(buf);
-            if let Some(cb) = frame_cb {
-                cb(buf);
+            let (kept, just_hit_limit) = out_buf.push(buf);
+            if !kept.is_empty() {
+                if let Some(cb) = frame_cb {
+                    cb(kept);
+                }
+            }
+            if just_hit_limit {
+                log::warn!(
+                    "Recording reached the {}-sample limit; further audio is dropped",
+                    MAX_RECORDING_SAMPLES
+                );
+                if let Some(cb) = limit_cb {
+                    cb();
+                }
             }
         };
 
         if let Some(vad_arc) = vad {
-            let mut det = vad_arc.lock().unwrap();
+            let mut det = vad_arc.lock().unwrap_or_else(|e| e.into_inner());
             match det.push_frame(samples).unwrap_or(VadFrame::Speech(samples)) {
                 VadFrame::Speech(buf) => keep(buf),
                 VadFrame::Noise => {}
@@ -458,74 +623,123 @@ fn run_consumer(
     }
 
     loop {
-        let chunk = match sample_rx.recv() {
-            Ok(c) => c,
-            Err(_) => break, // stream closed
-        };
+        // Bounded wait: commands must be seen even when the device delivers
+        // nothing at all (unplugged, Bluetooth profile switch, sleep).
+        if !stream_closed {
+            match sample_rx.recv_timeout(POLL_INTERVAL) {
+                Ok(AudioChunk::Samples(raw)) => {
+                    last_chunk_at = Instant::now();
 
-        let raw = match chunk {
-            AudioChunk::Samples(s) => s,
-            AudioChunk::EndOfStream => continue,
-        };
+                    // ---------- spectrum processing ---------------------- //
+                    if let Some(buckets) = visualizer.feed(&raw) {
+                        if let Some(cb) = &level_cb {
+                            cb(buckets);
+                        }
+                    }
 
-        // ---------- spectrum processing ---------------------------------- //
-        if let Some(buckets) = visualizer.feed(&raw) {
-            if let Some(cb) = &level_cb {
-                cb(buckets);
+                    // ---------- existing pipeline ------------------------ //
+                    frame_resampler.push(&raw, &mut |frame: &[f32]| {
+                        handle_frame(frame, recording, &vad, &mut buffer, &frame_cb, &limit_cb)
+                    });
+                }
+                Ok(AudioChunk::EndOfStream) => {}
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    // The stream is gone, but commands still need answering.
+                    log::warn!("Microphone stream closed unexpectedly");
+                    stream_closed = true;
+                }
             }
+        } else {
+            std::thread::sleep(POLL_INTERVAL);
         }
 
-        // ---------- existing pipeline ------------------------------------ //
-        frame_resampler.push(&raw, &mut |frame: &[f32]| {
-            handle_frame(frame, recording, &vad, &mut processed_samples, &frame_cb)
-        });
-
-        // non-blocking check for a command
-        while let Ok(cmd) = cmd_rx.try_recv() {
+        // non-blocking check for commands
+        loop {
+            let cmd = match cmd_rx.try_recv() {
+                Ok(cmd) => cmd,
+                Err(mpsc::TryRecvError::Empty) => break,
+                // The owner went away without a Shutdown (recorder dropped).
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    stop_flag.store(true, Ordering::Relaxed);
+                    return;
+                }
+            };
             match cmd {
                 Cmd::Start => {
                     stop_flag.store(false, Ordering::Relaxed);
-                    processed_samples.clear();
+                    buffer.reset();
                     recording = true;
+                    // A fresh recording gets a fresh stall window.
+                    last_chunk_at = Instant::now();
                     visualizer.reset();
                     if let Some(v) = &vad {
-                        v.lock().unwrap().reset();
+                        v.lock().unwrap_or_else(|e| e.into_inner()).reset();
                     }
                 }
                 Cmd::Stop(reply_tx) => {
+                    let was_recording = recording;
                     recording = false;
                     stop_flag.store(true, Ordering::Relaxed);
+
+                    let device_stalled =
+                        was_recording && (stream_closed || last_chunk_at.elapsed() >= DEVICE_STALL);
 
                     // Drain all remaining audio until the producer confirms end-of-stream.
                     // The cpal callback sees the stop flag, sends EndOfStream, and goes
                     // silent — guaranteeing every captured sample is in the channel
-                    // ahead of the sentinel.
-                    loop {
-                        match sample_rx.recv_timeout(Duration::from_secs(2)) {
+                    // ahead of the sentinel. A stalled device will never send it,
+                    // so don't wait long for one.
+                    let drain_timeout = if device_stalled {
+                        Duration::from_millis(100)
+                    } else {
+                        Duration::from_secs(2)
+                    };
+                    while !stream_closed {
+                        match sample_rx.recv_timeout(drain_timeout) {
                             Ok(AudioChunk::Samples(remaining)) => {
                                 frame_resampler.push(&remaining, &mut |frame: &[f32]| {
                                     handle_frame(
                                         frame,
                                         true,
                                         &vad,
-                                        &mut processed_samples,
+                                        &mut buffer,
                                         &frame_cb,
+                                        &limit_cb,
                                     )
                                 });
                             }
                             Ok(AudioChunk::EndOfStream) => break,
-                            Err(_) => {
-                                log::warn!("Timed out waiting for EndOfStream from audio callback");
+                            Err(mpsc::RecvTimeoutError::Timeout) => {
+                                if !device_stalled {
+                                    log::warn!(
+                                        "Timed out waiting for EndOfStream from audio callback"
+                                    );
+                                }
                                 break;
+                            }
+                            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                                stream_closed = true;
                             }
                         }
                     }
 
                     frame_resampler.finish(&mut |frame: &[f32]| {
-                        handle_frame(frame, true, &vad, &mut processed_samples, &frame_cb)
+                        handle_frame(frame, true, &vad, &mut buffer, &frame_cb, &limit_cb)
                     });
 
-                    let _ = reply_tx.send(std::mem::take(&mut processed_samples));
+                    if device_stalled {
+                        log::warn!(
+                            "Microphone delivered no audio for {:?} before stop",
+                            last_chunk_at.elapsed()
+                        );
+                    }
+                    let _ = reply_tx.send(StopOutcome {
+                        samples: std::mem::take(&mut buffer.samples),
+                        device_stalled,
+                        truncated: buffer.truncated,
+                    });
+                    buffer.reset();
 
                     // Resume the audio callback so the consumer loop can continue
                     // receiving chunks (important for always-on microphone mode).
@@ -537,5 +751,43 @@ fn run_consumer(
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod buffer_tests {
+    use super::RecordingBuffer;
+
+    #[test]
+    fn keeps_everything_under_the_cap() {
+        let mut buf = RecordingBuffer::new(10);
+        let (kept, hit) = buf.push(&[1.0; 4]);
+        assert_eq!(kept.len(), 4);
+        assert!(!hit);
+        assert!(!buf.truncated);
+    }
+
+    #[test]
+    fn reports_the_limit_exactly_once() {
+        let mut buf = RecordingBuffer::new(10);
+        buf.push(&[1.0; 8]);
+        let (kept, hit) = buf.push(&[1.0; 5]);
+        assert_eq!(kept.len(), 2);
+        assert!(hit);
+        let (kept, hit) = buf.push(&[1.0; 5]);
+        assert!(kept.is_empty());
+        assert!(!hit);
+        assert_eq!(buf.samples.len(), 10);
+        assert!(buf.truncated);
+    }
+
+    #[test]
+    fn reset_rearms_the_limit() {
+        let mut buf = RecordingBuffer::new(2);
+        buf.push(&[1.0; 3]);
+        buf.reset();
+        assert!(!buf.truncated);
+        let (_, hit) = buf.push(&[1.0; 3]);
+        assert!(hit);
     }
 }

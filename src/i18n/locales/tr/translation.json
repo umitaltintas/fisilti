@@ -814,6 +814,12 @@
       "choose": "Klasör seç",
       "change": "Değiştir",
       "off": "Kapat"
+    },
+    "retranscribe": {
+      "button": "Yeniden yazıya dök",
+      "hint": "Bu toplantıyı kayıtlı sesinden, şu anki toplantı modeliyle yeniden yazıya dök.",
+      "failedHint": "Bu döküm eksik görünüyor. Kayıtlı sesten yeniden yazıya dökülsün mü?",
+      "confirmText": "Mevcut döküm değiştirilecek (notlar ve başlık kalır). Devam edilsin mi?"
     }
   },
   "meetingPrompt": {

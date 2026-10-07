@@ -3,7 +3,14 @@ import { useTranslation } from "react-i18next";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import { writeTextFile } from "@tauri-apps/plugin-fs";
-import { ArrowLeft, Download, Loader2, Pencil, RefreshCw } from "lucide-react";
+import {
+  ArrowLeft,
+  AudioLines,
+  Download,
+  Loader2,
+  Pencil,
+  RefreshCw,
+} from "lucide-react";
 
 import { Button } from "../../ui/Button";
 import type { SelectOption } from "../../ui/Select";
@@ -23,10 +30,14 @@ import {
 import {
   estimateMeetingCost,
   exportMeetingMarkdown,
+  getMeeting,
   getMeetingAudioPath,
+  listenMeetingImportProgress,
   regenerateMeetingSummary,
+  retranscribeMeeting,
   updateMeetingNotes,
   updateMeetingTitle,
+  type MeetingImportProgress,
   type MeetingRecord,
   type MeetingSummaryTemplate,
   type SummaryProviderInfo,
@@ -68,6 +79,13 @@ export const MeetingDetail: React.FC<MeetingDetailProps> = ({
     ? detail.title.trim() || t("meeting.untitledMeeting")
     : "";
   const hasTranscript = !!detail && detail.transcript.trim().length > 0;
+  // A few words for many minutes of audio means the transcription failed
+  // (outage, wrong model) rather than that nobody spoke.
+  const transcriptLooksFailed =
+    !!detail &&
+    (!hasTranscript ||
+      (detail.duration_ms > 60_000 &&
+        detail.transcript.trim().length < (detail.duration_ms / 60_000) * 30));
   const labeledSegments = detail?.segments ?? [];
   const hasLabeledSegments = labeledSegments.length > 0;
   const summary = detail?.summary?.trim() ?? "";
@@ -90,6 +108,16 @@ export const MeetingDetail: React.FC<MeetingDetailProps> = ({
   const [regenerating, setRegenerating] = useState(false);
   const [regenError, setRegenError] = useState<string | null>(null);
 
+  // Transcribe again from the saved audio (for meetings that came back
+  // empty or garbled). Asks for confirmation: it replaces the transcript.
+  const [confirmRetranscribe, setConfirmRetranscribe] = useState(false);
+  const [retranscribing, setRetranscribing] = useState(false);
+  const [retranscribeProgress, setRetranscribeProgress] =
+    useState<MeetingImportProgress | null>(null);
+  const [retranscribeError, setRetranscribeError] = useState<string | null>(
+    null,
+  );
+
   // Export.
   const [exporting, setExporting] = useState(false);
   const [exportErr, setExportErr] = useState<string | null>(null);
@@ -104,6 +132,25 @@ export const MeetingDetail: React.FC<MeetingDetailProps> = ({
     setRegenError(null);
     setExportErr(null);
   }, [detailId, detail?.notes, detail?.title]);
+
+  useEffect(() => {
+    setConfirmRetranscribe(false);
+    setRetranscribeError(null);
+  }, [detailId]);
+
+  useEffect(() => {
+    if (!retranscribing) return;
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    void listenMeetingImportProgress((p) => setRetranscribeProgress(p)).then(
+      (fn) => (cancelled ? fn() : (unlisten = fn)),
+    );
+    return () => {
+      cancelled = true;
+      unlisten?.();
+      setRetranscribeProgress(null);
+    };
+  }, [retranscribing]);
 
   useEffect(() => {
     setSelectedTemplate((cur) => cur ?? templates[0]?.id ?? null);
@@ -141,6 +188,22 @@ export const MeetingDetail: React.FC<MeetingDetailProps> = ({
       onRefreshList();
     } catch (e) {
       setRegenError(String(e));
+    }
+  };
+
+  const handleRetranscribe = async () => {
+    if (detailId == null) return;
+    setConfirmRetranscribe(false);
+    setRetranscribeError(null);
+    setRetranscribing(true);
+    try {
+      await retranscribeMeeting(detailId);
+      setDetail(await getMeeting(detailId));
+      onRefreshList();
+    } catch (e) {
+      setRetranscribeError(String(e));
+    } finally {
+      setRetranscribing(false);
     }
   };
 
@@ -275,6 +338,19 @@ export const MeetingDetail: React.FC<MeetingDetailProps> = ({
           <p className="text-sm text-red-400 whitespace-pre-wrap break-words">
             {t("meeting.exportError")}
           </p>
+        )}
+
+        {detail && detailHasAudioPath && detail.status === "completed" && (
+          <RetranscribePanel
+            looksFailed={transcriptLooksFailed}
+            confirming={confirmRetranscribe}
+            running={retranscribing}
+            progress={retranscribeProgress}
+            error={retranscribeError}
+            onRequest={() => setConfirmRetranscribe(true)}
+            onCancel={() => setConfirmRetranscribe(false)}
+            onConfirm={() => void handleRetranscribe()}
+          />
         )}
 
         {detail && (
@@ -450,6 +526,90 @@ export const MeetingDetail: React.FC<MeetingDetailProps> = ({
           </>
         )}
       </div>
+    </div>
+  );
+};
+
+interface RetranscribePanelProps {
+  looksFailed: boolean;
+  confirming: boolean;
+  running: boolean;
+  progress: MeetingImportProgress | null;
+  error: string | null;
+  onRequest: () => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+}
+
+// One row offering to transcribe the meeting again from its saved audio.
+// Prominent when the transcript looks failed (empty or far too short),
+// otherwise a quiet secondary action.
+const RetranscribePanel: React.FC<RetranscribePanelProps> = ({
+  looksFailed,
+  confirming,
+  running,
+  progress,
+  error,
+  onRequest,
+  onCancel,
+  onConfirm,
+}) => {
+  const { t } = useTranslation();
+  const pct =
+    progress?.progress != null ? Math.round(progress.progress * 100) : null;
+
+  return (
+    <div
+      className={`rounded-md px-3 py-2 space-y-1 ${
+        looksFailed
+          ? "border border-logo-primary/40 bg-logo-primary/10"
+          : "border border-mid-gray/20 bg-mid-gray/5"
+      }`}
+    >
+      <div className="flex items-center gap-3">
+        <AudioLines width={15} height={15} className="shrink-0 text-text/50" />
+        <p className="flex-1 min-w-0 text-xs text-text/70">
+          {running
+            ? `${t(`meeting.import.stage.${progress?.stage ?? "decoding"}`)}${
+                pct != null ? ` · ${pct}%` : ""
+              }`
+            : confirming
+              ? t("meeting.retranscribe.confirmText")
+              : looksFailed
+                ? t("meeting.retranscribe.failedHint")
+                : t("meeting.retranscribe.hint")}
+        </p>
+        {running ? (
+          <Loader2
+            width={15}
+            height={15}
+            className="shrink-0 animate-spin text-logo-primary"
+          />
+        ) : confirming ? (
+          <div className="flex items-center gap-1 shrink-0">
+            <Button onClick={onConfirm} variant="primary-soft" size="sm">
+              {t("meeting.confirm")}
+            </Button>
+            <Button onClick={onCancel} variant="secondary" size="sm">
+              {t("meeting.cancel")}
+            </Button>
+          </div>
+        ) : (
+          <Button
+            onClick={onRequest}
+            variant={looksFailed ? "primary-soft" : "secondary"}
+            size="sm"
+            className="shrink-0"
+          >
+            {t("meeting.retranscribe.button")}
+          </Button>
+        )}
+      </div>
+      {error && (
+        <p className="text-xs text-red-400 whitespace-pre-wrap break-words">
+          {error}
+        </p>
+      )}
     </div>
   );
 };

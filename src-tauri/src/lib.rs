@@ -172,6 +172,14 @@ fn initialize_core_logic(app_handle: &AppHandle) {
         transcription_manager.clone(),
     ));
 
+    // One-off: older meetings were saved as 32-bit float WAV; shrink them to
+    // MP3 in the background so they open quickly.
+    #[cfg(target_os = "macos")]
+    {
+        let manager = meeting_manager.clone();
+        std::thread::spawn(move || manager.convert_wav_audio_to_mp3());
+    }
+
     // Apply accelerator preferences before any model loads
     managers::transcription::apply_accelerator_settings(app_handle);
 
@@ -511,6 +519,7 @@ pub fn run(cli_args: CliArgs) {
             commands::meeting::recover_meeting,
             commands::meeting::import_meeting_recording,
             commands::meeting::cancel_meeting_import,
+            commands::meeting::retranscribe_meeting,
             commands::meeting::get_meeting_import_progress,
             commands::meeting::get_supported_import_extensions,
             commands::meeting::accept_meeting_prompt,

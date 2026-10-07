@@ -27,7 +27,6 @@ use anyhow::{anyhow, Result};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use log::{debug, info};
 use serde_json::{json, Value};
-use std::io::Cursor;
 use std::time::Duration;
 
 const OPENROUTER_CHAT_URL: &str = "https://openrouter.ai/api/v1/chat/completions";
@@ -68,33 +67,6 @@ const BOUNDARY_SEARCH_SECS: f32 = 4.0;
 /// Maximum chunk requests in flight at once. Bounds memory and stays friendly to
 /// provider rate limits while still parallelizing.
 const MAX_CONCURRENT_CHUNKS: usize = 4;
-
-/// Encode 16-bit PCM WAV (mono) from `f32` samples in `[-1.0, 1.0]`, in memory.
-pub(crate) fn encode_wav(samples: &[f32], sample_rate: u32) -> Result<Vec<u8>> {
-    let spec = hound::WavSpec {
-        channels: 1,
-        sample_rate,
-        bits_per_sample: 16,
-        sample_format: hound::SampleFormat::Int,
-    };
-
-    let mut cursor = Cursor::new(Vec::<u8>::new());
-    {
-        let mut writer = hound::WavWriter::new(&mut cursor, spec)
-            .map_err(|e| anyhow!("Failed to create WAV writer: {}", e))?;
-        for &sample in samples {
-            let clamped = sample.clamp(-1.0, 1.0);
-            let value = (clamped * i16::MAX as f32) as i16;
-            writer
-                .write_sample(value)
-                .map_err(|e| anyhow!("Failed to write WAV sample: {}", e))?;
-        }
-        writer
-            .finalize()
-            .map_err(|e| anyhow!("Failed to finalize WAV: {}", e))?;
-    }
-    Ok(cursor.into_inner())
-}
 
 /// Build a strict transcription system prompt so the LLM behaves like an ASR
 /// engine instead of a chat assistant.
@@ -241,7 +213,7 @@ fn run_request_on_thread(
         .map_err(|_| anyhow!("Cloud transcription worker thread panicked"))?
 }
 
-/// Encode `samples` to WAV and POST one chat-completions request to OpenRouter,
+/// Encode `samples` to MP3 and POST one chat-completions request to OpenRouter,
 /// returning the transcription text. Must be called off any tokio runtime: it
 /// builds and uses a `reqwest::blocking` client, which panics if constructed
 /// within an async runtime.
@@ -252,13 +224,20 @@ fn run_request(
     sample_rate: u32,
     kind: &ReqKind,
 ) -> Result<String> {
-    let wav_bytes = encode_wav(samples, sample_rate)?;
-    let audio_b64 = BASE64.encode(&wav_bytes);
+    // MP3, not WAV: a fifth of the bytes for the same speech, which is most of
+    // the request time on a slow uplink.
+    let audio_bytes = crate::audio_toolkit::mp3::encode_mp3(
+        samples,
+        sample_rate,
+        crate::audio_toolkit::mp3::UPLOAD_BITRATE,
+    )
+    .map_err(|e| anyhow!(e))?;
+    let audio_b64 = BASE64.encode(&audio_bytes);
 
     debug!(
         "Cloud transcription request: model={}, audio_bytes={}, samples={}",
         model,
-        wav_bytes.len(),
+        audio_bytes.len(),
         samples.len()
     );
 
@@ -273,7 +252,7 @@ fn run_request(
                     { "role": "system", "content": system_prompt },
                     { "role": "user", "content": [
                         { "type": "text", "text": "Transcribe this audio." },
-                        { "type": "input_audio", "input_audio": { "data": audio_b64, "format": "wav" } }
+                        { "type": "input_audio", "input_audio": { "data": audio_b64, "format": "mp3" } }
                     ] }
                 ]
             }),
@@ -281,7 +260,7 @@ fn run_request(
         ReqKind::Asr { language } => {
             let mut body = json!({
                 "model": model,
-                "input_audio": { "data": audio_b64, "format": "wav" }
+                "input_audio": { "data": audio_b64, "format": "mp3" }
             });
             if let Some(lang) = language {
                 body["language"] = json!(lang);

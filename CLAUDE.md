@@ -248,6 +248,22 @@ recording) into a normal completed meeting.
   `meeting/ImportRecording.tsx` (under the idle hero and atop History; file
   picker + window drag-and-drop).
 
+**Re-transcription**: `MeetingManager::retranscribe_meeting(id)` runs the
+same pipeline over a completed meeting's saved audio and replaces its
+transcript in place (notes/title kept; summary regenerated when it had one;
+a datetime placeholder title gets the LLM title). It shares the import's
+exclusive slot (`run_exclusive`), progress/finished events and cancel. UI: the
+`RetranscribePanel` in `MeetingDetail.tsx`, highlighted when the transcript
+looks failed (empty, or < ~30 chars per minute). Interrupted (`recording`)
+rows still go through Recover, which has the per-source buffers.
+
+**Audio is MP3** (`audio_toolkit/mp3.rs`, LAME via `mp3lame-encoder`): the
+saved playback copy at 48 kbps (`{id}.mp3`, ~22 MB/h) and every cloud upload
+(OpenRouter `input_audio` format `mp3`, Gemini Files API `audio/mpeg`) at
+64 kbps. Older 32-bit float `{id}.wav` files are converted once in the
+background at startup (`convert_wav_audio_to_mp3`); deleting a meeting now
+deletes its audio file too.
+
 **Export**: `src-tauri/src/meeting/export.rs` renders Markdown with YAML front
 matter (`fisilti_id`). With `meeting_export_dir` set, `MeetingManager::
 export_markdown(id)` rewrites the meeting's file whenever it completes or its

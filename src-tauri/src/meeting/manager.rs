@@ -195,7 +195,7 @@ pub struct MeetingManager {
     /// batch incremental DB writes (write every N new segments) so a long
     /// meeting doesn't thrash SQLite.
     persisted_segment_count: Arc<Mutex<usize>>,
-    /// Absolute path to the persisted mixed WAV written on the most recent
+    /// Absolute path to the persisted mixed playback audio written on the most recent
     /// `stop()`, if any. Stored on the meeting row via `audio_path`.
     last_saved_audio_path: Arc<Mutex<Option<String>>>,
     /// Raw f32 (little-endian, 16 kHz mono) buffer files the capture loop
@@ -546,7 +546,7 @@ struct SessionBuffers {
     mic: std::path::PathBuf,
     /// Full system ("others") audio.
     system: std::path::PathBuf,
-    /// Full mixed mono audio (used for the saved playback WAV).
+    /// Full mixed mono audio (used for the saved playback audio).
     mixed: std::path::PathBuf,
 }
 
@@ -773,7 +773,7 @@ impl MeetingManager {
         // stop always succeeds and returns the transcript.
         self.persist_session();
 
-        // Save the mixed audio WAV for playback (needs the persisted row id).
+        // Save the mixed audio for playback (needs the persisted row id).
         #[cfg(target_os = "macos")]
         self.save_session_audio();
 
@@ -819,7 +819,7 @@ impl MeetingManager {
         // Deleting the row in case 2 destroys a recording the user cannot get
         // back. Keep it instead, as an in-progress row so the EXISTING recovery
         // flow can re-run the finalize pass once the cause is fixed, and write
-        // the playback WAV now so the audio outlives the temp directory.
+        // the playback audio now so the audio outlives the temp directory.
         if transcript.trim().is_empty() {
             let failure = self.last_finalize_error.lock().unwrap().clone();
             let spent_tokens = !self.session_usage.lock().unwrap().is_empty();
@@ -915,7 +915,7 @@ impl MeetingManager {
     /// banner offers a "Recover" button for, so once the user fixes the cause
     /// (adds API balance, switches to a local model) one click re-runs the
     /// finalize pass over the SAME audio. Its clock is brought up to date and
-    /// the mixed playback WAV is written now, so the recording survives even if
+    /// the mixed playback audio is written now, so the recording survives even if
     /// the temp buffers are cleaned up before the user gets to it. The temp
     /// buffers are deliberately NOT deleted — the recovery pass needs them.
     fn preserve_failed_session(&self) {
@@ -925,7 +925,7 @@ impl MeetingManager {
         let _ = id;
         self.update_progress_clock();
         #[cfg(target_os = "macos")]
-        self.write_playback_wav(id);
+        self.write_playback_audio(id);
     }
 
     /// Returns the row id of the most recently persisted meeting (set on stop),
@@ -1044,7 +1044,7 @@ impl MeetingManager {
     /// CRASH-RECOVERY (Phase 2 item 1). Recover an interrupted meeting `id` left
     /// in `recording` status. On macOS, if the per-source temp buffers still
     /// exist, re-runs the finalize pass for a high-quality labeled transcript and
-    /// writes the mixed playback WAV. Otherwise (or on other platforms) keeps the
+    /// writes the mixed playback audio. Otherwise (or on other platforms) keeps the
     /// partial transcript that was incrementally saved. The row is flipped to
     /// `completed` and temp files are removed. Returns the recovered transcript.
     ///
@@ -1239,24 +1239,53 @@ impl MeetingManager {
     /// thread. Nothing is saved when transcription fails; the user still has
     /// the file and can simply try again.
     pub fn import_recording(&self, path: &std::path::Path) -> Result<i64, String> {
+        self.run_exclusive(|| {
+            #[cfg(target_os = "macos")]
+            return self.run_import(path);
+            #[cfg(not(target_os = "macos"))]
+            {
+                let _ = path;
+                Err("Importing recordings is only supported on macOS".to_string())
+            }
+        })
+    }
+
+    /// Transcribe a saved meeting again from its stored audio and replace its
+    /// transcript in place — the way out when a meeting came back empty,
+    /// partial or garbled (provider outage, wrong model, no balance). Notes,
+    /// title and audio stay; the summary is regenerated when the meeting had
+    /// one (or auto-summarize is on), and a datetime placeholder title gets
+    /// the LLM title. The saved audio is the mixed track, so the result is
+    /// labelled as one source, like an imported recording. Blocking.
+    pub fn retranscribe_meeting(&self, id: i64) -> Result<i64, String> {
+        self.run_exclusive(|| {
+            #[cfg(target_os = "macos")]
+            return self.run_retranscribe(id);
+            #[cfg(not(target_os = "macos"))]
+            {
+                let _ = id;
+                Err("Re-transcription is only supported on macOS".to_string())
+            }
+        })
+    }
+
+    /// Run `job` as THE engine-owning background job: refuses while a meeting
+    /// is live or another job runs, then reports the outcome on
+    /// `"meeting-import-finished"` however it ends. Imports and
+    /// re-transcriptions share this slot, its progress events and its cancel.
+    fn run_exclusive(&self, job: impl FnOnce() -> Result<i64, String>) -> Result<i64, String> {
         {
             let state = self.state.lock().unwrap();
             if *state == MeetingState::Running {
-                return Err("Stop the current meeting before importing a recording.".to_string());
+                return Err("Stop the current meeting first.".to_string());
             }
             if self.importing.swap(true, Ordering::SeqCst) {
-                return Err("Another recording is already being imported.".to_string());
+                return Err("Another recording is already being transcribed.".to_string());
             }
         }
         self.import_cancel.store(false, Ordering::SeqCst);
 
-        #[cfg(target_os = "macos")]
-        let result = self.run_import(path);
-        #[cfg(not(target_os = "macos"))]
-        let result: Result<i64, String> = {
-            let _ = path;
-            Err("Importing recordings is only supported on macOS".to_string())
-        };
+        let result = job();
 
         *self.import_progress.lock().unwrap() = None;
         self.importing.store(false, Ordering::SeqCst);
@@ -1271,6 +1300,105 @@ impl MeetingManager {
             );
         }
         result
+    }
+
+    #[cfg(target_os = "macos")]
+    fn run_retranscribe(&self, id: i64) -> Result<i64, String> {
+        use super::import;
+
+        let record = self
+            .store
+            .get_meeting(id)
+            .map_err(|e| format!("Failed to load meeting {}: {}", id, e))?;
+        if record.status != crate::meeting::store::STATUS_COMPLETED {
+            return Err(
+                "This meeting is still being recovered; use Recover on it instead.".to_string(),
+            );
+        }
+        let audio_path = record
+            .audio_path
+            .clone()
+            .filter(|p| std::path::Path::new(p).exists())
+            .ok_or_else(|| "This meeting has no saved audio to transcribe again.".to_string())?;
+        let label = if record.title.trim().is_empty() {
+            format!("#{}", id)
+        } else {
+            record.title.trim().to_string()
+        };
+
+        self.report_import(&label, MeetingImportStage::Decoding, Some(0.0));
+        let decoded = import::decode_file(
+            std::path::Path::new(&audio_path),
+            &self.import_cancel,
+            |p| self.report_import(&label, MeetingImportStage::Decoding, Some(p)),
+        )?;
+
+        *self.session_usage.lock().unwrap() = crate::ai_usage::MeetingUsage::default();
+        let segments = self.transcribe_import(&decoded.samples, &label)?;
+        drop(decoded);
+        if self.import_cancel.load(Ordering::SeqCst) {
+            return Err(import::CANCELLED.to_string());
+        }
+        if !segments.iter().any(|s| !s.text.trim().is_empty()) {
+            // Keep what the meeting had rather than replacing it with nothing.
+            return Err("No speech was found; the existing transcript was kept.".to_string());
+        }
+
+        let transcript = join_segments(&segments);
+        self.store
+            .finalize_meeting(
+                id,
+                &transcript,
+                &segments,
+                record.ended_at,
+                record.duration_ms,
+            )
+            .map_err(|e| format!("Failed to save the new transcript: {}", e))?;
+        // Merged into what the meeting already cost, not replacing it.
+        self.persist_usage(id);
+
+        let settings = crate::settings::get_settings(&self.app_handle);
+        let placeholder_title = record.title.trim() == default_meeting_title(record.started_at);
+        let resummarize = record
+            .summary
+            .as_deref()
+            .is_some_and(|s| !s.trim().is_empty())
+            || settings.meeting_auto_summarize;
+        if placeholder_title || resummarize {
+            self.report_import(&label, MeetingImportStage::Summarizing, None);
+        }
+        if placeholder_title {
+            match tauri::async_runtime::block_on(crate::commands::meeting::generate_title(
+                &self.app_handle,
+                &transcript,
+            )) {
+                Ok(title) if !title.trim().is_empty() => self.apply_title(id, title.trim()),
+                Ok(_) => {}
+                Err(e) => log::info!("meeting retranscribe: auto-title skipped: {}", e),
+            }
+        }
+        if resummarize {
+            match tauri::async_runtime::block_on(
+                crate::commands::meeting::summarize_transcript_ext(
+                    &self.app_handle,
+                    &transcript,
+                    None,
+                    record.notes.as_deref(),
+                ),
+            ) {
+                Ok(summary) => {
+                    if let Err(e) = self.store.update_summary(id, &summary) {
+                        log::error!("meeting retranscribe: failed to save summary: {}", e);
+                    }
+                }
+                // The old summary stays; it is stale but better than nothing.
+                Err(e) => log::warn!("meeting retranscribe: summary failed: {}", e),
+            }
+        }
+
+        self.export_markdown(id);
+        log::info!("meeting retranscribe: meeting {} transcribed again", id);
+        Ok(id)
     }
 
     fn report_import(&self, file_name: &str, stage: MeetingImportStage, progress: Option<f32>) {
@@ -1337,7 +1465,7 @@ impl MeetingManager {
             .save_meeting(&record)
             .map_err(|e| format!("Failed to save the imported meeting: {}", e))?;
         self.persist_usage(id);
-        if let Err(e) = self.write_meeting_wav(id, &decoded.samples) {
+        if let Err(e) = self.write_meeting_audio(id, &decoded.samples) {
             // The transcript is the point; playback is a nicety.
             log::warn!("meeting import: playback audio not saved: {}", e);
         }
@@ -1474,24 +1602,68 @@ impl MeetingManager {
         Ok(segments)
     }
 
-    /// Write 16 kHz mono `samples` as the playback WAV of meeting `id`
-    /// (`{app_data_dir}/meetings/{id}.wav`) and record the path on the row.
+    /// Write 16 kHz mono `samples` as the playback audio of meeting `id`
+    /// (`{app_data_dir}/meetings/{id}.mp3`), record the path on the row, and
+    /// drop any older WAV copy of the same meeting.
     #[cfg(target_os = "macos")]
-    fn write_meeting_wav(&self, id: i64, samples: &[f32]) -> Result<std::path::PathBuf, String> {
+    fn write_meeting_audio(&self, id: i64, samples: &[f32]) -> Result<std::path::PathBuf, String> {
         use crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE;
+        use crate::audio_toolkit::mp3;
         let dir = crate::portable::app_data_dir(&self.app_handle)
             .map_err(|e| e.to_string())?
             .join("meetings");
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-        let wav_path = dir.join(format!("{}.wav", id));
-        write_f32_wav(&wav_path, samples, WHISPER_SAMPLE_RATE).map_err(|e| e.to_string())?;
+        let path = dir.join(format!("{}.mp3", id));
+        mp3::write_mp3_file(&path, samples, WHISPER_SAMPLE_RATE, mp3::STORAGE_BITRATE)?;
         self.store
-            .update_audio_path(id, &wav_path.to_string_lossy())
+            .update_audio_path(id, &path.to_string_lossy())
             .map_err(|e| e.to_string())?;
-        Ok(wav_path)
+        let _ = std::fs::remove_file(dir.join(format!("{}.wav", id)));
+        Ok(path)
     }
 
-    /// macOS recovery helper: write the mixed playback WAV for a recovered
+    /// Convert every meeting still stored as WAV to MP3, one at a time.
+    /// Meetings recorded before MP3 storage kept 32-bit float WAVs (~230 MB
+    /// per hour), which were slow to open. Runs on a background thread at
+    /// startup; each file is replaced only after its MP3 is written and the
+    /// row points at it, so an interrupted run just resumes next launch.
+    #[cfg(target_os = "macos")]
+    pub fn convert_wav_audio_to_mp3(&self) {
+        let pending = match self.store.list_wav_audio() {
+            Ok(rows) => rows,
+            Err(e) => {
+                log::warn!("audio conversion: cannot list meetings: {}", e);
+                return;
+            }
+        };
+        if pending.is_empty() {
+            return;
+        }
+        log::info!(
+            "audio conversion: {} meeting(s) to convert to MP3",
+            pending.len()
+        );
+        let never = AtomicBool::new(false);
+        for (id, wav) in pending {
+            let path = std::path::Path::new(&wav);
+            if !path.exists() {
+                continue;
+            }
+            let samples = match super::import::decode_file(path, &never, |_| {}) {
+                Ok(decoded) => decoded.samples,
+                Err(e) => {
+                    log::warn!("audio conversion: cannot read {:?}: {}", path, e);
+                    continue;
+                }
+            };
+            match self.write_meeting_audio(id, &samples) {
+                Ok(mp3) => log::info!("audio conversion: meeting {} -> {:?}", id, mp3),
+                Err(e) => log::warn!("audio conversion: meeting {} failed: {}", id, e),
+            }
+        }
+    }
+
+    /// macOS recovery helper: write the mixed playback audio for a recovered
     /// meeting from its mixed temp buffer and record the path on the row.
     #[cfg(target_os = "macos")]
     fn save_recovered_audio(&self, id: i64, mixed_path: &std::path::Path) {
@@ -1499,7 +1671,7 @@ impl MeetingManager {
             Ok(m) if !m.is_empty() => m,
             _ => return,
         };
-        if let Err(e) = self.write_meeting_wav(id, &mixed) {
+        if let Err(e) = self.write_meeting_audio(id, &mixed) {
             log::warn!("meeting recovery: playback audio not saved: {}", e);
         }
     }
@@ -2004,12 +2176,12 @@ impl MeetingManager {
     }
 
     /// Write the session's mixed 16 kHz mono audio to
-    /// `{app_data_dir}/meetings/{id}.wav` and record the path on row `id`.
+    /// `{app_data_dir}/meetings/{id}.mp3` and record the path on row `id`.
     /// Leaves the temp buffers alone — the caller decides whether they are still
-    /// needed. Returns whether the WAV was written. Best-effort: failures are
+    /// needed. Returns whether the audio was written. Best-effort: failures are
     /// logged, never propagated.
     #[cfg(target_os = "macos")]
-    fn write_playback_wav(&self, id: i64) -> bool {
+    fn write_playback_audio(&self, id: i64) -> bool {
         let buffers = match self.buffer_paths.lock().unwrap().clone() {
             Some(b) => b,
             None => return false,
@@ -2023,30 +2195,16 @@ impl MeetingManager {
             }
         };
 
-        let dir = match crate::portable::app_data_dir(&self.app_handle) {
-            Ok(d) => d.join("meetings"),
+        let path = match self.write_meeting_audio(id, &mixed) {
+            Ok(path) => path,
             Err(e) => {
-                log::error!("meeting: cannot resolve app data dir for audio save: {}", e);
+                log::error!("meeting: failed to save playback audio: {}", e);
                 return false;
             }
         };
-        if let Err(e) = std::fs::create_dir_all(&dir) {
-            log::error!("meeting: failed to create meetings dir {:?}: {}", dir, e);
-            return false;
-        }
-        let wav_path = dir.join(format!("{}.wav", id));
-        use crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE;
-        if let Err(e) = write_f32_wav(&wav_path, &mixed, WHISPER_SAMPLE_RATE) {
-            log::error!("meeting: failed to write audio WAV {:?}: {}", wav_path, e);
-            return false;
-        }
-        let path_str = wav_path.to_string_lossy().to_string();
-        if let Err(e) = self.store.update_audio_path(id, &path_str) {
-            log::error!("meeting: failed to record audio path: {}", e);
-            return false;
-        }
+        let path_str = path.to_string_lossy().to_string();
         *self.last_saved_audio_path.lock().unwrap() = Some(path_str);
-        log::info!("meeting: saved playback audio to {:?}", wav_path);
+        log::info!("meeting: saved playback audio to {:?}", path);
         true
     }
 
@@ -2060,7 +2218,7 @@ impl MeetingManager {
             Some(id) => id,
             None => return,
         };
-        if !self.write_playback_wav(id) {
+        if !self.write_playback_audio(id) {
             return;
         }
         let buffers = match self.buffer_paths.lock().unwrap().clone() {
@@ -2957,7 +3115,7 @@ impl MeetingManager {
             sys_rate
         );
 
-        // --- Mixer (kept ONLY for the level meter + saved playback WAV) ---
+        // --- Mixer (kept ONLY for the level meter + saved playback audio) ---
         let mut mixer = MeetingMixer::new();
         let mut mixed: Vec<f32> = Vec::new();
         // Per-source 16 kHz frames pulled this tick, fed to each VAD + buffer.
@@ -3641,40 +3799,6 @@ fn read_f32_raw(path: &std::path::Path) -> std::io::Result<Vec<f32>> {
         out.push(f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
     }
     Ok(out)
-}
-
-/// Write mono f32 samples as a 32-bit float PCM WAV (format tag 3). Mirrors the
-/// helper in `commands::audio` so meeting playback audio is in the same format.
-#[cfg(target_os = "macos")]
-fn write_f32_wav(path: &std::path::Path, samples: &[f32], sample_rate: u32) -> std::io::Result<()> {
-    use std::io::Write;
-
-    let channels: u16 = 1;
-    let bits_per_sample: u16 = 32;
-    let block_align: u16 = channels * (bits_per_sample / 8);
-    let byte_rate: u32 = sample_rate * block_align as u32;
-    let data_bytes: u32 = (samples.len() * std::mem::size_of::<f32>()) as u32;
-    let riff_chunk_size: u32 = 36 + data_bytes;
-
-    let mut f = std::io::BufWriter::new(std::fs::File::create(path)?);
-    f.write_all(b"RIFF")?;
-    f.write_all(&riff_chunk_size.to_le_bytes())?;
-    f.write_all(b"WAVE")?;
-    f.write_all(b"fmt ")?;
-    f.write_all(&16u32.to_le_bytes())?;
-    f.write_all(&3u16.to_le_bytes())?; // IEEE float
-    f.write_all(&channels.to_le_bytes())?;
-    f.write_all(&sample_rate.to_le_bytes())?;
-    f.write_all(&byte_rate.to_le_bytes())?;
-    f.write_all(&block_align.to_le_bytes())?;
-    f.write_all(&bits_per_sample.to_le_bytes())?;
-    f.write_all(b"data")?;
-    f.write_all(&data_bytes.to_le_bytes())?;
-    for &s in samples {
-        f.write_all(&s.to_le_bytes())?;
-    }
-    f.flush()?;
-    Ok(())
 }
 
 // ---- Finalize-pass windowing (Feature 2 fix: preserve chronology + labels) --

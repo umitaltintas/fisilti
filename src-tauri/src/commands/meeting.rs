@@ -444,10 +444,19 @@ pub fn get_meeting_audio_path(
 #[tauri::command]
 #[specta::specta]
 pub fn delete_meeting(meeting_manager: State<Arc<MeetingManager>>, id: i64) -> Result<(), String> {
-    meeting_manager
-        .store()
+    let store = meeting_manager.store();
+    // Read the audio path before the row goes; deleting only the row left the
+    // recording on disk with nothing pointing at it.
+    let audio_path = store.get_audio_path(id).ok().flatten();
+    store
         .delete_meeting(id)
-        .map_err(|e| format!("Failed to delete meeting: {}", e))
+        .map_err(|e| format!("Failed to delete meeting: {}", e))?;
+    if let Some(path) = audio_path {
+        if let Err(e) = std::fs::remove_file(&path) {
+            log::warn!("delete: could not remove audio {:?}: {}", path, e);
+        }
+    }
+    Ok(())
 }
 
 /// Where a meeting's transcription would actually run, for the trust
@@ -650,6 +659,21 @@ pub async fn import_meeting_recording(
     })
     .await
     .map_err(|e| format!("Import task failed: {}", e))?
+}
+
+/// Transcribe a saved meeting again from its stored audio, replacing its
+/// transcript (and summary, when it had one). For meetings that came back
+/// empty or garbled. Shares the import's progress/finished events and cancel.
+#[tauri::command]
+#[specta::specta]
+pub async fn retranscribe_meeting(
+    meeting_manager: State<'_, Arc<MeetingManager>>,
+    id: i64,
+) -> Result<i64, String> {
+    let manager = (*meeting_manager).clone();
+    tauri::async_runtime::spawn_blocking(move || manager.retranscribe_meeting(id))
+        .await
+        .map_err(|e| format!("Re-transcription task failed: {}", e))?
 }
 
 /// Cancel the running import at its next checkpoint.

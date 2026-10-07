@@ -796,3 +796,10 @@ export function listenMeetingImportFinished(
     cb(event.payload);
   });
 }
+
+/** Transcribe a saved meeting again from its stored audio, replacing its
+ * transcript (and summary, when it had one). Slow; progress arrives on the
+ * import events. Resolves with the meeting id. */
+export function retranscribeMeeting(id: number): Promise<number> {
+  return invoke<number>("retranscribe_meeting", { id });
+}

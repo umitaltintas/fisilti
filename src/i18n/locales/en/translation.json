@@ -814,6 +814,12 @@
       "choose": "Choose folder",
       "change": "Change",
       "off": "Turn off"
+    },
+    "retranscribe": {
+      "button": "Transcribe again",
+      "hint": "Transcribe this meeting again from its saved audio with the current meeting model.",
+      "failedHint": "This transcript looks incomplete. Transcribe it again from the saved audio?",
+      "confirmText": "The current transcript will be replaced (notes and title stay). Continue?"
     }
   },
   "meetingPrompt": {

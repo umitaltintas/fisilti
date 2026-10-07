@@ -182,8 +182,15 @@ pub fn transcribe_samples(
     let samples = samples.to_vec();
     let display_name = display_name.to_string();
     std::thread::spawn(move || {
-        let wav = crate::managers::cloud_transcription::encode_wav(&samples, sample_rate)?;
-        run_exchange(&config, wav, &display_name)
+        // MP3 uploads are ~5x smaller than 16-bit WAV: an hour of meeting is
+        // ~29 MB instead of ~115 MB, which dominated the wait on slow uplinks.
+        let audio = crate::audio_toolkit::mp3::encode_mp3(
+            &samples,
+            sample_rate,
+            crate::audio_toolkit::mp3::UPLOAD_BITRATE,
+        )
+        .map_err(|e| anyhow!(e))?;
+        run_exchange(&config, audio, &display_name)
     })
     .join()
     .map_err(|_| anyhow!("Gemini transcription worker thread panicked"))?
@@ -192,18 +199,18 @@ pub fn transcribe_samples(
 /// Upload the audio, ask for a transcript, parse the result.
 fn run_exchange(
     config: &BatchTranscribeConfig,
-    wav: Vec<u8>,
+    audio: Vec<u8>,
     display_name: &str,
 ) -> Result<BatchTranscribeResult> {
-    const MIME: &str = "audio/wav";
+    const MIME: &str = "audio/mpeg";
 
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
         .build()
         .map_err(|e| anyhow!("Failed to build HTTP client: {}", e))?;
 
-    let byte_len = wav.len();
-    let file_uri = upload_file(&client, &config.api_key, wav, MIME, display_name)?;
+    let byte_len = audio.len();
+    let file_uri = upload_file(&client, &config.api_key, audio, MIME, display_name)?;
     log::info!(
         "gemini-transcribe: uploaded {} ({} bytes) as {}",
         display_name,

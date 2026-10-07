@@ -369,6 +369,22 @@ impl MeetingStore {
     }
 
     /// Fetch the recorded temp-buffer paths for a meeting (for recovery).
+    /// Meetings whose saved playback audio is still a WAV file, oldest first.
+    /// Feeds the one-off conversion to MP3.
+    pub fn list_wav_audio(&self) -> Result<Vec<(i64, String)>> {
+        let conn = self.get_connection()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, audio_path FROM meetings
+             WHERE audio_path LIKE '%.wav' ORDER BY id",
+        )?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
     pub fn get_buffers(&self, id: i64) -> Result<StoredBuffers> {
         let conn = self.get_connection()?;
         let buffers = conn

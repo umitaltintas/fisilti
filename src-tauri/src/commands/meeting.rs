@@ -620,7 +620,7 @@ pub fn list_interrupted_meetings(
 ) -> Result<Vec<InterruptedMeeting>, String> {
     meeting_manager
         .store()
-        .list_interrupted()
+        .list_interrupted(None)
         .map_err(|e| format!("Failed to list interrupted meetings: {}", e))
 }
 

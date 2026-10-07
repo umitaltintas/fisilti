@@ -553,11 +553,11 @@ struct SessionBuffers {
 impl MeetingManager {
     pub fn new(app_handle: &AppHandle, transcription_manager: Arc<TranscriptionManager>) -> Self {
         // Resolve the persistence store. If the app data dir cannot be resolved
-        // (should not happen in practice), fall back to a store pointing at a
-        // best-effort path; save errors are logged, not fatal.
+        // (should not happen in practice), every store call fails with the
+        // reason rather than writing a stray database into the working dir.
         let store = MeetingStore::new(app_handle).unwrap_or_else(|e| {
             log::error!("Failed to initialize MeetingStore: {}", e);
-            MeetingStore::with_db_path(std::path::PathBuf::from("history.db"))
+            MeetingStore::unavailable(e.to_string())
         });
         Self {
             app_handle: app_handle.clone(),

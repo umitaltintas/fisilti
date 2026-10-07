@@ -183,7 +183,13 @@ impl HandyKeysState {
         info!("handy-keys manager thread stopped");
     }
 
-    /// Register a hotkey
+    /// Register a hotkey for a binding, replacing the binding's current hotkey
+    /// if it has one.
+    ///
+    /// The new hotkey is registered first and the old one released only once
+    /// that succeeded, so a rejected change leaves the working shortcut in
+    /// place. (Before, the map entry was simply overwritten: the old hotkey
+    /// stayed registered and kept firing, and could no longer be unregistered.)
     fn do_register(
         manager: &HotkeyManager,
         binding_to_hotkey: &mut HashMap<String, HotkeyId>,
@@ -195,11 +201,26 @@ impl HandyKeysState {
             .parse()
             .map_err(|e| format!("Failed to parse hotkey '{}': {}", hotkey_string, e))?;
 
+        // Re-registering the identical hotkey is a no-op, not a conflict.
+        if let Some(existing) = binding_to_hotkey.get(binding_id) {
+            if hotkey_to_binding
+                .get(existing)
+                .is_some_and(|(_, current)| current == hotkey_string)
+            {
+                return Ok(());
+            }
+        }
+
         let id = manager
             .register(hotkey)
             .map_err(|e| format!("Failed to register hotkey: {}", e))?;
 
-        binding_to_hotkey.insert(binding_id.to_string(), id);
+        if let Some(previous) = binding_to_hotkey.insert(binding_id.to_string(), id) {
+            hotkey_to_binding.remove(&previous);
+            if let Err(e) = manager.unregister(previous) {
+                error!("Failed to release the previous hotkey for {binding_id}: {e}");
+            }
+        }
         hotkey_to_binding.insert(id, (binding_id.to_string(), hotkey_string.to_string()));
 
         debug!(
@@ -443,6 +464,11 @@ pub fn init_shortcuts(app: &AppHandle) -> Result<(), String> {
             .get(&id)
             .cloned()
             .unwrap_or(default_binding);
+
+        // Skip opt-in bindings with no shortcut assigned (e.g. toggle_meeting).
+        if binding.current_binding.trim().is_empty() {
+            continue;
+        }
 
         if let Err(e) = state.register(&binding) {
             error!(

@@ -171,29 +171,123 @@ impl BatchTranscribeConfig {
 /// Transcribe 16 kHz mono `samples`, returning speaker-attributed segments.
 ///
 /// Runs the whole upload-then-transcribe exchange on a dedicated OS thread so
-/// `reqwest::blocking` never sees an ambient tokio runtime.
+/// `reqwest::blocking` never sees an ambient tokio runtime. The thread is
+/// scoped, so the samples are borrowed rather than copied — a 50-minute piece
+/// is ~190 MB of f32 and a second copy of it bought nothing.
 pub fn transcribe_samples(
     config: &BatchTranscribeConfig,
     samples: &[f32],
     sample_rate: u32,
     display_name: &str,
 ) -> Result<BatchTranscribeResult> {
-    let config = config.clone();
-    let samples = samples.to_vec();
-    let display_name = display_name.to_string();
-    std::thread::spawn(move || {
-        // MP3 uploads are ~5x smaller than 16-bit WAV: an hour of meeting is
-        // ~29 MB instead of ~115 MB, which dominated the wait on slow uplinks.
-        let audio = crate::audio_toolkit::mp3::encode_mp3(
-            &samples,
-            sample_rate,
-            crate::audio_toolkit::mp3::UPLOAD_BITRATE,
-        )
-        .map_err(|e| anyhow!(e))?;
-        run_exchange(&config, audio, &display_name)
+    std::thread::scope(|scope| {
+        scope
+            .spawn(|| {
+                // MP3 uploads are ~5x smaller than 16-bit WAV: an hour of
+                // meeting is ~29 MB instead of ~115 MB, which dominated the
+                // wait on slow uplinks.
+                let audio = crate::audio_toolkit::mp3::encode_mp3(
+                    samples,
+                    sample_rate,
+                    crate::audio_toolkit::mp3::UPLOAD_BITRATE,
+                )
+                .map_err(|e| anyhow!(e))?;
+                run_exchange(config, audio, display_name)
+            })
+            .join()
+            .map_err(|_| anyhow!("Gemini transcription worker thread panicked"))?
     })
-    .join()
-    .map_err(|_| anyhow!("Gemini transcription worker thread panicked"))?
+}
+
+/// Attempts per HTTP request before giving up. Overload responses (429/503)
+/// are routine on preview models and usually clear within seconds.
+const MAX_ATTEMPTS: u32 = 4;
+/// First retry delay; doubles per attempt.
+const RETRY_BASE_DELAY: Duration = Duration::from_secs(2);
+/// Never wait longer than this between attempts, whatever `Retry-After` says.
+const RETRY_MAX_DELAY: Duration = Duration::from_secs(30);
+
+/// HTTP statuses worth retrying: the request was fine, the service was not.
+fn is_retryable_status(status: u16) -> bool {
+    matches!(status, 408 | 429 | 500 | 502 | 503 | 504)
+}
+
+/// Delay before retry number `attempt` (1-based): the server's `Retry-After`
+/// when it sent one, else exponential backoff — capped either way.
+fn backoff_delay(attempt: u32, retry_after: Option<Duration>) -> Duration {
+    let exponential = RETRY_BASE_DELAY.saturating_mul(1u32 << attempt.saturating_sub(1).min(8));
+    retry_after.unwrap_or(exponential).min(RETRY_MAX_DELAY)
+}
+
+/// A failed attempt, and whether trying again could help.
+struct AttemptError {
+    error: anyhow::Error,
+    retryable: bool,
+    retry_after: Option<Duration>,
+}
+
+impl AttemptError {
+    fn fatal(error: anyhow::Error) -> Self {
+        Self {
+            error,
+            retryable: false,
+            retry_after: None,
+        }
+    }
+
+    /// A transport failure (connect/timeout/reset) is worth another try.
+    fn transport(context: &str, e: reqwest::Error) -> Self {
+        Self {
+            retryable: e.is_timeout() || e.is_connect() || e.is_request(),
+            error: anyhow!("{}: {}", context, e),
+            retry_after: None,
+        }
+    }
+}
+
+/// Classify a non-success response: its body carries the message, its
+/// `Retry-After` header the delay.
+fn status_error(context: &str, response: reqwest::blocking::Response) -> AttemptError {
+    let status = response.status();
+    let retry_after = response
+        .headers()
+        .get(reqwest::header::RETRY_AFTER)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .map(Duration::from_secs);
+    let body = response.text().unwrap_or_default();
+    AttemptError {
+        error: anyhow!("{} ({}): {}", context, status, truncate(&body, 400)),
+        retryable: is_retryable_status(status.as_u16()),
+        retry_after,
+    }
+}
+
+/// Run `attempt` until it succeeds, fails for good, or runs out of attempts.
+fn with_retries<T>(
+    what: &str,
+    mut attempt: impl FnMut() -> std::result::Result<T, AttemptError>,
+) -> Result<T> {
+    let mut tries = 0;
+    loop {
+        tries += 1;
+        match attempt() {
+            Ok(value) => return Ok(value),
+            Err(e) if e.retryable && tries < MAX_ATTEMPTS => {
+                let delay = backoff_delay(tries, e.retry_after);
+                log::warn!(
+                    "gemini-transcribe: {} attempt {}/{} failed ({}); retrying in {:?}",
+                    what,
+                    tries,
+                    MAX_ATTEMPTS,
+                    e.error,
+                    delay
+                );
+                std::thread::sleep(delay);
+            }
+            Err(e) => return Err(e.error),
+        }
+    }
 }
 
 /// Upload the audio, ask for a transcript, parse the result.
@@ -218,24 +312,21 @@ fn run_exchange(
         file_uri
     );
 
-    let response = client
-        .post(INTERACTIONS_URL)
-        .header("x-goog-api-key", &config.api_key)
-        .json(&config.request_body(&file_uri, MIME))
-        .send()
-        .map_err(|e| anyhow!("transcription request failed: {}", e))?;
-
-    let status = response.status();
-    let body = response
-        .text()
-        .map_err(|e| anyhow!("failed to read transcription response: {}", e))?;
-    if !status.is_success() {
-        return Err(anyhow!(
-            "Gemini transcription failed ({}): {}",
-            status,
-            truncate(&body, 400)
-        ));
-    }
+    let request_body = config.request_body(&file_uri, MIME);
+    let body = with_retries("transcription", || {
+        let response = client
+            .post(INTERACTIONS_URL)
+            .header("x-goog-api-key", &config.api_key)
+            .json(&request_body)
+            .send()
+            .map_err(|e| AttemptError::transport("transcription request failed", e))?;
+        if !response.status().is_success() {
+            return Err(status_error("Gemini transcription failed", response));
+        }
+        response
+            .text()
+            .map_err(|e| AttemptError::transport("failed to read transcription response", e))
+    })?;
 
     let value: Value = serde_json::from_str(&body)
         .map_err(|e| anyhow!("malformed transcription response: {}", e))?;
@@ -261,7 +352,8 @@ fn run_exchange(
 ///
 /// The protocol is two requests: a `start` that reserves an upload URL (returned
 /// in the `x-goog-upload-url` *header*, not the body), then the bytes plus a
-/// `finalize` command.
+/// `finalize` command. A failed attempt restarts the whole upload: a fresh
+/// upload URL is simpler to reason about than resuming a half-sent one.
 fn upload_file(
     client: &reqwest::blocking::Client,
     api_key: &str,
@@ -269,54 +361,45 @@ fn upload_file(
     mime_type: &str,
     display_name: &str,
 ) -> Result<String> {
-    let start = client
-        .post(FILES_UPLOAD_URL)
-        .header("x-goog-api-key", api_key)
-        .header("X-Goog-Upload-Protocol", "resumable")
-        .header("X-Goog-Upload-Command", "start")
-        .header("X-Goog-Upload-Header-Content-Length", bytes.len())
-        .header("X-Goog-Upload-Header-Content-Type", mime_type)
-        .json(&json!({ "file": { "display_name": display_name } }))
-        .send()
-        .map_err(|e| anyhow!("upload start failed: {}", e))?;
+    let body = with_retries("upload", || {
+        let start = client
+            .post(FILES_UPLOAD_URL)
+            .header("x-goog-api-key", api_key)
+            .header("X-Goog-Upload-Protocol", "resumable")
+            .header("X-Goog-Upload-Command", "start")
+            .header("X-Goog-Upload-Header-Content-Length", bytes.len())
+            .header("X-Goog-Upload-Header-Content-Type", mime_type)
+            .json(&json!({ "file": { "display_name": display_name } }))
+            .send()
+            .map_err(|e| AttemptError::transport("upload start failed", e))?;
+        if !start.status().is_success() {
+            return Err(status_error("Gemini file upload could not start", start));
+        }
 
-    if !start.status().is_success() {
-        let status = start.status();
-        let body = start.text().unwrap_or_default();
-        return Err(anyhow!(
-            "Gemini file upload could not start ({}): {}",
-            status,
-            truncate(&body, 400)
-        ));
-    }
+        let upload_url = start
+            .headers()
+            .get("x-goog-upload-url")
+            .and_then(|v| v.to_str().ok())
+            .ok_or_else(|| {
+                AttemptError::fatal(anyhow!("Gemini file upload returned no upload URL"))
+            })?
+            .to_string();
 
-    let upload_url = start
-        .headers()
-        .get("x-goog-upload-url")
-        .and_then(|v| v.to_str().ok())
-        .ok_or_else(|| anyhow!("Gemini file upload returned no upload URL"))?
-        .to_string();
-
-    let finalize = client
-        .post(&upload_url)
-        .header("Content-Length", bytes.len())
-        .header("X-Goog-Upload-Offset", "0")
-        .header("X-Goog-Upload-Command", "upload, finalize")
-        .body(bytes)
-        .send()
-        .map_err(|e| anyhow!("upload failed: {}", e))?;
-
-    let status = finalize.status();
-    let body = finalize
-        .text()
-        .map_err(|e| anyhow!("failed to read upload response: {}", e))?;
-    if !status.is_success() {
-        return Err(anyhow!(
-            "Gemini file upload failed ({}): {}",
-            status,
-            truncate(&body, 400)
-        ));
-    }
+        let finalize = client
+            .post(&upload_url)
+            .header("Content-Length", bytes.len())
+            .header("X-Goog-Upload-Offset", "0")
+            .header("X-Goog-Upload-Command", "upload, finalize")
+            .body(bytes.clone())
+            .send()
+            .map_err(|e| AttemptError::transport("upload failed", e))?;
+        if !finalize.status().is_success() {
+            return Err(status_error("Gemini file upload failed", finalize));
+        }
+        finalize
+            .text()
+            .map_err(|e| AttemptError::transport("failed to read upload response", e))
+    })?;
 
     let value: Value =
         serde_json::from_str(&body).map_err(|e| anyhow!("malformed upload response: {}", e))?;
@@ -517,11 +600,18 @@ fn parse_offset_ms(offset: Option<&str>) -> u64 {
 }
 
 /// Keep error messages readable when the API returns a large HTML/JSON error.
+///
+/// Cuts on a character boundary: slicing bytes panicked whenever a multi-byte
+/// character (a localized error page) straddled `max`.
 fn truncate(text: &str, max: usize) -> String {
     if text.len() <= max {
         return text.to_string();
     }
-    format!("{}…", &text[..max])
+    let mut end = max;
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}…", &text[..end])
 }
 
 /// Split a user-entered vocabulary blob (one term per line, or comma-separated)
@@ -758,6 +848,40 @@ mod tests {
             vec!["Fisilti", "Tauri", "Gemini"]
         );
         assert!(parse_vocabulary("   ").is_empty());
+    }
+
+    #[test]
+    fn truncation_never_splits_a_multibyte_character() {
+        // "ş" is two bytes; a byte cut at 3 would land inside the second one.
+        assert_eq!(truncate("aşşa", 3), "aş…");
+        assert_eq!(truncate("aşşa", 100), "aşşa");
+        assert_eq!(truncate("çççç", 1), "…");
+    }
+
+    #[test]
+    fn only_overload_and_server_errors_are_retried() {
+        for status in [408, 429, 500, 502, 503, 504] {
+            assert!(is_retryable_status(status), "{status}");
+        }
+        for status in [400, 401, 403, 404, 413] {
+            assert!(!is_retryable_status(status), "{status}");
+        }
+    }
+
+    #[test]
+    fn backoff_doubles_honours_retry_after_and_is_capped() {
+        assert_eq!(backoff_delay(1, None), Duration::from_secs(2));
+        assert_eq!(backoff_delay(2, None), Duration::from_secs(4));
+        assert_eq!(backoff_delay(3, None), Duration::from_secs(8));
+        assert_eq!(
+            backoff_delay(1, Some(Duration::from_secs(7))),
+            Duration::from_secs(7)
+        );
+        assert_eq!(backoff_delay(10, None), RETRY_MAX_DELAY);
+        assert_eq!(
+            backoff_delay(1, Some(Duration::from_secs(600))),
+            RETRY_MAX_DELAY
+        );
     }
 
     #[test]

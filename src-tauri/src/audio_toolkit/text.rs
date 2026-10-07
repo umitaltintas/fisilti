@@ -170,28 +170,24 @@ fn preserve_case_pattern(original: &str, replacement: &str) -> String {
     }
 }
 
-/// Extracts punctuation prefix and suffix from a word
+/// Extracts punctuation prefix and suffix from a word.
+///
+/// Works in byte offsets taken from `char_indices`, so multi-byte punctuation
+/// ("¿", "…", "»", "”", "。") is never split mid-character. A word with no
+/// alphanumeric character at all is returned whole as both prefix and suffix.
 fn extract_punctuation(word: &str) -> (&str, &str) {
-    let prefix_end = word.chars().take_while(|c| !c.is_alphanumeric()).count();
+    let prefix_end = word
+        .char_indices()
+        .find(|(_, c)| c.is_alphanumeric())
+        .map_or(word.len(), |(i, _)| i);
     let suffix_start = word
         .char_indices()
         .rev()
         .take_while(|(_, c)| !c.is_alphanumeric())
-        .count();
+        .last()
+        .map_or(word.len(), |(i, _)| i);
 
-    let prefix = if prefix_end > 0 {
-        &word[..prefix_end]
-    } else {
-        ""
-    };
-
-    let suffix = if suffix_start > 0 {
-        &word[word.len() - suffix_start..]
-    } else {
-        ""
-    };
-
-    (prefix, suffix)
+    (&word[..prefix_end], &word[suffix_start..])
 }
 
 /// Returns filler words appropriate for the given language code.
@@ -542,6 +538,41 @@ mod tests {
         let custom_words = vec!["MacBook Pro".to_string()];
         let result = apply_custom_words(text, &custom_words, 0.5);
         assert!(result.contains("MacBook"));
+    }
+
+    #[test]
+    fn test_extract_punctuation_multibyte() {
+        assert_eq!(extract_punctuation("¿Qué?"), ("¿", "?"));
+        assert_eq!(extract_punctuation("hola…"), ("", "…"));
+        assert_eq!(extract_punctuation("«bonjour»"), ("«", "»"));
+        assert_eq!(extract_punctuation("“quoted”"), ("“", "”"));
+        assert_eq!(extract_punctuation("你好。"), ("", "。"));
+        assert_eq!(extract_punctuation("…"), ("…", "…"));
+        assert_eq!(extract_punctuation(""), ("", ""));
+    }
+
+    #[test]
+    fn test_extract_punctuation_turkish_letters_are_not_punctuation() {
+        assert_eq!(extract_punctuation("ışık"), ("", ""));
+        assert_eq!(extract_punctuation("İstanbul,"), ("", ","));
+        assert_eq!(extract_punctuation("(dağ)"), ("(", ")"));
+        assert_eq!(extract_punctuation("şğ!"), ("", "!"));
+    }
+
+    #[test]
+    fn test_apply_custom_words_with_multibyte_punctuation_does_not_panic() {
+        let custom_words = vec!["Qué".to_string(), "Istanbul".to_string()];
+        for text in [
+            "¿Qué pasa?",
+            "dijo «Que» y luego…",
+            "“Que” said “hola”",
+            "これは。テスト。",
+            "İstanbul’a gittim, ışık şğ.",
+        ] {
+            let _ = apply_custom_words(text, &custom_words, 0.5);
+        }
+        let result = apply_custom_words("¿Que?", &custom_words, 0.5);
+        assert!(result.starts_with('¿'), "got {result}");
     }
 
     #[test]

@@ -1,8 +1,8 @@
-use crate::settings::{get_settings, write_settings};
+use crate::settings::{get_settings, update_settings};
 use anyhow::Result;
 use flate2::read::GzDecoder;
 use futures_util::StreamExt;
-use log::{debug, info, warn};
+use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use specta::Type;
@@ -105,30 +105,99 @@ pub struct DownloadProgress {
     pub percentage: f64,
 }
 
+/// Copy `from` to `to` through a temporary sibling that is renamed into place,
+/// so an interrupted copy never leaves a truncated file under the final name
+/// (which every later check would take for a complete model).
+fn copy_atomically(from: &Path, to: &Path) -> std::io::Result<()> {
+    let file_name = to
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let tmp = to.with_file_name(format!("{file_name}.copying"));
+    let result = fs::copy(from, &tmp).and_then(|_| fs::rename(&tmp, to));
+    if result.is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
+    result
+}
+
+/// Remove `model_id`'s cancel flag, but only if it is still `flag`: a newer
+/// download of the same model may have registered its own since, and that one
+/// must stay cancellable.
+fn remove_own_cancel_flag(
+    cancel_flags: &Mutex<HashMap<String, Arc<AtomicBool>>>,
+    model_id: &str,
+    flag: &Arc<AtomicBool>,
+) {
+    let mut flags = cancel_flags.lock().unwrap_or_else(|e| e.into_inner());
+    if flags.get(model_id).is_some_and(|f| Arc::ptr_eq(f, flag)) {
+        flags.remove(model_id);
+    }
+}
+
 /// RAII guard that cleans up download state (`is_downloading` flag and cancel flag)
-/// when dropped, unless explicitly disarmed. This ensures consistent cleanup on
-/// every error path without requiring manual cleanup at each `?` or `return Err`.
+/// when dropped. This ensures consistent cleanup on every exit path without
+/// requiring manual cleanup at each `?` or `return Err`.
 struct DownloadCleanup<'a> {
     available_models: &'a Mutex<HashMap<String, ModelInfo>>,
     cancel_flags: &'a Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
     model_id: String,
-    disarmed: bool,
+    /// This download's own flag; see [`remove_own_cancel_flag`].
+    flag: Arc<AtomicBool>,
 }
 
 impl<'a> Drop for DownloadCleanup<'a> {
     fn drop(&mut self) {
-        if self.disarmed {
-            return;
-        }
         {
-            let mut models = self.available_models.lock().unwrap();
+            let mut models = self
+                .available_models
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             if let Some(model) = models.get_mut(self.model_id.as_str()) {
                 model.is_downloading = false;
             }
         }
-        self.cancel_flags.lock().unwrap().remove(&self.model_id);
+        remove_own_cancel_flag(self.cancel_flags, &self.model_id, &self.flag);
     }
 }
+
+/// What the server said about a resumed (`Range`) request.
+#[derive(Debug, PartialEq, Eq)]
+enum ResumeOutcome {
+    /// 206: append the body to the partial file.
+    Continue,
+    /// 200: the server ignored the range; start over.
+    Restart,
+    /// 416 and the partial already holds the whole file: just verify it.
+    AlreadyComplete,
+    /// 416 for any other reason (partial larger than the file, or a server that
+    /// does not say how large the file is): the partial cannot be trusted.
+    DiscardPartial,
+}
+
+/// Interpret the response to a request that asked to resume from `resume_from`
+/// bytes. `content_range` is the raw `Content-Range` header, which a 416
+/// carries as `bytes */<total>`.
+fn classify_resume(status: u16, resume_from: u64, content_range: Option<&str>) -> ResumeOutcome {
+    match status {
+        200 => ResumeOutcome::Restart,
+        416 => {
+            let total = content_range
+                .and_then(|v| v.trim().strip_prefix("bytes */"))
+                .and_then(|t| t.trim().parse::<u64>().ok());
+            if total == Some(resume_from) {
+                ResumeOutcome::AlreadyComplete
+            } else {
+                ResumeOutcome::DiscardPartial
+            }
+        }
+        _ => ResumeOutcome::Continue,
+    }
+}
+
+/// Longest a download may go without receiving a byte before it is abandoned
+/// (the partial is kept, so retrying resumes).
+const DOWNLOAD_STALL_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub struct ModelManager {
     app_handle: AppHandle,
@@ -875,17 +944,29 @@ impl ModelManager {
             extracting_models: Arc::new(Mutex::new(HashSet::new())),
         };
 
+        // None of the steps below may stop the app from starting: a failed
+        // migration leaves that one model unavailable (and is retried on the
+        // next launch), which is far better than a crash loop on every launch.
+
         // Migrate any bundled models to user directory
-        manager.migrate_bundled_models()?;
+        if let Err(e) = manager.migrate_bundled_models() {
+            error!("Bundled model migration failed (will retry next launch): {e}");
+        }
 
         // Migrate GigaAM from single-file to directory format
-        manager.migrate_gigaam_to_directory()?;
+        if let Err(e) = manager.migrate_gigaam_to_directory() {
+            error!("GigaAM migration failed (will retry next launch): {e}");
+        }
 
         // Check which models are already downloaded
-        manager.update_download_status()?;
+        if let Err(e) = manager.update_download_status() {
+            error!("Failed to read model download status: {e}");
+        }
 
         // Auto-select a model if none is currently selected
-        manager.auto_select_model_if_needed()?;
+        if let Err(e) = manager.auto_select_model_if_needed() {
+            error!("Failed to auto-select a model: {e}");
+        }
 
         Ok(manager)
     }
@@ -917,7 +998,7 @@ impl ModelManager {
                     // Only copy if user doesn't already have the model
                     if !user_path.exists() {
                         info!("Migrating bundled model {} to user directory", filename);
-                        fs::copy(&bundled_path, &user_path)?;
+                        copy_atomically(&bundled_path, &user_path)?;
                         info!("Successfully migrated {}", filename);
                     }
                 }
@@ -930,11 +1011,23 @@ impl ModelManager {
     /// Migrate GigaAM from the old single-file format (giga-am-v3.int8.onnx)
     /// to the new directory format (giga-am-v3-int8/model.int8.onnx + vocab.txt).
     /// This was required by the transcribe-rs 0.3.x upgrade.
+    ///
+    /// Built in a `.migrating` staging directory that is renamed into place
+    /// only once complete, so an interruption can never leave a final directory
+    /// that looks downloaded but lacks the vocab (which nothing would repair,
+    /// since the migration skips existing directories).
     fn migrate_gigaam_to_directory(&self) -> Result<()> {
         let old_file = self.models_dir.join("giga-am-v3.int8.onnx");
         let new_dir = self.models_dir.join("giga-am-v3-int8");
+        let staging = self.models_dir.join("giga-am-v3-int8.migrating");
+        let staged_model = staging.join("model.int8.onnx");
 
-        if !old_file.exists() || new_dir.exists() {
+        if new_dir.exists() {
+            return Ok(());
+        }
+        // Resume an interrupted run whose model file is already staged.
+        let resuming = !old_file.exists() && staged_model.exists();
+        if !old_file.exists() && !resuming {
             return Ok(());
         }
 
@@ -957,9 +1050,14 @@ impl ModelManager {
         info!("Old file: {:?} (exists: {})", old_file, old_file.exists());
         info!("New dir: {:?} (exists: {})", new_dir, new_dir.exists());
 
-        fs::create_dir_all(&new_dir)?;
-        fs::rename(&old_file, new_dir.join("model.int8.onnx"))?;
-        fs::copy(&vocab_path, new_dir.join("vocab.txt"))?;
+        fs::create_dir_all(&staging)?;
+        // The copy is the step that can fail; do it before the model file is
+        // moved so a failure leaves the old single-file install untouched.
+        copy_atomically(&vocab_path, &staging.join("vocab.txt"))?;
+        if !resuming {
+            fs::rename(&old_file, &staged_model)?;
+        }
+        fs::rename(&staging, &new_dir)?;
 
         // Clean up old partial file if it exists
         let old_partial = self.models_dir.join("giga-am-v3.int8.onnx.partial");
@@ -972,9 +1070,21 @@ impl ModelManager {
     }
 
     fn update_download_status(&self) -> Result<()> {
+        // Downloads still running keep their flag: this rescan runs after a
+        // cancel or delete of ONE model and must not flip every other
+        // in-flight download to "not downloading".
+        let active: HashSet<String> = self
+            .cancel_flags
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .filter(|(_, flag)| !flag.load(Ordering::Relaxed))
+            .map(|(id, _)| id.clone())
+            .collect();
         let mut models = self.available_models.lock().unwrap();
 
         for model in models.values_mut() {
+            let downloading = active.contains(&model.id);
             // Cloud models have nothing on disk; they're always "downloaded".
             if model.engine_type.is_cloud() {
                 model.is_downloaded = true;
@@ -1002,7 +1112,7 @@ impl ModelManager {
                 }
 
                 model.is_downloaded = model_path.exists() && model_path.is_dir();
-                model.is_downloading = false;
+                model.is_downloading = downloading;
 
                 // Get partial file size if it exists (for the .tar.gz being downloaded)
                 if partial_path.exists() {
@@ -1016,7 +1126,7 @@ impl ModelManager {
                 let partial_path = self.models_dir.join(format!("{}.partial", &model.filename));
 
                 model.is_downloaded = model_path.exists();
-                model.is_downloading = false;
+                model.is_downloading = downloading;
 
                 // Get partial file size if it exists
                 if partial_path.exists() {
@@ -1031,28 +1141,28 @@ impl ModelManager {
     }
 
     fn auto_select_model_if_needed(&self) -> Result<()> {
-        let mut settings = get_settings(&self.app_handle);
+        let settings = get_settings(&self.app_handle);
+        let mut selected = settings.selected_model.clone();
 
         // Clear stale selection: selected model is set but doesn't exist
         // in available_models (e.g. deleted custom model file)
-        if !settings.selected_model.is_empty() {
-            let models = self.available_models.lock().unwrap();
-            let exists = models.contains_key(&settings.selected_model);
-            drop(models);
-
+        if !selected.is_empty() {
+            let exists = self
+                .available_models
+                .lock()
+                .unwrap()
+                .contains_key(&selected);
             if !exists {
                 info!(
                     "Selected model '{}' not found in available models, clearing selection",
-                    settings.selected_model
+                    selected
                 );
-                settings.selected_model = String::new();
-                write_settings(&self.app_handle, settings.clone());
+                selected = String::new();
             }
         }
 
         // If no model is selected, pick the first downloaded one
-        if settings.selected_model.is_empty() {
-            // Find the first available (downloaded) model
+        if selected.is_empty() {
             let models = self.available_models.lock().unwrap();
             // Prefer a real local model; never auto-select a cloud model (it
             // needs an API key and a network connection to work).
@@ -1064,17 +1174,23 @@ impl ModelManager {
                     "Auto-selecting model: {} ({})",
                     available_model.id, available_model.name
                 );
-
-                // Update settings with the selected model
-                let mut updated_settings = settings;
-                updated_settings.selected_model = available_model.id.clone();
-                write_settings(&self.app_handle, updated_settings);
-
-                info!("Successfully auto-selected model: {}", available_model.id);
+                selected = available_model.id.clone();
             }
         }
 
+        if selected != settings.selected_model {
+            update_settings(&self.app_handle, |s| s.selected_model = selected);
+        }
+
         Ok(())
+    }
+
+    /// Whether a download of `model_id` is currently running.
+    pub fn is_downloading(&self, model_id: &str) -> bool {
+        self.cancel_flags
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains_key(model_id)
     }
 
     /// Discover custom Whisper models (.bin files) in the models directory.
@@ -1259,11 +1375,37 @@ impl ModelManager {
 
         let url = model_info
             .url
+            .clone()
             .ok_or_else(|| anyhow::anyhow!("No download URL for model"))?;
         let model_path = self.models_dir.join(&model_info.filename);
         let partial_path = self
             .models_dir
             .join(format!("{}.partial", &model_info.filename));
+
+        // Claim the download slot atomically. Two concurrent downloads of one
+        // model (a double click) would both append to the same .partial file
+        // and corrupt it.
+        let cancel_flag = Arc::new(AtomicBool::new(false));
+        {
+            let mut flags = self.cancel_flags.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(existing) = flags.get(model_id) {
+                return Err(anyhow::anyhow!(if existing.load(Ordering::Relaxed) {
+                    "The cancelled download of this model is still stopping; try again in a moment"
+                } else {
+                    "This model is already downloading"
+                }));
+            }
+            flags.insert(model_id.to_string(), cancel_flag.clone());
+        }
+
+        // Guard ensures is_downloading and this download's cancel flag are
+        // cleaned up on every exit path, success included.
+        let _cleanup = DownloadCleanup {
+            available_models: &self.available_models,
+            cancel_flags: &self.cancel_flags,
+            model_id: model_id.to_string(),
+            flag: cancel_flag.clone(),
+        };
 
         // Don't download if complete version already exists
         if model_path.exists() {
@@ -1271,6 +1413,7 @@ impl ModelManager {
             if partial_path.exists() {
                 let _ = fs::remove_file(&partial_path);
             }
+            drop(_cleanup);
             self.update_download_status()?;
             return Ok(());
         }
@@ -1293,22 +1436,6 @@ impl ModelManager {
             }
         }
 
-        // Create cancellation flag for this download
-        let cancel_flag = Arc::new(AtomicBool::new(false));
-        {
-            let mut flags = self.cancel_flags.lock().unwrap();
-            flags.insert(model_id.to_string(), cancel_flag.clone());
-        }
-
-        // Guard ensures is_downloading and cancel_flags are cleaned up on every
-        // error path. Disarmed only on success (which sets is_downloaded = true).
-        let mut cleanup = DownloadCleanup {
-            available_models: &self.available_models,
-            cancel_flags: &self.cancel_flags,
-            model_id: model_id.to_string(),
-            disarmed: false,
-        };
-
         // Create HTTP client with range request for resuming
         let client = reqwest::Client::new();
         let mut request = client.get(&url);
@@ -1318,27 +1445,49 @@ impl ModelManager {
         }
 
         let mut response = request.send().await?;
+        let mut partial_is_complete = false;
 
-        // If we tried to resume but server returned 200 (not 206 Partial Content),
-        // the server doesn't support range requests. Delete partial file and restart
-        // fresh to avoid file corruption (appending full file to partial).
-        if resume_from > 0 && response.status() == reqwest::StatusCode::OK {
-            warn!(
-                "Server doesn't support range requests for model {}, restarting download",
-                model_id
-            );
-            drop(response);
-            let _ = fs::remove_file(&partial_path);
-
-            // Reset resume_from since we're starting fresh
-            resume_from = 0;
-
-            // Restart download without range header
-            response = client.get(&url).send().await?;
+        if resume_from > 0 {
+            let content_range = response
+                .headers()
+                .get(reqwest::header::CONTENT_RANGE)
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_string);
+            match classify_resume(
+                response.status().as_u16(),
+                resume_from,
+                content_range.as_deref(),
+            ) {
+                ResumeOutcome::Continue => {}
+                ResumeOutcome::AlreadyComplete => {
+                    // A previous run downloaded every byte but stopped before
+                    // verifying/finalizing. Asking for more gets 416 forever,
+                    // so go straight to verification instead.
+                    info!(
+                        "Partial download of {} is already complete; verifying it",
+                        model_id
+                    );
+                    partial_is_complete = true;
+                }
+                outcome @ (ResumeOutcome::Restart | ResumeOutcome::DiscardPartial) => {
+                    // 200: the server ignores ranges, so appending the full body
+                    // would corrupt the file. 416 with a size mismatch: the
+                    // partial is unusable. Either way, start over.
+                    warn!(
+                        "Cannot resume download of model {} ({:?}); restarting",
+                        model_id, outcome
+                    );
+                    drop(response);
+                    let _ = fs::remove_file(&partial_path);
+                    resume_from = 0;
+                    response = client.get(&url).send().await?;
+                }
+            }
         }
 
         // Check for success or partial content status
-        if !response.status().is_success()
+        if !partial_is_complete
+            && !response.status().is_success()
             && response.status() != reqwest::StatusCode::PARTIAL_CONTENT
         {
             return Err(anyhow::anyhow!(
@@ -1347,7 +1496,9 @@ impl ModelManager {
             ));
         }
 
-        let total_size = if resume_from > 0 {
+        let total_size = if partial_is_complete {
+            resume_from
+        } else if resume_from > 0 {
             // For resumed downloads, add the resume point to content length
             resume_from + response.content_length().unwrap_or(0)
         } else {
@@ -1355,17 +1506,6 @@ impl ModelManager {
         };
 
         let mut downloaded = resume_from;
-        let mut stream = response.bytes_stream();
-
-        // Open file for appending if resuming, or create new if starting fresh
-        let mut file = if resume_from > 0 {
-            std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(&partial_path)?
-        } else {
-            std::fs::File::create(&partial_path)?
-        };
 
         // Emit initial progress
         let initial_progress = DownloadProgress {
@@ -1382,43 +1522,77 @@ impl ModelManager {
             .app_handle
             .emit("model-download-progress", &initial_progress);
 
-        // Throttle progress events to max 10/sec (100ms intervals)
-        let mut last_emit = Instant::now();
-        let throttle_duration = Duration::from_millis(100);
+        if !partial_is_complete {
+            let mut stream = response.bytes_stream();
 
-        // Download with progress
-        while let Some(chunk) = stream.next().await {
-            // Check if download was cancelled
-            if cancel_flag.load(Ordering::Relaxed) {
-                drop(file);
-                info!("Download cancelled for: {}", model_id);
-                // Keep partial file for resume functionality.
-                // Guard handles is_downloading + cancel_flags cleanup on drop.
-                return Ok(());
-            }
-
-            let chunk = chunk?;
-
-            file.write_all(&chunk)?;
-            downloaded += chunk.len() as u64;
-
-            let percentage = if total_size > 0 {
-                (downloaded as f64 / total_size as f64) * 100.0
+            // Open file for appending if resuming, or create new if starting fresh
+            let mut file = if resume_from > 0 {
+                std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&partial_path)?
             } else {
-                0.0
+                std::fs::File::create(&partial_path)?
             };
 
-            // Emit progress event (throttled to avoid UI freeze)
-            if last_emit.elapsed() >= throttle_duration {
-                let progress = DownloadProgress {
-                    model_id: model_id.to_string(),
-                    downloaded,
-                    total: total_size,
-                    percentage,
+            // Throttle progress events to max 10/sec (100ms intervals)
+            let mut last_emit = Instant::now();
+            let throttle_duration = Duration::from_millis(100);
+            let mut last_byte_at = Instant::now();
+
+            // Download with progress. The wait for each chunk is bounded so a
+            // cancel is honoured within a second even while the connection is
+            // stalled, and a dead connection eventually gives up instead of
+            // holding the download slot forever.
+            loop {
+                if cancel_flag.load(Ordering::Relaxed) {
+                    drop(file);
+                    info!("Download cancelled for: {}", model_id);
+                    // Keep partial file for resume functionality.
+                    // Guard handles is_downloading + cancel_flags cleanup on drop.
+                    return Ok(());
+                }
+
+                let chunk =
+                    match tokio::time::timeout(Duration::from_secs(1), stream.next()).await {
+                        Ok(Some(chunk)) => chunk?,
+                        Ok(None) => break,
+                        Err(_) => {
+                            if last_byte_at.elapsed() >= DOWNLOAD_STALL_TIMEOUT {
+                                return Err(anyhow::anyhow!(
+                                    "Download stalled: no data for {}s",
+                                    DOWNLOAD_STALL_TIMEOUT.as_secs()
+                                ));
+                            }
+                            continue;
+                        }
+                    };
+                last_byte_at = Instant::now();
+
+                file.write_all(&chunk)?;
+                downloaded += chunk.len() as u64;
+
+                let percentage = if total_size > 0 {
+                    (downloaded as f64 / total_size as f64) * 100.0
+                } else {
+                    0.0
                 };
-                let _ = self.app_handle.emit("model-download-progress", &progress);
-                last_emit = Instant::now();
+
+                // Emit progress event (throttled to avoid UI freeze)
+                if last_emit.elapsed() >= throttle_duration {
+                    let progress = DownloadProgress {
+                        model_id: model_id.to_string(),
+                        downloaded,
+                        total: total_size,
+                        percentage,
+                    };
+                    let _ = self.app_handle.emit("model-download-progress", &progress);
+                    last_emit = Instant::now();
+                }
             }
+
+            file.flush()?;
+            drop(file); // Ensure file is closed before moving
         }
 
         // Emit final progress to ensure 100% is shown
@@ -1435,9 +1609,6 @@ impl ModelManager {
         let _ = self
             .app_handle
             .emit("model-download-progress", &final_progress);
-
-        file.flush()?;
-        drop(file); // Ensure file is closed before moving
 
         // Verify downloaded file size matches expected size
         if total_size > 0 {
@@ -1564,9 +1735,6 @@ impl ModelManager {
             fs::rename(&partial_path, &model_path)?;
         }
 
-        // Disarm the guard — success path does its own cleanup because it
-        // additionally sets is_downloaded = true.
-        cleanup.disarmed = true;
         {
             let mut models = self.available_models.lock().unwrap();
             if let Some(model) = models.get_mut(model_id) {
@@ -1575,7 +1743,9 @@ impl ModelManager {
                 model.partial_size = 0;
             }
         }
-        self.cancel_flags.lock().unwrap().remove(model_id);
+        // Release the slot before announcing completion, so a listener that
+        // reacts to the event never sees this download as still running.
+        drop(_cleanup);
 
         // Emit completion event
         let _ = self.app_handle.emit("model-download-complete", model_id);
@@ -1730,16 +1900,17 @@ impl ModelManager {
             }
         }
 
-        // Update state immediately for UI responsiveness
+        // Update state immediately for UI responsiveness. Only this model:
+        // a full rescan would also clear the flag of every other download
+        // still in progress.
         {
             let mut models = self.available_models.lock().unwrap();
             if let Some(model) = models.get_mut(model_id) {
                 model.is_downloading = false;
+                let partial_path = self.models_dir.join(format!("{}.partial", &model.filename));
+                model.partial_size = partial_path.metadata().map(|m| m.len()).unwrap_or(0);
             }
         }
-
-        // Update download status to reflect current state
-        self.update_download_status()?;
 
         // Emit cancellation event so all UI components can clear their state
         let _ = self.app_handle.emit("model-download-cancelled", model_id);
@@ -1922,5 +2093,66 @@ mod tests {
             ModelManager::verify_sha256(&missing_path, Some("anyexpectedhash"), "missing_model");
 
         assert!(result.is_err(), "missing file must return an error");
+    }
+
+    #[test]
+    fn a_416_for_a_complete_partial_is_treated_as_done() {
+        assert_eq!(
+            classify_resume(416, 1000, Some("bytes */1000")),
+            ResumeOutcome::AlreadyComplete
+        );
+    }
+
+    #[test]
+    fn a_416_that_does_not_match_the_partial_discards_it() {
+        assert_eq!(
+            classify_resume(416, 1200, Some("bytes */1000")),
+            ResumeOutcome::DiscardPartial
+        );
+        assert_eq!(classify_resume(416, 1000, None), ResumeOutcome::DiscardPartial);
+        assert_eq!(
+            classify_resume(416, 1000, Some("garbage")),
+            ResumeOutcome::DiscardPartial
+        );
+    }
+
+    #[test]
+    fn resume_status_codes_map_to_the_right_action() {
+        assert_eq!(classify_resume(206, 10, None), ResumeOutcome::Continue);
+        assert_eq!(classify_resume(200, 10, None), ResumeOutcome::Restart);
+        // Errors fall through to the generic status check.
+        assert_eq!(classify_resume(500, 10, None), ResumeOutcome::Continue);
+    }
+
+    #[test]
+    fn a_finished_download_does_not_remove_a_newer_downloads_flag() {
+        let flags: Mutex<HashMap<String, Arc<AtomicBool>>> = Mutex::new(HashMap::new());
+        let old = Arc::new(AtomicBool::new(true));
+        let new = Arc::new(AtomicBool::new(false));
+        flags.lock().unwrap().insert("m".to_string(), new.clone());
+
+        remove_own_cancel_flag(&flags, "m", &old);
+        assert!(flags.lock().unwrap().contains_key("m"));
+
+        remove_own_cancel_flag(&flags, "m", &new);
+        assert!(!flags.lock().unwrap().contains_key("m"));
+    }
+
+    #[test]
+    fn atomic_copy_leaves_no_temporary_file() {
+        let (dir, src) = write_temp_file(b"model bytes");
+        let dest = dir.path().join("copied.bin");
+        copy_atomically(&src, &dest).unwrap();
+        assert_eq!(fs::read(&dest).unwrap(), b"model bytes");
+        assert!(!dir.path().join("copied.bin.copying").exists());
+    }
+
+    #[test]
+    fn a_failed_atomic_copy_creates_nothing_under_the_final_name() {
+        let dir = TempDir::new().unwrap();
+        let dest = dir.path().join("out.bin");
+        assert!(copy_atomically(&dir.path().join("missing"), &dest).is_err());
+        assert!(!dest.exists());
+        assert!(!dir.path().join("out.bin.copying").exists());
     }
 }

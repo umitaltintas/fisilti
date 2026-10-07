@@ -1,6 +1,6 @@
 use crate::managers::model::{ModelInfo, ModelManager};
 use crate::managers::transcription::{ModelStateEvent, TranscriptionManager};
-use crate::settings::{get_settings, write_settings, ModelUnloadTimeout};
+use crate::settings::{get_settings, update_settings, ModelUnloadTimeout};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -51,21 +51,50 @@ pub async fn delete_model(
     transcription_manager: State<'_, Arc<TranscriptionManager>>,
     model_id: String,
 ) -> Result<(), String> {
-    // If deleting the active model, unload it and clear the setting
     let settings = get_settings(&app_handle);
-    if settings.selected_model == model_id {
+    let is_resident = transcription_manager.get_current_model().as_deref() == Some(&model_id);
+
+    // A running meeting owns the engine; deleting the model it is using (or
+    // will finalize with) would fail the meeting mid-session.
+    if transcription_manager.meeting_is_running()
+        && (is_resident || settings.meeting_model_id() == model_id)
+    {
+        return Err("This model is in use by the running meeting. Stop the meeting first.".into());
+    }
+
+    // An in-flight download would recreate the .partial right after it is
+    // deleted.
+    if model_manager.is_downloading(&model_id) {
+        model_manager
+            .cancel_download(&model_id)
+            .map_err(|e| e.to_string())?;
+    }
+
+    // Release the engine before its files go away (Windows cannot delete a
+    // file that is mapped). If the deletion then fails, the model simply
+    // reloads on next use.
+    if is_resident {
         transcription_manager
             .unload_model()
             .map_err(|e| format!("Failed to unload model: {}", e))?;
-
-        let mut settings = get_settings(&app_handle);
-        settings.selected_model = String::new();
-        write_settings(&app_handle, settings);
     }
 
     model_manager
         .delete_model(&model_id)
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    // Only now that the files are gone, stop pointing at them.
+    update_settings(&app_handle, |settings| {
+        if settings.selected_model == model_id {
+            settings.selected_model = String::new();
+        }
+        if settings.meeting_selected_model.trim() == model_id {
+            // Empty means "follow the dictation model".
+            settings.meeting_selected_model = String::new();
+        }
+    });
+
+    Ok(())
 }
 
 /// Shared logic for switching the active model, used by both the Tauri command
@@ -74,9 +103,17 @@ pub async fn delete_model(
 /// Validates the model, updates the persisted setting, and loads the model
 /// unless the unload timeout is set to "Immediately" (in which case the model
 /// will be loaded on-demand during the next transcription).
+///
+/// Refused while a meeting is running: only one engine is resident and the
+/// meeting owns it, and with "meetings follow the dictation model" changing
+/// the selection would also silently change the meeting's model mid-session.
 pub fn switch_active_model(app: &AppHandle, model_id: &str) -> Result<(), String> {
     let model_manager = app.state::<Arc<ModelManager>>();
     let transcription_manager = app.state::<Arc<TranscriptionManager>>();
+
+    if transcription_manager.meeting_is_running() {
+        return Err("Can't switch models while a meeting is running.".to_string());
+    }
 
     // Atomically claim the loading slot — prevents concurrent model loads
     // from tray double-clicks or overlapping commands. The guard resets the
@@ -94,33 +131,34 @@ pub fn switch_active_model(app: &AppHandle, model_id: &str) -> Result<(), String
         return Err(format!("Model not downloaded: {}", model_id));
     }
 
-    let settings = get_settings(app);
-    let unload_timeout = settings.model_unload_timeout;
-    let old_model = settings.selected_model.clone();
-
     // Persist the new selection early so the frontend sees the correct model
     // when it reacts to events emitted by load_model.
-    let mut settings = settings;
-    settings.selected_model = model_id.to_string();
-
-    // Reset language to auto if the new model doesn't support the currently selected language.
-    // This prevents stale language settings from causing errors (e.g. Canary receiving zh-Hans)
-    // and stops downstream processing (e.g. OpenCC) from running on an irrelevant language.
-    if settings.selected_language != "auto"
-        && !model_info.supported_languages.is_empty()
-        && !model_info
-            .supported_languages
-            .contains(&settings.selected_language)
-    {
-        log::info!(
-            "Resetting language from '{}' to 'auto' (not supported by {})",
-            settings.selected_language,
-            model_id
+    let (old_model, old_language, unload_timeout) = update_settings(app, |settings| {
+        let previous = (
+            settings.selected_model.clone(),
+            settings.selected_language.clone(),
+            settings.model_unload_timeout,
         );
-        settings.selected_language = "auto".to_string();
-    }
+        settings.selected_model = model_id.to_string();
 
-    write_settings(app, settings);
+        // Reset language to auto if the new model doesn't support the currently selected language.
+        // This prevents stale language settings from causing errors (e.g. Canary receiving zh-Hans)
+        // and stops downstream processing (e.g. OpenCC) from running on an irrelevant language.
+        if settings.selected_language != "auto"
+            && !model_info.supported_languages.is_empty()
+            && !model_info
+                .supported_languages
+                .contains(&settings.selected_language)
+        {
+            log::info!(
+                "Resetting language from '{}' to 'auto' (not supported by {})",
+                settings.selected_language,
+                model_id
+            );
+            settings.selected_language = "auto".to_string();
+        }
+        previous
+    });
 
     // Skip eager loading if unload is set to "Immediately" — the model
     // will be loaded on-demand during the next transcription.
@@ -143,17 +181,20 @@ pub fn switch_active_model(app: &AppHandle, model_id: &str) -> Result<(), String
         return Ok(());
     }
 
-    // Load the model. On failure, revert the persisted selection.
+    // Load the model. On failure, revert the persisted selection — the
+    // language too, which may have been reset to "auto" for the new model.
     if let Err(e) = transcription_manager.load_model(model_id) {
-        let mut settings = get_settings(app);
-        settings.selected_model = old_model;
-        write_settings(app, settings);
+        update_settings(app, |settings| {
+            if settings.selected_model == model_id {
+                settings.selected_model = old_model;
+                settings.selected_language = old_language;
+            }
+        });
         return Err(e.to_string());
     }
 
     Ok(())
 }
-
 #[tauri::command]
 #[specta::specta]
 pub async fn set_active_model(

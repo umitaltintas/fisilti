@@ -8,9 +8,15 @@ import { useSettings } from "../../hooks/useSettings";
 
 interface UpdateCheckerProps {
   className?: string;
+  /** Render nothing unless there is something to act on or watch (an update,
+   * a check or an install in progress). Still listens for tray requests. */
+  quiet?: boolean;
 }
 
-const UpdateChecker: React.FC<UpdateCheckerProps> = ({ className = "" }) => {
+const UpdateChecker: React.FC<UpdateCheckerProps> = ({
+  className = "",
+  quiet = false,
+}) => {
   const { t } = useTranslation();
   // Update checking state
   const [isChecking, setIsChecking] = useState(false);
@@ -182,6 +188,13 @@ const UpdateChecker: React.FC<UpdateCheckerProps> = ({ className = "" }) => {
   const isUpdateDisabled = !updateChecksEnabled || isChecking || isInstalling;
   const isUpdateClickable =
     !isUpdateDisabled && (updateAvailable || (!isChecking && !showUpToDate));
+
+  if (
+    quiet &&
+    !(updateAvailable || isInstalling || isChecking || showUpToDate)
+  ) {
+    return null;
+  }
 
   return (
     <div className={`flex items-center gap-3 ${className}`}>

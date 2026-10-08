@@ -14,6 +14,7 @@ import {
 import { useMeetingStore } from "@/stores/meetingStore";
 import { useModelStore } from "@/stores/modelStore";
 import FisiltiMark from "./icons/FisiltiMark";
+import UpdateChecker from "./update-checker";
 import { formatElapsed } from "./settings/meeting/shared";
 import {
   HomePage,
@@ -145,16 +146,22 @@ const MeetingActivityIndicator: React.FC = () => {
 };
 
 /** The model dictation will use, so it is never a mystery. */
-const ActiveModel: React.FC = () => {
+const ActiveModel: React.FC<{ onOpen: () => void }> = ({ onOpen }) => {
+  const { t } = useTranslation();
   const name = useModelStore(
     (s) => s.models.find((m) => m.id === s.currentModel)?.name ?? "",
   );
   if (!name) return null;
   return (
-    <p className="mt-auto flex items-center gap-1.5 px-2 pt-3 pb-1 text-[11px] text-faint">
+    <button
+      type="button"
+      onClick={onOpen}
+      title={t("sidebar.models")}
+      className="flex w-full cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-start text-[11px] text-faint transition-colors hover:bg-mid-gray/10 hover:text-sub focus:outline-none focus-visible:ring-2 focus-visible:ring-logo-primary/50"
+    >
       <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-ok" aria-hidden />
       <span className="truncate">{name}</span>
-    </p>
+    </button>
   );
 };
 
@@ -177,18 +184,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
   return (
     <nav
       aria-label={t("sidebar.navigation")}
-      className="flex h-full w-48 shrink-0 flex-col border-e border-line bg-sidebar px-2.5 pt-3 pb-2"
+      className="flex h-full w-[184px] shrink-0 flex-col border-e border-line bg-sidebar px-2 pt-3.5 pb-2"
     >
-      <div className="flex items-center gap-2 px-1.5 pb-3">
-        <span className="grid h-6 w-6 place-items-center rounded-md bg-gradient-to-br from-logo-primary to-violet-400 text-white">
-          <FisiltiMark width={15} height={15} className="!text-white" />
+      <div className="flex items-center gap-2 px-2 pb-4">
+        <span className="grid h-[22px] w-[22px] place-items-center rounded-[6px] bg-gradient-to-br from-logo-primary to-violet-400 text-white shadow-[inset_0_0_0_0.5px_rgb(255_255_255/0.25)]">
+          <FisiltiMark width={13} height={13} className="!text-white" />
         </span>
         {/* eslint-disable-next-line i18next/no-literal-string -- brand name */}
         <span className="text-[15px] font-semibold tracking-tight">
           Fısıltı
         </span>
       </div>
-      <div className="flex w-full flex-col gap-3">
+      <div className="flex w-full flex-col gap-4">
         {GROUP_ORDER.map((group) => {
           const items = sections.filter((section) => section.group === group);
           if (items.length === 0) return null;
@@ -197,7 +204,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           return (
             <div key={group} className="flex w-full flex-col gap-0.5">
               {labelKey && (
-                <p className="px-2 pb-1 text-[11px] font-semibold text-faint">
+                <p className="px-2 pb-1 text-[10.5px] font-semibold tracking-wide text-faint uppercase">
                   {t(labelKey)}
                 </p>
               )}
@@ -210,7 +217,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     key={section.id}
                     type="button"
                     aria-current={isActive ? "page" : undefined}
-                    className={`flex w-full cursor-pointer items-center gap-2 rounded-[7px] px-2 py-1.5 text-start text-[13px] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-logo-primary/50 ${
+                    className={`flex w-full cursor-pointer items-center gap-2 rounded-[7px] px-2 py-[5px] text-start text-[13px] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-logo-primary/50 ${
                       isActive
                         ? "bg-surface font-medium shadow-[0_1px_2px_rgb(0_0_0/0.08)]"
                         : "hover:bg-mid-gray/10"
@@ -218,8 +225,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     onClick={() => onSectionChange(section.id)}
                   >
                     <Icon
-                      width={15}
-                      height={15}
+                      width={14}
+                      height={14}
                       className={`shrink-0 ${isActive ? "text-logo-primary" : "text-sub"}`}
                       aria-hidden
                     />
@@ -234,7 +241,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
           );
         })}
       </div>
-      <ActiveModel />
+      <div className="mt-auto space-y-1 pt-3">
+        <UpdateChecker quiet className="px-2 text-[11px]" />
+        <ActiveModel onOpen={() => onSectionChange("models")} />
+      </div>
     </nav>
   );
 };

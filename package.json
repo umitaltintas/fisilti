@@ -2,7 +2,7 @@
   "name": "fisilti",
   "private": true,
   "version": "0.1.0",
-  "description": "Fisilti — private, local-first dictation & AI meeting notes for macOS (based on Handy)",
+  "description": "Fisilti \u2014 private, local-first dictation & AI meeting notes for macOS (based on Handy)",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -20,7 +20,8 @@
     "test:playwright": "playwright test",
     "test:playwright:ui": "playwright test --ui",
     "check:translations": "bun scripts/check-translations.ts",
-    "postinstall": "bun scripts/check-nix-deps.ts"
+    "postinstall": "bun scripts/check-nix-deps.ts",
+    "dev:preview": "VITE_TAURI_MOCK=1 vite --port 1430"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.16",

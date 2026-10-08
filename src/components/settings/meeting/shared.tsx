@@ -1,3 +1,4 @@
+import i18n from "@/i18n";
 import React, { useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
@@ -290,7 +291,13 @@ export function formatDuration(durationMs: number, t: TFunction): string {
   if (hours > 0) {
     return t("meeting.durationHoursMinutes", { hours, minutes: mins });
   }
-  return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+  const unit = (value: number, name: "minute" | "second") =>
+    new Intl.NumberFormat(i18n.language, {
+      style: "unit",
+      unit: name,
+      unitDisplay: "short",
+    }).format(value);
+  return mins > 0 ? unit(mins, "minute") : unit(secs, "second");
 }
 
 // Build a safe-ish default export filename from a meeting title.

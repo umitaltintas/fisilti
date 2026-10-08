@@ -288,7 +288,7 @@ export const HandyKeysShortcutInput: React.FC<HandyKeysShortcutInputProps> = ({
         {isRecording ? (
           <div
             ref={shortcutRef}
-            className="px-2 py-1 text-sm font-semibold border border-logo-primary bg-logo-primary/30 rounded-md"
+            className="px-2.5 py-1 text-[13px] font-medium border border-logo-primary/50 bg-brand-soft text-brand-text rounded-md"
           >
             {formatCurrentKeys()}
           </div>
@@ -298,7 +298,7 @@ export const HandyKeysShortcutInput: React.FC<HandyKeysShortcutInputProps> = ({
             aria-label={t("settings.general.shortcut.change", {
               shortcut: translatedName,
             })}
-            className="px-2 py-1 text-sm font-semibold bg-mid-gray/10 border border-mid-gray/80 hover:bg-logo-primary/10 rounded-md cursor-pointer hover:border-logo-primary focus:outline-none focus-visible:ring-1 focus-visible:ring-logo-primary"
+            className="px-2.5 py-1 text-[13px] bg-chip border border-transparent hover:bg-mid-gray/20 rounded-md cursor-pointer font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-logo-primary/50"
             onClick={() => void startRecording()}
           >
             {formatKeyCombination(binding.current_binding, osType)}

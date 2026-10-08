@@ -13,7 +13,6 @@ import {
 } from "./lib/types/events";
 import "./App.css";
 import AccessibilityPermissions from "./components/AccessibilityPermissions";
-import Footer from "./components/footer";
 import Onboarding, { AccessibilityOnboarding } from "./components/onboarding";
 import { Sidebar, SidebarSection, SECTIONS_CONFIG } from "./components/Sidebar";
 import { useSettingsStore } from "./stores/settingsStore";
@@ -33,7 +32,7 @@ const renderSettingsContent = (
   if (section === "home") return <ActiveComponent />;
   return (
     <>
-      <h1 className="mx-auto w-full max-w-3xl text-xl font-bold tracking-tight">
+      <h1 className="mx-auto w-full max-w-3xl font-serif text-[24px] leading-tight font-semibold tracking-tight">
         {t(config.labelKey)}
       </h1>
       <ActiveComponent />
@@ -297,15 +296,13 @@ function App() {
           {/* Scrollable content area */}
           <main className="flex-1 flex flex-col overflow-hidden">
             <div className="flex-1 overflow-y-auto">
-              <div className="flex flex-col items-center gap-4 px-7 pt-5 pb-8">
+              <div className="flex flex-col items-center gap-5 px-8 pt-6 pb-10">
                 <AccessibilityPermissions />
                 {renderSettingsContent(currentSection, t)}
               </div>
             </div>
           </main>
         </div>
-        {/* Fixed footer at bottom */}
-        <Footer />
       </div>
     );
   }

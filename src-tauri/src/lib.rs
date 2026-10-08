@@ -802,4 +802,16 @@ mod bindings_tests {
     fn export_typescript_bindings() {
         super::export_bindings(&super::specta_builder());
     }
+
+    /// Writes first-launch default settings for the browser UI preview
+    /// (`bun run dev:preview`): `cargo test --lib export_default_settings -- --ignored`.
+    #[test]
+    #[ignore = "writes src/dev/default-settings.json; run explicitly"]
+    fn export_default_settings() {
+        let json = serde_json::to_string_pretty(&crate::settings::get_default_settings())
+            .expect("serialize default settings");
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../src/dev/default-settings.json");
+        std::fs::create_dir_all(std::path::Path::new(path).parent().unwrap()).unwrap();
+        std::fs::write(path, json + "\n").expect("write default settings");
+    }
 }

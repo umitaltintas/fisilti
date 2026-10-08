@@ -1,0 +1,226 @@
+{
+  "bindings": {
+    "toggle_meeting": {
+      "id": "toggle_meeting",
+      "name": "Start/Stop Meeting",
+      "description": "Starts or stops a meeting recording.",
+      "default_binding": "",
+      "current_binding": ""
+    },
+    "transcribe_with_post_process": {
+      "id": "transcribe_with_post_process",
+      "name": "Transcribe with Post-Processing",
+      "description": "Converts your speech into text and applies AI post-processing.",
+      "default_binding": "option+shift+space",
+      "current_binding": "option+shift+space"
+    },
+    "transcribe": {
+      "id": "transcribe",
+      "name": "Transcribe",
+      "description": "Converts your speech into text.",
+      "default_binding": "option+space",
+      "current_binding": "option+space"
+    },
+    "cancel": {
+      "id": "cancel",
+      "name": "Cancel",
+      "description": "Cancels the current recording.",
+      "default_binding": "escape",
+      "current_binding": "escape"
+    }
+  },
+  "push_to_talk": true,
+  "audio_feedback": false,
+  "audio_feedback_volume": 1.0,
+  "sound_theme": "marimba",
+  "start_hidden": false,
+  "autostart_enabled": false,
+  "update_checks_enabled": false,
+  "selected_model": "",
+  "always_on_microphone": false,
+  "selected_microphone": null,
+  "clamshell_microphone": null,
+  "selected_output_device": null,
+  "translate_to_english": false,
+  "selected_language": "auto",
+  "overlay_position": "bottom",
+  "debug_mode": false,
+  "log_level": "debug",
+  "custom_words": [],
+  "model_unload_timeout": "min5",
+  "word_correction_threshold": 0.18,
+  "history_limit": 5,
+  "recording_retention_period": "preserve_limit",
+  "paste_method": "ctrl_v",
+  "clipboard_handling": "dont_modify",
+  "auto_submit": false,
+  "auto_submit_key": "enter",
+  "post_process_enabled": false,
+  "post_process_provider_id": "openai",
+  "post_process_providers": [
+    {
+      "id": "openai",
+      "label": "OpenAI",
+      "base_url": "https://api.openai.com/v1",
+      "allow_base_url_edit": false,
+      "models_endpoint": "/models",
+      "supports_structured_output": true
+    },
+    {
+      "id": "zai",
+      "label": "Z.AI",
+      "base_url": "https://api.z.ai/api/paas/v4",
+      "allow_base_url_edit": false,
+      "models_endpoint": "/models",
+      "supports_structured_output": true
+    },
+    {
+      "id": "openrouter",
+      "label": "OpenRouter",
+      "base_url": "https://openrouter.ai/api/v1",
+      "allow_base_url_edit": false,
+      "models_endpoint": "/models",
+      "supports_structured_output": true
+    },
+    {
+      "id": "google",
+      "label": "Google Gemini",
+      "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+      "allow_base_url_edit": false,
+      "models_endpoint": "/models",
+      "supports_structured_output": true
+    },
+    {
+      "id": "anthropic",
+      "label": "Anthropic",
+      "base_url": "https://api.anthropic.com/v1",
+      "allow_base_url_edit": false,
+      "models_endpoint": "/models",
+      "supports_structured_output": false
+    },
+    {
+      "id": "groq",
+      "label": "Groq",
+      "base_url": "https://api.groq.com/openai/v1",
+      "allow_base_url_edit": false,
+      "models_endpoint": "/models",
+      "supports_structured_output": false
+    },
+    {
+      "id": "cerebras",
+      "label": "Cerebras",
+      "base_url": "https://api.cerebras.ai/v1",
+      "allow_base_url_edit": false,
+      "models_endpoint": "/models",
+      "supports_structured_output": true
+    },
+    {
+      "id": "apple_intelligence",
+      "label": "Apple Intelligence",
+      "base_url": "apple-intelligence://local",
+      "allow_base_url_edit": false,
+      "models_endpoint": null,
+      "supports_structured_output": true
+    },
+    {
+      "id": "custom",
+      "label": "Custom",
+      "base_url": "http://localhost:11434/v1",
+      "allow_base_url_edit": true,
+      "models_endpoint": "/models",
+      "supports_structured_output": false
+    }
+  ],
+  "post_process_api_keys": {
+    "anthropic": "",
+    "custom": "",
+    "zai": "",
+    "apple_intelligence": "",
+    "groq": "",
+    "openai": "",
+    "cerebras": "",
+    "openrouter": ""
+  },
+  "post_process_models": {
+    "openrouter": "",
+    "google": "",
+    "anthropic": "",
+    "cerebras": "",
+    "openai": "",
+    "zai": "",
+    "groq": "",
+    "apple_intelligence": "Apple Intelligence",
+    "custom": ""
+  },
+  "post_process_prompts": [
+    {
+      "id": "default_improve_transcriptions",
+      "name": "Improve Transcriptions",
+      "prompt": "Clean this transcript:\n1. Fix spelling, capitalization, and punctuation errors\n2. Convert number words to digits (twenty-five → 25, ten percent → 10%, five dollars → $5)\n3. Replace spoken punctuation with symbols (period → ., comma → ,, question mark → ?)\n4. Remove filler words (um, uh, like as filler)\n5. Keep the language in the original version (if it was french, keep it in french for example)\n\nPreserve exact meaning and word order. Do not paraphrase or reorder content.\n\nReturn only the cleaned transcript.\n\nTranscript:\n${output}"
+    }
+  ],
+  "post_process_selected_prompt_id": null,
+  "openrouter_custom_model": "",
+  "mute_while_recording": false,
+  "append_trailing_space": false,
+  "app_language": "en-TR",
+  "experimental_enabled": false,
+  "lazy_stream_close": false,
+  "keyboard_implementation": "handy_keys",
+  "show_tray_icon": true,
+  "paste_delay_ms": 60,
+  "typing_tool": "auto",
+  "external_script_path": null,
+  "custom_filler_words": null,
+  "whisper_accelerator": "auto",
+  "ort_accelerator": "auto",
+  "extra_recording_buffer_ms": 0,
+  "meeting_auto_summarize": false,
+  "meeting_selected_model": "",
+  "meeting_final_model": "turbo",
+  "meeting_language": "tr",
+  "meeting_summary_templates": [
+    {
+      "id": "general",
+      "name": "General",
+      "prompt": "You write clear, concise meeting notes from a raw transcript. Respond in the SAME LANGUAGE as the transcript (do not translate). Format the answer as clean, well-structured Markdown. Use the section headings in the transcript's language. Only use information present in the transcript; do not invent details.\n\nProduce these Markdown sections:\n## Summary - a short paragraph.\n## Key discussion points - a bullet list of the main topics.\n## Decisions - a bullet list of decisions made (or note none).\n## Action items - a bullet list of follow-ups, with the responsible person if mentioned."
+    },
+    {
+      "id": "standup",
+      "name": "Standup",
+      "prompt": "You summarize a team standup from a raw transcript. Respond in the SAME LANGUAGE as the transcript (do not translate). Format the answer as clean, well-structured Markdown. Use the section headings in the transcript's language. Only use information present in the transcript; do not invent details.\n\nProduce a Markdown section per participant (use their name as a `###` heading), each with:\n- **Yesterday / Done**: what they completed.\n- **Today / Next**: what they will work on.\n- **Blockers**: anything blocking them (or none).\nEnd with a `## Blockers & follow-ups` section aggregating open blockers."
+    },
+    {
+      "id": "one_on_one",
+      "name": "1:1",
+      "prompt": "You write notes for a 1:1 meeting from a raw transcript. Respond in the SAME LANGUAGE as the transcript (do not translate). Format the answer as clean, well-structured Markdown. Use the section headings in the transcript's language. Only use information present in the transcript; do not invent details.\n\nProduce these Markdown sections:\n## Topics discussed - a bullet list.\n## Feedback - feedback exchanged in either direction.\n## Decisions & agreements - what was agreed.\n## Action items - follow-ups with owner and (if mentioned) due date."
+    },
+    {
+      "id": "decisions_actions",
+      "name": "Decisions & Action Items",
+      "prompt": "You extract the decisions and action items from a raw meeting transcript. Respond in the SAME LANGUAGE as the transcript (do not translate). Format the answer as clean, well-structured Markdown. Use the section headings in the transcript's language. Only use information present in the transcript; do not invent details.\n\nProduce these Markdown sections:\n## Decisions - a numbered list of every decision made, each with a one-line rationale if stated.\n## Action items - a table with columns | Task | Owner | Due | so each row is one follow-up. Use '-' where a field is unknown.\nKeep it focused on decisions and actions; omit general discussion."
+    },
+    {
+      "id": "qa",
+      "name": "Q&A",
+      "prompt": "You summarize a Q&A / interview session from a raw transcript. Respond in the SAME LANGUAGE as the transcript (do not translate). Format the answer as clean, well-structured Markdown. Use the section headings in the transcript's language. Only use information present in the transcript; do not invent details.\n\nProduce a `## Q&A` Markdown section listing each question and its answer as:\n**Q:** <the question>\n\n**A:** <the answer, concise>\n\nPreserve the order questions were asked. End with a `## Open questions` section for any questions left unanswered."
+    }
+  ],
+  "meeting_auto_detect": false,
+  "meeting_auto_end": true,
+  "meeting_silence_timeout_secs": 180,
+  "meeting_calendar_names": false,
+  "meeting_export_dir": "",
+  "meeting_auto_end_grace_secs": 60,
+  "meeting_live_mode": "off",
+  "meeting_live_translate_target": "en",
+  "meeting_live_translate_model": "gemini-3.5-live-translate-preview",
+  "meeting_live_transcribe_model": "gemini-3.5-transcribe-live",
+  "meeting_gemini_finalize": false,
+  "meeting_gemini_finalize_model": "gemini-3.5-transcribe",
+  "meeting_gemini_diarize": true,
+  "meeting_gemini_smart": true,
+  "meeting_subtitles": true,
+  "meeting_custom_vocabulary": "",
+  "gemini_api_key": ""
+}

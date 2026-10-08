@@ -68,63 +68,58 @@ const SectionHeader: React.FC<{
   );
 };
 
-const DictationCard: React.FC = () => {
+/** Leading icon tile shared by the two rows of the "now" card. */
+const RowIcon: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-brand-soft text-brand-text">
+    {children}
+  </span>
+);
+
+const DictationRow: React.FC = () => {
   const { t } = useTranslation();
   const binding = useSettingsStore(
     (s) => s.settings?.bindings?.transcribe?.current_binding ?? "",
-  );
-  const modelName = useModelStore(
-    (s) => s.models.find((m) => m.id === s.currentModel)?.name ?? "",
   );
   const keys = binding
     ? formatKeyCombination(binding, "macos").split(" + ")
     : [];
 
   return (
-    <div className="card flex flex-col gap-3 p-4">
-      <div className="flex items-center gap-2">
-        <span className="grid h-7 w-7 place-items-center rounded-lg bg-brand-soft text-brand-text">
-          <Mic className="h-4 w-4" aria-hidden />
-        </span>
-        <h2 className="text-sm font-semibold">{t("home.dictation.title")}</h2>
+    <div className="flex items-center gap-3 px-4 py-3">
+      <RowIcon>
+        <Mic className="h-4 w-4" aria-hidden />
+      </RowIcon>
+      <div className="min-w-0 flex-1">
+        <h2 className="text-[13px] font-semibold">
+          {t("home.dictation.title")}
+        </h2>
+        <p className="truncate text-xs text-sub">
+          {t("home.dictation.description")}
+        </p>
       </div>
-      <p className="text-[13px] leading-snug text-sub">
-        {t("home.dictation.description")}
-      </p>
-      <div className="mt-auto flex flex-wrap items-center justify-between gap-2">
-        {keys.length > 0 ? (
-          <div className="flex gap-1" aria-label={t("home.dictation.shortcut")}>
-            {keys.map((key) => (
-              <kbd
-                key={key}
-                className="min-w-6 rounded-md bg-chip px-1.5 py-0.5 text-center font-sans text-xs font-medium shadow-[inset_0_-1px_0_var(--color-line)]"
-              >
-                {key}
-              </kbd>
-            ))}
-          </div>
-        ) : (
-          <span />
-        )}
+      {keys.length > 0 && (
         <button
           type="button"
           onClick={() => goTo("general")}
-          className="cursor-pointer rounded text-xs font-medium text-brand-text hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-logo-primary/50"
+          title={t("home.dictation.change")}
+          aria-label={`${t("home.dictation.shortcut")}: ${keys.join(" + ")}. ${t("home.dictation.change")}`}
+          className="flex cursor-pointer gap-1 rounded-md p-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-logo-primary/50"
         >
-          {t("home.dictation.change")}
+          {keys.map((key) => (
+            <kbd
+              key={key}
+              className="min-w-6 rounded-[5px] bg-chip px-1.5 py-0.5 text-center font-sans text-xs font-medium shadow-[inset_0_-1px_0_var(--color-line)]"
+            >
+              {key}
+            </kbd>
+          ))}
         </button>
-      </div>
-      {modelName && (
-        <p className="flex items-center gap-1.5 border-t border-line pt-2.5 text-xs text-faint">
-          <span className="h-1.5 w-1.5 rounded-full bg-ok" aria-hidden />
-          {modelName}
-        </p>
       )}
     </div>
   );
 };
 
-const MeetingCard: React.FC = () => {
+const MeetingRow: React.FC = () => {
   const { t } = useTranslation();
   const status = useMeetingStore((s) => s.status);
   const startedAtMs = useMeetingStore((s) => s.startedAtMs);
@@ -139,64 +134,47 @@ const MeetingCard: React.FC = () => {
     return () => clearInterval(timer);
   }, [status]);
 
-  const header = (
-    <div className="flex items-center gap-2">
-      <span className="grid h-7 w-7 place-items-center rounded-lg bg-brand-soft text-brand-text">
-        <Radio className="h-4 w-4" aria-hidden />
-      </span>
-      <h2 className="text-sm font-semibold">{t("home.meeting.title")}</h2>
-    </div>
-  );
-
+  let detail: React.ReactNode;
+  let action: React.ReactNode;
   if (status === "running") {
     const elapsed = startedAtMs ? (now - startedAtMs) / 1000 : 0;
-    return (
-      <div className="card flex flex-col gap-3 p-4">
-        {header}
-        <div className="flex items-center gap-2">
-          <span className="rec-dot" aria-hidden />
-          <span className="text-[13px] font-medium text-rec">
-            {t("home.meeting.recording")}
-          </span>
-          <span className="ms-auto text-[13px] font-semibold tabular-nums">
-            {formatElapsed(elapsed)}
-          </span>
-        </div>
-        <p className="truncate font-serif text-base">
+    detail = (
+      <p className="flex min-w-0 items-center gap-1.5 text-xs">
+        <span className="rec-dot shrink-0" aria-hidden />
+        <span className="font-medium text-rec tabular-nums">
+          {formatElapsed(elapsed)}
+        </span>
+        <span className="truncate text-sub">
           {sessionTitle || t("home.meeting.untitled")}
-        </p>
-        <Button
-          variant="secondary"
-          className="mt-auto self-start"
-          onClick={() => goTo("meeting")}
-        >
-          {t("home.meeting.open")}
-        </Button>
-      </div>
+        </span>
+      </p>
     );
-  }
-
-  if (status === "finalizing") {
-    return (
-      <div className="card flex flex-col gap-3 p-4">
-        {header}
-        <p className="flex items-center gap-2 text-[13px] text-sub">
-          <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-          {t("home.meeting.finalizing")}
-        </p>
-      </div>
+    action = (
+      <Button variant="secondary" size="sm" onClick={() => goTo("meeting")}>
+        {t("home.meeting.open")}
+      </Button>
     );
-  }
-
-  return (
-    <div className="card flex flex-col gap-3 p-4">
-      {header}
-      <p className="text-[13px] leading-snug text-sub">
+  } else if (status === "finalizing") {
+    detail = (
+      <p className="flex items-center gap-1.5 text-xs text-sub">
+        <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+        {t("home.meeting.finalizing")}
+      </p>
+    );
+  } else {
+    detail = (
+      <p className="truncate text-xs text-sub">
         {t("home.meeting.description")}
       </p>
-      <div className="mt-auto flex flex-wrap gap-2">
+    );
+    action = (
+      <div className="flex shrink-0 gap-1.5">
+        <Button variant="ghost" size="sm" onClick={() => goTo("meeting")}>
+          {t("home.meeting.import")}
+        </Button>
         <Button
           variant="primary"
+          size="sm"
           disabled={busy}
           onClick={() => {
             void start();
@@ -205,10 +183,20 @@ const MeetingCard: React.FC = () => {
         >
           {t("home.meeting.start")}
         </Button>
-        <Button variant="ghost" onClick={() => goTo("meeting")}>
-          {t("home.meeting.import")}
-        </Button>
       </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-3 px-4 py-3">
+      <RowIcon>
+        <Radio className="h-4 w-4" aria-hidden />
+      </RowIcon>
+      <div className="min-w-0 flex-1">
+        <h2 className="text-[13px] font-semibold">{t("home.meeting.title")}</h2>
+        {detail}
+      </div>
+      {action}
     </div>
   );
 };
@@ -254,23 +242,18 @@ const RecentMeetings: React.FC = () => {
                     requestOpen(meeting.id);
                     goTo("meeting");
                   }}
-                  className="grid w-full cursor-pointer grid-cols-[1fr_auto] gap-x-3 px-3.5 py-2.5 text-start first:rounded-t-[10px] last:rounded-b-[10px] hover:bg-chip/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-logo-primary/50"
+                  className="grid w-full cursor-pointer grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 px-4 py-2.5 text-start first:rounded-t-[10px] last:rounded-b-[10px] hover:bg-chip/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-logo-primary/50"
                 >
                   <span className="truncate text-[13px] font-medium">
                     {meeting.title || t("home.meeting.untitled")}
                   </span>
-                  <span className="row-span-2 self-center text-end text-xs text-faint tabular-nums">
+                  <span className="self-center text-end text-xs whitespace-nowrap text-faint tabular-nums">
                     {live ? (
                       <span className="rounded-full bg-rec/10 px-2 py-0.5 font-semibold text-rec">
                         {t("home.meeting.live")}
                       </span>
                     ) : (
-                      <>
-                        {relativeDay(meeting.started_at)}{" "}
-                        {formatMeetingTime(meeting.started_at, i18n.language)}
-                        <br />
-                        {formatDuration(meeting.duration_ms, t)}
-                      </>
+                      `${relativeDay(meeting.started_at)} ${formatMeetingTime(meeting.started_at, i18n.language)} · ${formatDuration(meeting.duration_ms, t)}`
                     )}
                   </span>
                   <span className="truncate text-xs text-sub">
@@ -319,9 +302,9 @@ const RecentDictations: React.FC = () => {
           {entries.map((entry) => (
             <li
               key={entry.id}
-              className="grid grid-cols-[1fr_auto] gap-3 px-3.5 py-2.5"
+              className="grid grid-cols-[1fr_auto] gap-3 px-4 py-2.5"
             >
-              <p className="line-clamp-2 text-[13px]">
+              <p className="line-clamp-2 text-[13px] leading-snug">
                 {entry.post_processed_text || entry.transcription_text}
               </p>
               <span className="text-xs whitespace-nowrap text-faint tabular-nums">
@@ -343,17 +326,17 @@ export const HomePage: React.FC = () => {
   const hour = new Date().getHours();
 
   return (
-    <div className="w-full max-w-[640px] space-y-6 pt-2">
+    <div className="w-full max-w-3xl space-y-7">
       <header>
-        <h1 className="text-xl font-bold tracking-tight">
+        <h1 className="font-serif text-[26px] leading-tight font-semibold tracking-tight">
           {t(greetingKey(hour))}
         </h1>
-        <p className="mt-0.5 text-[13px] text-sub">{t("home.subtitle")}</p>
+        <p className="mt-1 text-[13px] text-sub">{t("home.subtitle")}</p>
       </header>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <MeetingCard />
-        <DictationCard />
-      </div>
+      <section className="card divide-y divide-line">
+        <MeetingRow />
+        <DictationRow />
+      </section>
       <RecentMeetings />
       <RecentDictations />
     </div>

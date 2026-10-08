@@ -14,7 +14,7 @@
     "stopDictation": "Dikteyi Durdur",
     "startMeeting": "Toplantıyı Başlat",
     "stopMeeting": "Toplantıyı Durdur",
-    "recordingIndicator": "Fisilti — Kaydediliyor…",
+    "recordingIndicator": "Fısıltı — Kaydediliyor…",
     "meetings": "Toplantılar..."
   },
   "sidebar": {
@@ -113,7 +113,7 @@
     },
     "permissions": {
       "title": "İzinler Gerekli",
-      "description": "Fisilti'nin düzgün çalışabilmesi için birkaç izne ihtiyacı var.",
+      "description": "Fısıltı'nin düzgün çalışabilmesi için birkaç izne ihtiyacı var.",
       "microphone": {
         "title": "Mikrofon Erişimi",
         "description": "Sesinizi transkripsiyon için alabilmek için gereklidir."
@@ -177,7 +177,7 @@
     "general": {
       "title": "Genel",
       "shortcut": {
-        "title": "Fisilti Kısayolları",
+        "title": "Fısıltı kısayolları",
         "description": "Sesle yazma kaydını başlatmak için klavye kısayollarını yapılandırın",
         "loading": "Kısayollar yükleniyor...",
         "none": "Kısayol yapılandırılmadı",
@@ -185,20 +185,20 @@
         "pressKeys": "Tuşlara basın...",
         "bindings": {
           "transcribe": {
-            "name": "Transkripsiyon Kısayolu",
+            "name": "Transkripsiyon kısayolu",
             "description": "Sesinizi kaydetmek ve metne dönüştürmek için klavye kısayolu."
           },
           "cancel": {
-            "name": "İptal Kısayolu",
+            "name": "İptal kısayolu",
             "description": "Mevcut kaydı iptal etmek için klavye kısayolu."
           },
           "transcribe_with_post_process": {
-            "name": "Son İşlem Kısayolu",
+            "name": "Son işlem kısayolu",
             "description": "İsteğe bağlı: Transkripsiyonunuza her zaman AI son işleme uygulayan özel bir kısayol tuşu."
           },
           "toggle_meeting": {
-            "name": "Meeting Shortcut",
-            "description": "Optional: A global hotkey to start or stop a meeting recording without opening the window."
+            "name": "Toplantı kısayolu",
+            "description": "İsteğe bağlı: pencereyi açmadan toplantı kaydını başlatan veya durduran genel kısayol."
           }
         },
         "errors": {
@@ -217,7 +217,7 @@
         "auto": "Otomatik"
       },
       "pushToTalk": {
-        "label": "Bas Konuş",
+        "label": "Bas konuş",
         "description": "Kaydetmek için basılı tutun, durdurmak için bırakın"
       },
       "groups": {
@@ -233,7 +233,7 @@
       }
     },
     "models": {
-      "title": "Transkripsiyon Modelleri",
+      "title": "Transkripsiyon modelleri",
       "description": "Bir transkripsiyon modeli seçin veya ek modeller indirin. Farklı modeller değişen doğruluk ve hız seviyeleri sunar.",
       "yourModels": "İndirilen modeller",
       "availableModels": "İndirilebilir",
@@ -306,31 +306,31 @@
         "loading": "Yükleniyor..."
       },
       "audioFeedback": {
-        "label": "Sesli Geri Bildirim",
+        "label": "Sesli geri bildirim",
         "description": "Kayıt başladığında ve bittiğinde ses çalar"
       },
       "outputDevice": {
-        "title": "Çıkış Cihazı",
+        "title": "Çıkış cihazı",
         "description": "Geri bildirim sesleri için ses çıkış cihazını seçin",
         "placeholder": "Çıkış cihazı seçin...",
         "loading": "Yükleniyor..."
       },
       "volume": {
-        "title": "Ses Seviyesi",
+        "title": "Ses seviyesi",
         "description": "Sesli geri bildirimlerin ses seviyesini ayarlayın"
       },
       "soundTheme": {
-        "label": "Ses Teması",
+        "label": "Ses teması",
         "description": "Kayıt başlangıç ve bitişi için sesli geri bildirim temasını seçin",
         "custom": "Özel",
         "preview": "Ses temasını dinle (önce başlangıç, sonra bitiş sesi çalar)"
       },
       "alwaysOnMicrophone": {
-        "label": "Mikrofon Her Zaman Açık",
+        "label": "Mikrofon her zaman açık",
         "description": "Daha hızlı yanıt için mikrofonu aktif tutar"
       },
       "clamshellMicrophone": {
-        "title": "Kapalı Kapak Mikrofonu",
+        "title": "Kapalı kapak mikrofonu",
         "description": "Dizüstü bilgisayar kapağı kapalıyken kullanılacak mikrofon"
       }
     },
@@ -345,7 +345,7 @@
         "developer": "Geliştirici"
       },
       "experimentalToggle": {
-        "label": "Deneysel Özellikler",
+        "label": "Deneysel özellikler",
         "description": "Hala geliştirme aşamasında olan deneysel özellikleri etkinleştir."
       },
       "lazyStreamClose": {
@@ -354,28 +354,28 @@
       },
       "acceleration": {
         "whisper": {
-          "title": "Whisper Hızlandırma",
+          "title": "Whisper hızlandırma",
           "description": "Whisper modelleri için donanım hızlandırma. Otomatik mod, mevcutsa GPU kullanır (macOS'ta Metal, Windows/Linux'ta Vulkan)."
         },
         "ort": {
-          "title": "ONNX Hızlandırma",
+          "title": "ONNX hızlandırma",
           "description": "ONNX modelleri için donanım hızlandırma (Parakeet, Canary, Moonshine vb.). Windows'ta DirectML deneyseldir. Modeller transkripsiyon yapamayabilir."
         }
       },
       "startHidden": {
-        "label": "Gizli Başlat",
+        "label": "Gizli başlat",
         "description": "Pencereyi açmadan sistem tepsisinde başlatır."
       },
       "autostart": {
-        "label": "Başlangıçta Çalıştır",
-        "description": "Bilgisayara giriş yaptığınızda Fisilti otomatik olarak başlatılır."
+        "label": "Başlangıçta çalıştır",
+        "description": "Bilgisayara giriş yaptığınızda Fısıltı otomatik olarak başlatılır."
       },
       "showTrayIcon": {
         "label": "Tepsi simgesini göster",
-        "description": "Fisilti simgesini sistem tepsisinde göster."
+        "description": "Fısıltı simgesini sistem tepsisinde göster."
       },
       "overlay": {
-        "title": "Overlay Konumu",
+        "title": "Overlay konumu",
         "description": "Kayıt ve transkripsiyon sırasında görsel geri bildirim kaplamasını gösterir. Linux'ta 'Yok' önerilir.",
         "options": {
           "none": "Yok",
@@ -384,7 +384,7 @@
         }
       },
       "pasteMethod": {
-        "title": "Yapıştırma Yöntemi",
+        "title": "Yapıştırma yöntemi",
         "description": "Metnin nasıl ekleneceğini seçin. Doğrudan: sistem girişiyle yazmayı simüle eder. Yok: yapıştırmayı atlar, sadece geçmişi/panoyu günceller.",
         "options": {
           "clipboard": "Pano ({{modifier}}+V)",
@@ -397,14 +397,14 @@
         "externalScriptPlaceholder": "/dosya/yolu/betik.sh"
       },
       "typingTool": {
-        "title": "Yazma Aracı",
+        "title": "Yazma aracı",
         "description": "Doğrudan yapıştırma yöntemi için hangi Linux yazma aracının kullanılacağını seçin. Auto, sisteminiz için mevcut en iyi aracı otomatik olarak algılar ve kullanır.",
         "options": {
           "auto": "Auto (Önerilen)"
         }
       },
       "clipboardHandling": {
-        "title": "Pano Yönetimi",
+        "title": "Pano yönetimi",
         "description": "Panoyu Değiştirme, transkripsiyon sonrası mevcut pano içeriğini korur. Panoya Kopyala ise yapıştırma işleminden sonra transkripsiyon sonucunu panoda bırakır.",
         "options": {
           "dontModify": "Panoyu Değiştirme",
@@ -412,7 +412,7 @@
         }
       },
       "autoSubmit": {
-        "title": "Otomatik Gönder",
+        "title": "Otomatik gönder",
         "description": "Metin eklendikten sonra seçilen tuş kombinasyonunu otomatik olarak gönderir. macOS'ta Cmd+Enter, Windows/Linux'ta Super+Enter geçerlidir.",
         "options": {
           "off": "Kapalı",
@@ -423,12 +423,12 @@
         }
       },
       "translateToEnglish": {
-        "label": "İngilizceye Çevir",
+        "label": "İngilizceye çevir",
         "description": "Transkripsiyon sırasında diğer dillerden İngilizceye otomatik olarak çevirir.",
         "descriptionUnsupported": "Çeviri {{model}} modeli tarafından desteklenmiyor."
       },
       "modelUnload": {
-        "title": "Modeli Boşalt",
+        "title": "Modeli boşalt",
         "description": "Belirtilen süre boyunca kullanılmadığında modelin GPU/CPU belleğini otomatik olarak serbest bırakır.",
         "options": {
           "never": "Asla",
@@ -442,7 +442,7 @@
         }
       },
       "customWords": {
-        "title": "Özel Kelimeler",
+        "title": "Özel kelimeler",
         "description": "Transkripsiyon sırasında sıkça yanlış duyulan veya yanlış yazılan kelimeleri ekleyin. Sistem, benzer sesli kelimeleri listenize göre otomatik olarak düzeltir.",
         "placeholder": "Kelime ekle",
         "add": "Ekle",
@@ -451,12 +451,12 @@
       }
     },
     "postProcessing": {
-      "title": "AI Düzenleme",
+      "title": "AI düzenleme",
       "hotkey": {
-        "title": "Kısayol Tuşu"
+        "title": "Kısayol tuşu"
       },
       "api": {
-        "title": "API (OpenAI Uyumlu)",
+        "title": "API (OpenAI uyumlu)",
         "provider": {
           "title": "Sağlayıcı",
           "description": "OpenAI uyumlu bir sağlayıcı seçin."
@@ -473,7 +473,7 @@
           "placeholder": "https://api.openai.com/v1"
         },
         "apiKey": {
-          "title": "API Anahtarı",
+          "title": "API anahtarı",
           "description": "Seçili sağlayıcı için API anahtarı.",
           "placeholder": "sk-...",
           "managedOnModels": "Modeller sayfasındaki anahtarı kullanır.",
@@ -492,9 +492,9 @@
         }
       },
       "prompts": {
-        "title": "Prompt",
+        "title": "İstem",
         "selectedPrompt": {
-          "title": "Seçili Prompt",
+          "title": "Seçili prompt",
           "description": "Transkripsiyonları iyileştirmek için bir şablon seçin veya yeni bir tane oluşturun. Yakalanan transkripte referans vermek için prompt metni içinde ${output} kullanın."
         },
         "noPrompts": "Kullanılabilir prompt yok",
@@ -548,30 +548,30 @@
       "openFolderError": "Kayıtlar klasörü açılamadı"
     },
     "debug": {
-      "title": "Hata Ayıklama",
+      "title": "Hata ayıklama",
       "logDirectory": {
-        "title": "Log Dizini",
+        "title": "Log dizini",
         "description": "Log dosyalarının saklandığı konum"
       },
       "logLevel": {
-        "title": "Log Seviyesi",
+        "title": "Log seviyesi",
         "description": "Loglamanın ayrıntı düzeyini ayarla"
       },
       "updateChecks": {
-        "label": "Güncellemeleri Kontrol Et",
-        "description": "Fisilti için yeni sürümleri otomatik olarak kontrol eder"
+        "label": "Güncellemeleri kontrol et",
+        "description": "Fısıltı için yeni sürümleri otomatik olarak kontrol eder"
       },
       "wordCorrectionThreshold": {
-        "title": "Kelime Düzeltme Eşiği",
+        "title": "Kelime düzeltme eşiği",
         "description": "Özel kelime düzeltmeleri için hassasiyet"
       },
       "historyLimit": {
-        "title": "Geçmiş Limiti",
+        "title": "Geçmiş limiti",
         "description": "Saklanacak maksimum geçmiş kaydı sayısı",
         "entries": "kayıt"
       },
       "recordingRetention": {
-        "title": "Kayıtları Otomatik Sil",
+        "title": "Kayıtları otomatik sil",
         "description": "Alan tasarrufu için eski kayıtları otomatik olarak siler",
         "never": "Asla",
         "preserveLimit": "Son {{count}} kaydı tut",
@@ -581,19 +581,19 @@
         "placeholder": "Saklama süresi seçin..."
       },
       "postProcessingToggle": {
-        "label": "Son İşlem",
+        "label": "Son işlem",
         "description": "Transkripsiyon sonrası yapay zekâ destekli metin iyileştirmeyi etkinleştirir"
       },
       "muteWhileRecording": {
-        "label": "Kayıt Sırasında Sessize Al",
+        "label": "Kayıt sırasında sessize al",
         "description": "Kayıt sırasında sistem sesini kapatır"
       },
       "appendTrailingSpace": {
-        "label": "Sonuna Boşluk Ekle",
+        "label": "Sonuna boşluk ekle",
         "description": "Yapıştırılan transkripsiyondan sonra boşluk ekler"
       },
       "keyboardImplementation": {
-        "title": "Klavye Uygulaması",
+        "title": "Klavye uygulaması",
         "description": "Klavye kısayolları için kullanılacak altyapıyı seçin.",
         "bindingsReset": "Klavye kısayolları uyumsuzdu ve varsayılan ayarlara sıfırlandı"
       },
@@ -615,20 +615,20 @@
       "title": "Hakkında",
       "version": {
         "title": "Sürüm",
-        "description": "Fisilti'nin mevcut sürümü"
+        "description": "Fısıltı'nin mevcut sürümü"
       },
       "appDataDirectory": {
-        "title": "Uygulama Veri Dizini",
-        "description": "Fisilti'nin verilerini sakladığı konum"
+        "title": "Uygulama veri dizini",
+        "description": "Fısıltı'nin verilerini sakladığı konum"
       },
       "sourceCode": {
-        "title": "Kaynak Kodu",
+        "title": "Kaynak kodu",
         "description": "Kaynak kodunu görüntüle ve katkıda bulun",
         "button": "GitHub'da Görüntüle"
       },
       "supportDevelopment": {
-        "title": "Geliştirmeyi Destekle",
-        "description": "Fisilti'yi geliştirmeye devam etmemize yardımcı olun",
+        "title": "Geliştirmeyi destekle",
+        "description": "Fısıltı'yi geliştirmeye devam etmemize yardımcı olun",
         "button": "Bağış Yap"
       },
       "acknowledgments": {
@@ -636,7 +636,7 @@
         "whisper": {
           "title": "Whisper.cpp",
           "description": "OpenAI'nin Whisper otomatik konuşma tanıma modelinin yüksek performanslı çıkarımı",
-          "details": "Fisilti, hızlı ve yerel konuşmadan metne dönüştürme için Whisper.cpp kullanır. Georgi Gerganov ve katkıda bulunanların harika çalışmaları için teşekkür ederiz."
+          "details": "Fısıltı, hızlı ve yerel konuşmadan metne dönüştürme için Whisper.cpp kullanır. Georgi Gerganov ve katkıda bulunanların harika çalışmaları için teşekkür ederiz."
         }
       }
     },
@@ -693,7 +693,7 @@
   },
   "accessibility": {
     "permissionsRequired": "Erişilebilirlik İzinleri Gerekli",
-    "permissionsDescription": "Fisilti, transkribe edilen metni yazabilmek için erişilebilirlik izinlerine ihtiyaç duyar.",
+    "permissionsDescription": "Fısıltı, transkribe edilen metni yazabilmek için erişilebilirlik izinlerine ihtiyaç duyar.",
     "openSettings": "Sistem Ayarlarını Aç",
     "dismiss": "Yoksay"
   },
@@ -731,8 +731,8 @@
     }
   },
   "appLanguage": {
-    "title": "Uygulama Dili",
-    "description": "Fisilti arayüzünün dilini değiştirin"
+    "title": "Uygulama dili",
+    "description": "Fısıltı arayüzünün dilini değiştirin"
   },
   "overlay": {
     "transcribing": "Transkribe ediliyor...",
@@ -740,39 +740,39 @@
     "cancel": "Kaydı iptal et"
   },
   "meeting": {
-    "title": "Meeting",
-    "recording": "Recording",
-    "startMeeting": "Start Meeting",
-    "stopMeeting": "Stop Meeting",
-    "transcript": "Transcript",
-    "transcriptEmpty": "No transcript yet. Start a meeting to capture live audio.",
+    "title": "Toplantı",
+    "recording": "Kayıtta",
+    "startMeeting": "Toplantı başlat",
+    "stopMeeting": "Bitir",
+    "transcript": "Transkript",
+    "transcriptEmpty": "Henüz transkript yok. Canlı sesi yakalamak için bir toplantı başlat.",
     "transcriptionFailed": "Yazıya dökme başarısız oldu, bu yüzden bu toplantının metni yok. Ses kaydedildi ve kayıt korundu. Sebep: {{error}}",
     "liveTranslateTargetLabel": "Şu dile çevir",
     "liveTranslateTargetDescription": "Canlı konuşmanın çevrileceği dil.",
-    "listening": "Listening...",
+    "listening": "Dinleniyor…",
     "cloudLivePreviewOff": "Kayıt sürüyor… bulut model: metin, toplantıyı durdurduğunuzda oluşturulur.",
-    "notes": "Notes",
-    "summarize": "Summarize",
-    "summarizing": "Summarizing...",
-    "copyTranscript": "Copy transcript",
-    "copyNotes": "Copy notes",
-    "copied": "Copied!",
-    "pastMeetings": "Past meetings",
-    "pastMeetingsEmpty": "No past meetings yet",
-    "pastMeetingsError": "Failed to load past meetings",
-    "hasSummary": "Has summary",
-    "untitledMeeting": "Untitled meeting",
-    "delete": "Delete",
-    "confirmDelete": "Delete this meeting?",
-    "confirm": "Confirm",
-    "cancel": "Cancel",
-    "deleteError": "Failed to delete meeting",
-    "back": "Back",
-    "loading": "Loading...",
-    "loadError": "Failed to load meeting",
-    "summary": "Summary",
-    "copySummary": "Copy summary",
-    "noSummary": "No summary for this meeting.",
+    "notes": "Notlar",
+    "summarize": "Özetle",
+    "summarizing": "Özetleniyor…",
+    "copyTranscript": "Transkripti kopyala",
+    "copyNotes": "Notları kopyala",
+    "copied": "Kopyalandı",
+    "pastMeetings": "Geçmiş toplantılar",
+    "pastMeetingsEmpty": "Henüz geçmiş toplantı yok",
+    "pastMeetingsError": "Geçmiş toplantılar yüklenemedi",
+    "hasSummary": "Özeti var",
+    "untitledMeeting": "Adsız toplantı",
+    "delete": "Sil",
+    "confirmDelete": "Bu toplantı silinsin mi?",
+    "confirm": "Onayla",
+    "cancel": "Vazgeç",
+    "deleteError": "Toplantı silinemedi",
+    "back": "Geri",
+    "loading": "Yükleniyor…",
+    "loadError": "Toplantı yüklenemedi",
+    "summary": "Özet",
+    "copySummary": "Özeti kopyala",
+    "noSummary": "Bu toplantının özeti yok.",
     "signal": "Sinyal",
     "speakerYou": "Sen",
     "speakerOthers": "Karşı taraf",
@@ -781,37 +781,37 @@
     "autoSummarize": "Toplantı bitince otomatik özetle",
     "audio": "Ses",
     "noAudio": "Bu toplantı için ses kaydı yok.",
-    "myNotes": "My notes",
-    "myNotesPlaceholder": "Jot down your own notes here. They'll be saved automatically and used as context when generating the summary.",
-    "notesSaved": "Saved",
-    "notesSaving": "Saving…",
-    "copyMyNotes": "Copy my notes",
-    "template": "Template",
-    "customPrompt": "Custom prompt",
-    "customPromptPlaceholder": "Optional: describe how you want the notes generated…",
-    "regenerate": "Regenerate",
-    "regenerating": "Regenerating…",
-    "generateFromNotes": "Generate notes from my notes + transcript",
-    "search": "Search",
-    "searchPlaceholder": "Search meetings…",
-    "searchNoResults": "No meetings match your search.",
-    "rename": "Rename",
-    "renameTitle": "Rename meeting",
-    "save": "Save",
-    "export": "Export",
-    "exporting": "Exporting…",
-    "exportError": "Failed to export meeting.",
-    "recoverTitle": "We found an interrupted meeting",
-    "recoverDescription": "It looks like a meeting didn't finish cleanly. Recover it to restore the transcript.",
-    "recover": "Recover",
-    "recovering": "Recovering…",
-    "discard": "Discard",
-    "recoverError": "Failed to recover the meeting.",
-    "dismiss": "Dismiss",
-    "onDeviceBadge": "100% on-device transcription",
-    "summaryLocal": "Summary runs locally",
-    "summaryCloud": "Summary uses {{provider}} — leaves your device",
-    "summaryNoProvider": "No summary provider configured",
+    "myNotes": "Notlarım",
+    "myNotesPlaceholder": "Notlarını buraya yaz. Kendiliğinden kaydedilir ve özet çıkarılırken bağlam olarak kullanılır.",
+    "notesSaved": "Kaydedildi",
+    "notesSaving": "Kaydediliyor…",
+    "copyMyNotes": "Notlarımı kopyala",
+    "template": "Şablon",
+    "customPrompt": "Özel istem",
+    "customPromptPlaceholder": "İsteğe bağlı: notların nasıl çıkarılmasını istediğini yaz…",
+    "regenerate": "Yeniden oluştur",
+    "regenerating": "Yeniden oluşturuluyor…",
+    "generateFromNotes": "Notlarımdan ve transkriptten özet çıkar",
+    "search": "Ara",
+    "searchPlaceholder": "Toplantılarda ara…",
+    "searchNoResults": "Aramanla eşleşen toplantı yok.",
+    "rename": "Yeniden adlandır",
+    "renameTitle": "Toplantıyı yeniden adlandır",
+    "save": "Kaydet",
+    "export": "Dışa aktar",
+    "exporting": "Dışa aktarılıyor…",
+    "exportError": "Toplantı dışa aktarılamadı.",
+    "recoverTitle": "Yarım kalmış bir toplantı bulundu",
+    "recoverDescription": "Bir toplantı düzgün bitmemiş. Transkripti geri getirmek için kurtar.",
+    "recover": "Kurtar",
+    "recovering": "Kurtarılıyor…",
+    "discard": "Sil",
+    "recoverError": "Toplantı kurtarılamadı.",
+    "dismiss": "Kapat",
+    "onDeviceBadge": "Tamamen cihazında yazıya dökülür",
+    "summaryLocal": "Özet cihazında çıkarılır",
+    "summaryCloud": "Özet {{provider}} ile çıkarılır, cihazından çıkar",
+    "summaryNoProvider": "Özet için bir sağlayıcı ayarlanmamış",
     "autoDetectSection": "Otomatik toplantı algılama",
     "autoDetectToggle": "Toplantıları algıla ve transkripsiyon başlatmayı öner",
     "autoDetectDescription": "Bir toplantı uygulaması (Zoom, Teams, Meet…) mikrofonu kullanmaya başladığında transkripsiyonu başlatmak için bir istem gösterilir.",
@@ -823,22 +823,22 @@
     "autoEndGraceDescription": "Toplantı kendiliğinden bitmeden önce bu sorunun yanıt için ne kadar bekleyeceği.",
     "durationMinutes": "{{count}} dk",
     "durationSeconds": "{{count}} sn",
-    "tabSession": "Session",
-    "tabHistory": "History",
-    "tabSettings": "Settings",
-    "idleTitle": "Ready when you are",
-    "idleDescription": "Start a meeting to capture a live transcript and notes. Audio never leaves your device.",
-    "recentMeetings": "Recent meetings",
-    "viewAllMeetings": "View all",
-    "lastSession": "Last session",
-    "newMeeting": "New meeting",
-    "summaryOptions": "Summary options",
-    "generateSummary": "Generate summary",
-    "generateSummaryHint": "Your notes and the transcript are used as input.",
-    "today": "Today",
-    "yesterday": "Yesterday",
-    "autoSummarizeDescription": "Generate a summary automatically as soon as the meeting ends.",
-    "generalSection": "General",
+    "tabSession": "Oturum",
+    "tabHistory": "Geçmiş",
+    "tabSettings": "Ayarlar",
+    "idleTitle": "Hazır olduğunda başla",
+    "idleDescription": "Canlı transkript ve notlar için bir toplantı başlat.",
+    "recentMeetings": "Son toplantılar",
+    "viewAllMeetings": "Tümü",
+    "lastSession": "Son oturum",
+    "newMeeting": "Yeni toplantı",
+    "summaryOptions": "Özet seçenekleri",
+    "generateSummary": "Özet çıkar",
+    "generateSummaryHint": "Notların ve transkript birlikte kullanılır.",
+    "today": "Bugün",
+    "yesterday": "Dün",
+    "autoSummarizeDescription": "Toplantı biter bitmez özet kendiliğinden çıkarılsın.",
+    "generalSection": "Genel",
     "calendarNamesToggle": "Toplantıları takvimden adlandır",
     "calendarNamesDescription": "Yeni oturumlar, o sırada devam eden takvim etkinliğinin adını alır. Etkinleştirince takvim erişimi istenir.",
     "calendarAccessDenied": "Takvim erişimi reddedildi. Sistem Ayarları → Gizlilik ve Güvenlik → Takvimler bölümünden izin verebilirsiniz.",
@@ -962,15 +962,15 @@
     "noDictations": "Henüz dikte yok. Herhangi bir uygulamada kısayolu basılı tutup konuş.",
     "dictation": {
       "title": "Dikte",
-      "description": "Herhangi bir uygulamada kısayolu basılı tut, konuş, bırak. Yazı imlecin olduğu yere gelir.",
+      "description": "Herhangi bir uygulamada kısayolu basılı tut ve konuş.",
       "shortcut": "Dikte kısayolu",
       "change": "Kısayolu değiştir"
     },
     "meeting": {
       "title": "Toplantı",
-      "description": "Mikrofonunu ve görüşme sesini kaydeder, notlarını transkriptin yanında tutar.",
-      "start": "Toplantı başlat",
-      "import": "Kayıt içe aktar",
+      "description": "Mikrofonunu ve görüşmeyi kaydeder, notların transkriptin yanında durur.",
+      "start": "Başlat",
+      "import": "İçe aktar",
       "recording": "Kayıtta",
       "finalizing": "Toplantı kaydediliyor…",
       "open": "Toplantıya git",

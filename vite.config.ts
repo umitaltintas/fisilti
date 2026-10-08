@@ -7,7 +7,22 @@ const host = process.env.TAURI_DEV_HOST;
 
 // https://vitejs.dev/config/
 export default defineConfig(async () => ({
-  plugins: [react(), tailwindcss()],
+  plugins: [
+    react(),
+    tailwindcss(),
+    // `bun run dev:preview`: load a fake Tauri backend before the app so the
+    // main window can be designed in a plain browser. Never in real builds.
+    process.env.VITE_TAURI_MOCK === "1" && {
+      name: "fisilti-tauri-mock",
+      transformIndexHtml: () => [
+        {
+          tag: "script",
+          attrs: { type: "module", src: "/src/dev/tauriMock.ts" },
+          injectTo: "head-prepend" as const,
+        },
+      ],
+    },
+  ],
 
   // Path aliases
   resolve: {

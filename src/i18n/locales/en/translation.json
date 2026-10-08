@@ -177,7 +177,7 @@
     "general": {
       "title": "General",
       "shortcut": {
-        "title": "Fisilti Shortcuts",
+        "title": "Fisilti shortcuts",
         "description": "Configure keyboard shortcuts to trigger speech-to-text recording",
         "loading": "Loading shortcuts...",
         "none": "No shortcuts configured",
@@ -185,19 +185,19 @@
         "pressKeys": "Press keys...",
         "bindings": {
           "transcribe": {
-            "name": "Transcribe Shortcut",
+            "name": "Transcribe shortcut",
             "description": "The keyboard shortcut to record and transcribe your voice."
           },
           "cancel": {
-            "name": "Cancel Shortcut",
+            "name": "Cancel shortcut",
             "description": "The keyboard shortcut to cancel the current recording."
           },
           "transcribe_with_post_process": {
-            "name": "Post-Processing Hotkey",
+            "name": "Post-processing hotkey",
             "description": "Optional: A dedicated hotkey that always applies AI post-processing to your transcription."
           },
           "toggle_meeting": {
-            "name": "Meeting Shortcut",
+            "name": "Meeting shortcut",
             "description": "Optional: A global hotkey to start or stop a meeting recording without opening the window."
           }
         },
@@ -217,7 +217,7 @@
         "auto": "Auto"
       },
       "pushToTalk": {
-        "label": "Push To Talk",
+        "label": "Push to talk",
         "description": "Hold to record, release to stop"
       },
       "groups": {
@@ -233,7 +233,7 @@
       }
     },
     "models": {
-      "title": "Transcription Models",
+      "title": "Transcription models",
       "description": "Select a transcription model or download additional models. Different models offer varying levels of accuracy and speed.",
       "yourModels": "Downloaded Models",
       "availableModels": "Available to Download",
@@ -306,11 +306,11 @@
         "loading": "Loading..."
       },
       "audioFeedback": {
-        "label": "Audio Feedback",
+        "label": "Audio feedback",
         "description": "Play sound when recording starts and stops"
       },
       "outputDevice": {
-        "title": "Output Device",
+        "title": "Output device",
         "description": "Select your preferred audio output device for feedback sounds",
         "placeholder": "Select output device...",
         "loading": "Loading..."
@@ -320,17 +320,17 @@
         "description": "Adjust the volume of audio feedback sounds"
       },
       "soundTheme": {
-        "label": "Sound Theme",
+        "label": "Sound theme",
         "description": "Choose a sound theme for recording start and stop feedback",
         "custom": "Custom",
         "preview": "Preview sound theme (plays start, then stop)"
       },
       "alwaysOnMicrophone": {
-        "label": "Always-On Microphone",
+        "label": "Always-on microphone",
         "description": "Keep microphone active for faster response"
       },
       "clamshellMicrophone": {
-        "title": "Clamshell Microphone",
+        "title": "Clamshell microphone",
         "description": "Microphone to use when laptop lid is closed"
       }
     },
@@ -345,37 +345,37 @@
         "developer": "Developer"
       },
       "experimentalToggle": {
-        "label": "Experimental Features",
+        "label": "Experimental features",
         "description": "Enable experimental features that are still in development."
       },
       "lazyStreamClose": {
-        "label": "Keep Mic Open Between Transcriptions",
+        "label": "Keep mic open between transcriptions",
         "description": "Keeps the microphone stream open for 30 seconds after recording stops, reducing latency for back-to-back transcriptions. May degrade Bluetooth audio quality while active."
       },
       "acceleration": {
         "whisper": {
-          "title": "Whisper Acceleration",
+          "title": "Whisper acceleration",
           "description": "Hardware acceleration for Whisper models. Auto uses GPU if available (Metal on macOS, Vulkan on Windows/Linux)."
         },
         "ort": {
-          "title": "ONNX Acceleration",
+          "title": "ONNX acceleration",
           "description": "Hardware acceleration for ONNX models (Parakeet, Canary, Moonshine, etc.). DirectML on Windows is experimental. Models may fail to transcribe."
         }
       },
       "startHidden": {
-        "label": "Start Hidden",
+        "label": "Start hidden",
         "description": "Launch to system tray without opening the window."
       },
       "autostart": {
-        "label": "Launch on Startup",
+        "label": "Launch on startup",
         "description": "Automatically start Fisilti when you log in to your computer."
       },
       "showTrayIcon": {
-        "label": "Show Tray Icon",
+        "label": "Show tray icon",
         "description": "Display the Fisilti icon in the system tray."
       },
       "overlay": {
-        "title": "Overlay Position",
+        "title": "Overlay position",
         "description": "Display visual feedback overlay during recording and transcription. On Linux 'None' is recommended.",
         "options": {
           "none": "None",
@@ -384,7 +384,7 @@
         }
       },
       "pasteMethod": {
-        "title": "Paste Method",
+        "title": "Paste method",
         "description": "Choose how text is inserted. Direct: simulates typing via system input. None: skips paste, only updates history/clipboard.",
         "options": {
           "clipboard": "Clipboard ({{modifier}}+V)",
@@ -397,14 +397,14 @@
         "externalScriptPlaceholder": "/path/to/your/script.sh"
       },
       "typingTool": {
-        "title": "Typing Tool",
+        "title": "Typing tool",
         "description": "Choose which Linux typing tool to use for Direct paste method. Auto will automatically detect and use the best available tool for your system.",
         "options": {
           "auto": "Auto (Recommended)"
         }
       },
       "clipboardHandling": {
-        "title": "Clipboard Handling",
+        "title": "Clipboard handling",
         "description": "Don't Modify Clipboard preserves your current clipboard contents after transcription. Copy to Clipboard leaves the transcription result in your clipboard after pasting.",
         "options": {
           "dontModify": "Don't Modify Clipboard",
@@ -412,7 +412,7 @@
         }
       },
       "autoSubmit": {
-        "title": "Auto Submit",
+        "title": "Auto submit",
         "description": "Automatically send the selected key combination after text insertion. Cmd+Enter applies on macOS, while Windows/Linux use Super+Enter.",
         "options": {
           "off": "Off",
@@ -423,12 +423,12 @@
         }
       },
       "translateToEnglish": {
-        "label": "Translate to English",
+        "label": "Translate to english",
         "description": "Automatically translate speech from other languages to English during transcription.",
         "descriptionUnsupported": "Translation is not supported by the {{model}} model."
       },
       "modelUnload": {
-        "title": "Unload Model",
+        "title": "Unload model",
         "description": "Automatically free GPU/CPU memory when the model hasn't been used for the specified time",
         "options": {
           "never": "Never",
@@ -442,7 +442,7 @@
         }
       },
       "customWords": {
-        "title": "Custom Words",
+        "title": "Custom words",
         "description": "Add words that are often misheard or misspelled during transcription. The system will automatically correct similar-sounding words to match your list.",
         "placeholder": "Add a word",
         "add": "Add",
@@ -456,7 +456,7 @@
         "title": "Hotkey"
       },
       "api": {
-        "title": "API (OpenAI Compatible)",
+        "title": "API (OpenAI compatible)",
         "provider": {
           "title": "Provider",
           "description": "Select an OpenAI-compatible provider."
@@ -473,7 +473,7 @@
           "placeholder": "https://api.openai.com/v1"
         },
         "apiKey": {
-          "title": "API Key",
+          "title": "API key",
           "description": "API key for the selected provider.",
           "placeholder": "sk-...",
           "managedOnModels": "Uses the key from the Models page.",
@@ -494,7 +494,7 @@
       "prompts": {
         "title": "Prompt",
         "selectedPrompt": {
-          "title": "Selected Prompt",
+          "title": "Selected prompt",
           "description": "Select a template for refining transcriptions or create a new one. Use ${output} inside the prompt text to reference the captured transcript."
         },
         "noPrompts": "No prompts available",
@@ -550,28 +550,28 @@
     "debug": {
       "title": "Debug",
       "logDirectory": {
-        "title": "Log Directory",
+        "title": "Log directory",
         "description": "Location where log files are stored"
       },
       "logLevel": {
-        "title": "Log Level",
+        "title": "Log level",
         "description": "Set the verbosity of logging"
       },
       "updateChecks": {
-        "label": "Check for Updates",
+        "label": "Check for updates",
         "description": "Automatically check for new versions of Fisilti"
       },
       "wordCorrectionThreshold": {
-        "title": "Word Correction Threshold",
+        "title": "Word correction threshold",
         "description": "Sensitivity for custom word corrections"
       },
       "historyLimit": {
-        "title": "History Limit",
+        "title": "History limit",
         "description": "Maximum number of history entries to keep",
         "entries": "entries"
       },
       "recordingRetention": {
-        "title": "Auto-Delete Recordings",
+        "title": "Auto-delete recordings",
         "description": "Automatically delete old recordings to save space",
         "never": "Never",
         "preserveLimit": "Keep latest {{count}}",
@@ -581,19 +581,19 @@
         "placeholder": "Select retention period..."
       },
       "postProcessingToggle": {
-        "label": "Post Processing",
+        "label": "Post processing",
         "description": "Enable AI-powered text refinement after transcription"
       },
       "muteWhileRecording": {
-        "label": "Mute While Recording",
+        "label": "Mute while recording",
         "description": "Mute system audio during recording"
       },
       "appendTrailingSpace": {
-        "label": "Append Trailing Space",
+        "label": "Append trailing Space",
         "description": "Add a space after pasted transcription"
       },
       "keyboardImplementation": {
-        "title": "Keyboard Implementation",
+        "title": "Keyboard implementation",
         "description": "Choose the keyboard shortcut backend.",
         "bindingsReset": "Keyboard shortcuts were incompatible and reset to defaults"
       },
@@ -603,11 +603,11 @@
         "settings": "Settings:"
       },
       "pasteDelay": {
-        "title": "Paste Delay",
+        "title": "Paste delay",
         "description": "Delay before sending paste keystroke (in milliseconds). Increase if wrong text is being pasted."
       },
       "recordingBuffer": {
-        "title": "Extra Recording Buffer",
+        "title": "Extra recording buffer",
         "description": "Extra time (in milliseconds) to keep recording after you release the key, to capture trailing audio. 0 = no extra buffer."
       }
     },
@@ -618,16 +618,16 @@
         "description": "Current version of Fisilti"
       },
       "appDataDirectory": {
-        "title": "App Data Directory",
+        "title": "App data directory",
         "description": "Location where Fisilti stores its data"
       },
       "sourceCode": {
-        "title": "Source Code",
+        "title": "Source code",
         "description": "View source code and contribute",
         "button": "View on GitHub"
       },
       "supportDevelopment": {
-        "title": "Support Development",
+        "title": "Support development",
         "description": "Help us continue building Fisilti",
         "button": "Donate"
       },
@@ -731,7 +731,7 @@
     }
   },
   "appLanguage": {
-    "title": "Application Language",
+    "title": "Application language",
     "description": "Change the language of the Fisilti interface"
   },
   "overlay": {
@@ -962,15 +962,15 @@
     "noDictations": "No dictations yet. Hold your shortcut in any app and speak.",
     "dictation": {
       "title": "Dictation",
-      "description": "Hold the shortcut in any app, speak, and release. The text is typed where your cursor is.",
+      "description": "Hold the shortcut in any app and speak.",
       "shortcut": "Dictation shortcut",
       "change": "Change shortcut"
     },
     "meeting": {
       "title": "Meeting",
-      "description": "Records your microphone and the call audio, and keeps your notes beside the transcript.",
-      "start": "Start meeting",
-      "import": "Import a recording",
+      "description": "Records your microphone and the call, with notes beside the transcript.",
+      "start": "Start",
+      "import": "Import",
       "recording": "Recording",
       "finalizing": "Saving the meeting…",
       "open": "Open meeting",

@@ -190,103 +190,43 @@ export const LiveSession: React.FC<LiveSessionProps> = (props) => {
           />
         </div>
       ) : (
-        <div className="space-y-6">
-          {/* Idle hero: one clear action. */}
-          <div className="card px-6 py-10 flex flex-col items-center text-center gap-4">
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-logo-primary/10">
-              <Mic
-                width={26}
-                height={26}
-                className="text-logo-primary"
-                aria-hidden
-              />
-            </div>
-            <div className="space-y-1">
-              <h3 className="text-base font-medium text-text">
+        <div className="space-y-4">
+          {/* Idle: one clear action, set like a settings row. */}
+          <div className="card flex items-center gap-3 px-4 py-3.5">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-brand-soft text-brand-text">
+              <Mic width={17} height={17} aria-hidden />
+            </span>
+            <div className="min-w-0 flex-1">
+              <h3 className="text-[13px] font-semibold">
                 {t("meeting.idleTitle")}
               </h3>
-              <p className="text-sm text-sub max-w-sm">
-                {t("meeting.idleDescription")}
-              </p>
+              <p className="text-xs text-sub">{t("meeting.idleDescription")}</p>
             </div>
             <Button
               onClick={() => void session.start()}
               variant="primary"
-              size="lg"
+              size="md"
               disabled={session.busy}
-              className="flex items-center gap-2"
             >
               {session.busy ? (
                 <Loader2
-                  width={17}
-                  height={17}
+                  width={14}
+                  height={14}
                   className="animate-spin"
                   aria-hidden
                 />
               ) : (
-                <Mic width={17} height={17} aria-hidden />
+                <Mic width={14} height={14} aria-hidden />
               )}
               <span>{t("meeting.startMeeting")}</span>
             </Button>
+          </div>
+          {errorLine}
+          <div className="flex justify-center">
             <OnDeviceBadge />
-            {errorLine}
           </div>
 
           {props.importSlot}
-
-          {session.meetings.length > 0 && (
-            <div className="space-y-2">
-              <div className="px-1 flex items-center justify-between">
-                <SectionHeading>{t("meeting.recentMeetings")}</SectionHeading>
-                <button
-                  type="button"
-                  onClick={props.onViewAllMeetings}
-                  className="flex items-center gap-0.5 rounded text-xs text-sub hover:text-logo-primary transition-colors cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-logo-primary"
-                >
-                  <span>{t("meeting.viewAllMeetings")}</span>
-                  <ChevronRight
-                    width={13}
-                    height={13}
-                    className="rtl:rotate-180"
-                    aria-hidden
-                  />
-                </button>
-              </div>
-              <div className="card divide-y divide-line">
-                {session.meetings.slice(0, RECENT_MEETINGS_COUNT).map((m) => (
-                  <button
-                    type="button"
-                    key={m.id}
-                    onClick={() => props.onOpenMeeting(m.id)}
-                    className="w-full px-4 py-3 text-start cursor-pointer group focus:outline-none focus-visible:bg-mid-gray/10"
-                  >
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium text-text group-hover:text-logo-primary transition-colors truncate">
-                        {m.title.trim() || t("meeting.untitledMeeting")}
-                      </p>
-                      {m.has_summary && (
-                        <Sparkles
-                          width={14}
-                          height={14}
-                          className="shrink-0 text-logo-primary"
-                          aria-label={t("meeting.hasSummary")}
-                        />
-                      )}
-                    </div>
-                    <div className="mt-0.5 flex items-center gap-2 text-xs text-sub">
-                      <span>
-                        {formatMeetingDate(m.started_at, i18n.language)}
-                      </span>
-                      <span aria-hidden>•</span>
-                      <span className="tabular-nums">
-                        {formatDuration(m.duration_ms, t)}
-                      </span>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       )}
     </div>

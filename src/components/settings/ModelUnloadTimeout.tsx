@@ -10,9 +10,7 @@ interface ModelUnloadTimeoutProps {
   grouped?: boolean;
 }
 
-// Values are what serde sends (`rename_all = "snake_case"` turns `Min2` into
-// `min2`); the generated binding type spells them `min_2`, so they are cast.
-const OPTIONS: { value: string; labelKey: string }[] = [
+const OPTIONS: { value: ModelUnloadTimeout; labelKey: string }[] = [
   { value: "never", labelKey: "never" },
   { value: "immediately", labelKey: "immediately" },
   { value: "min2", labelKey: "min2" },

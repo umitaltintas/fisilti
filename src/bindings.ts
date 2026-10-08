@@ -280,6 +280,18 @@ async changePasteMethodSetting(method: string) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Delay (ms) between writing the clipboard and sending the paste keystroke.
+ * Clamped to 0–2000 ms so a typo cannot stall every paste for minutes.
+ */
+async changePasteDelayMsSetting(delayMs: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_paste_delay_ms_setting", { delayMs }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getAvailableTypingTools() : Promise<string[]> {
     return await TAURI_INVOKE("get_available_typing_tools");
 },
@@ -1704,7 +1716,7 @@ export type MeetingSummaryTemplate = { id: string; name: string; prompt: string 
 export type MeetingUsage = { entries: ModelUsage[] }
 export type ModelInfo = { id: string; name: string; description: string; filename: string; url: string | null; sha256: string | null; size_mb: number; is_downloaded: boolean; is_downloading: boolean; partial_size: number; is_directory: boolean; engine_type: EngineType; accuracy_score: number; speed_score: number; supports_translation: boolean; is_recommended: boolean; supported_languages: string[]; supports_language_selection: boolean; is_custom: boolean }
 export type ModelLoadStatus = { is_loaded: boolean; current_model: string | null }
-export type ModelUnloadTimeout = "never" | "immediately" | "min_2" | "min_5" | "min_10" | "min_15" | "hour_1" | "sec_15"
+export type ModelUnloadTimeout = "never" | "immediately" | "min2" | "min5" | "min10" | "min15" | "hour1" | "sec15"
 /**
  * Tokens consumed by one model, split by direction.
  * 
@@ -1741,7 +1753,7 @@ export type PaginatedHistory = { entries: HistoryEntry[]; has_more: boolean }
 export type PasteMethod = "ctrl_v" | "direct" | "none" | "shift_insert" | "ctrl_shift_v" | "external_script"
 export type PermissionAccess = "allowed" | "denied" | "unknown"
 export type PostProcessProvider = { id: string; label: string; base_url: string; allow_base_url_edit?: boolean; models_endpoint?: string | null; supports_structured_output?: boolean }
-export type RecordingRetentionPeriod = "never" | "preserve_limit" | "days_3" | "weeks_2" | "months_3"
+export type RecordingRetentionPeriod = "never" | "preserve_limit" | "days3" | "weeks2" | "months3"
 export type ShortcutBinding = { id: string; name: string; description: string; default_binding: string; current_binding: string }
 export type SoundTheme = "marimba" | "pop" | "custom"
 /**

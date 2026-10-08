@@ -470,6 +470,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             shortcut::change_meeting_silence_timeout_setting,
             shortcut::change_meeting_auto_end_grace_setting,
             shortcut::change_paste_method_setting,
+            shortcut::change_paste_delay_ms_setting,
             shortcut::get_available_typing_tools,
             shortcut::change_typing_tool_setting,
             shortcut::change_external_script_path_setting,

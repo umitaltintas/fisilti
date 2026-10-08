@@ -15,14 +15,8 @@ import i18n from "@/i18n";
 import { changeMeetingExportDir } from "@/lib/meeting";
 import { errorMessage } from "@/lib/utils/errors";
 
-/**
- * App settings as the frontend sees them.
- *
- * `meeting_export_dir` exists in the Rust `AppSettings` but is missing from
- * the generated bindings until they are regenerated; it is declared here so it
- * can flow through the same store as every other setting.
- */
-export type Settings = AppSettings & { meeting_export_dir?: string };
+/** App settings as the frontend sees them. */
+export type Settings = AppSettings;
 
 type PostProcessSettingType = "base_url" | "api_key" | "model";
 
@@ -198,6 +192,8 @@ const settingUpdaters: {
     commands.changeOrtAcceleratorSetting(value as OrtAcceleratorSetting),
   extra_recording_buffer_ms: (value) =>
     commands.changeExtraRecordingBufferSetting(value as number),
+  paste_delay_ms: (value) =>
+    commands.changePasteDelayMsSetting(value as number),
   model_unload_timeout: (value) =>
     commands.setModelUnloadTimeout(value as ModelUnloadTimeout),
 

@@ -118,11 +118,19 @@ pub enum OverlayPosition {
 pub enum ModelUnloadTimeout {
     Never,
     Immediately,
+    // serde's snake_case keeps digits attached ("min2") but specta splits them
+    // ("min_2"); the explicit names keep the wire format and bindings in step.
+    #[serde(rename = "min2")]
     Min2,
+    #[serde(rename = "min5")]
     Min5,
+    #[serde(rename = "min10")]
     Min10,
+    #[serde(rename = "min15")]
     Min15,
+    #[serde(rename = "hour1")]
     Hour1,
+    #[serde(rename = "sec15")]
     Sec15, // Debug mode only
 }
 
@@ -157,8 +165,12 @@ pub enum AutoSubmitKey {
 pub enum RecordingRetentionPeriod {
     Never,
     PreserveLimit,
+    // Explicit names for the same serde/specta digit mismatch as ModelUnloadTimeout.
+    #[serde(rename = "days3")]
     Days3,
+    #[serde(rename = "weeks2")]
     Weeks2,
+    #[serde(rename = "months3")]
     Months3,
 }
 
@@ -1521,6 +1533,27 @@ pub fn get_recording_retention_period(app: &AppHandle) -> RecordingRetentionPeri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn digit_variants_keep_their_stored_names() {
+        // Persisted settings and the frontend both use these exact strings.
+        let cases = [
+            (ModelUnloadTimeout::Min2, "\"min2\""),
+            (ModelUnloadTimeout::Hour1, "\"hour1\""),
+            (ModelUnloadTimeout::Sec15, "\"sec15\""),
+        ];
+        for (value, json) in cases {
+            assert_eq!(serde_json::to_string(&value).unwrap(), json);
+            assert_eq!(
+                serde_json::from_str::<ModelUnloadTimeout>(json).unwrap(),
+                value
+            );
+        }
+        assert_eq!(
+            serde_json::to_string(&RecordingRetentionPeriod::Weeks2).unwrap(),
+            "\"weeks2\""
+        );
+    }
 
     #[test]
     fn google_post_process_key_moves_into_the_gemini_field() {

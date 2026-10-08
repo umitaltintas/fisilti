@@ -1,17 +1,15 @@
 // Typed helpers for the meeting-mode backend commands and event stream.
 //
-// Commands that exist in the generated `src/bindings.ts` go through the typed
-// `commands.*` and are unwrapped here (a backend error becomes a rejected
-// promise, which is what every caller expects). The few commands not yet in
-// the bindings — recording import, re-transcription and the Markdown export
-// folder — still go through the raw `invoke` until the bindings are
-// regenerated.
+// Every command goes through the generated `commands.*` and is unwrapped here
+// (a backend error becomes a rejected promise, which is what every caller
+// expects).
 
-import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
   commands,
   type InterruptedMeeting,
+  type MeetingImportProgress,
+  type MeetingImportStage,
   type MeetingListItem,
   type MeetingRecord,
   type MeetingSessionInfo,
@@ -26,6 +24,8 @@ import {
 
 export type {
   InterruptedMeeting,
+  MeetingImportProgress,
+  MeetingImportStage,
   MeetingListItem,
   MeetingRecord,
   MeetingSessionInfo,
@@ -408,27 +408,16 @@ export function requestCalendarAccess(): Promise<boolean> {
 
 /** Persist the folder completed meetings are also written to as Markdown
  * (`meeting_export_dir`); an empty string turns the copy off. Rejects when the
- * folder does not exist. Not in the generated bindings yet. */
+ * folder does not exist. */
 export function changeMeetingExportDir(dir: string): Promise<void> {
-  return invoke<void>("change_meeting_export_dir_setting", { dir });
+  return unwrap(commands.changeMeetingExportDirSetting(dir)).then(
+    () => undefined,
+  );
 }
 
 // ---------------------------------------------------------------------------
-// Recording import & re-transcription (not in the generated bindings yet)
+// Recording import & re-transcription
 // ---------------------------------------------------------------------------
-
-/** Which step of a recording import is running. Mirrors Rust
- * `MeetingImportStage`. */
-export type MeetingImportStage = "decoding" | "transcribing" | "summarizing";
-
-/** Payload of `"meeting-import-progress"`. Mirrors Rust
- * `MeetingImportProgress`. */
-export interface MeetingImportProgress {
-  file_name: string;
-  stage: MeetingImportStage;
-  /** 0..1 within the stage; `null` when the stage cannot measure itself. */
-  progress: number | null;
-}
 
 /** Payload of `"meeting-import-finished"`. Mirrors Rust
  * `MeetingImportFinished`. */
@@ -444,30 +433,30 @@ export const MEETING_IMPORT_CANCELLED = "Import cancelled.";
 /** Import a recording file (voice memo, conference recording) as a meeting.
  * Slow: resolves with the new meeting id once it is transcribed and saved. */
 export function importMeetingRecording(path: string): Promise<number> {
-  return invoke<number>("import_meeting_recording", { path });
+  return unwrap(commands.importMeetingRecording(path));
 }
 
 /** Ask the running import (or re-transcription) to stop at its next
  * checkpoint. */
 export function cancelMeetingImport(): Promise<void> {
-  return invoke<void>("cancel_meeting_import");
+  return commands.cancelMeetingImport();
 }
 
 /** Progress of the running import, or `null` when nothing is importing. */
 export function getMeetingImportProgress(): Promise<MeetingImportProgress | null> {
-  return invoke<MeetingImportProgress | null>("get_meeting_import_progress");
+  return commands.getMeetingImportProgress();
 }
 
 /** File extensions the import accepts (lower-case, no dot). */
 export function getSupportedImportExtensions(): Promise<string[]> {
-  return invoke<string[]>("get_supported_import_extensions");
+  return commands.getSupportedImportExtensions();
 }
 
 /** Transcribe a saved meeting again from its stored audio, replacing its
  * transcript (and summary, when it had one). Slow; progress arrives on the
  * import events. Resolves with the meeting id. */
 export function retranscribeMeeting(id: number): Promise<number> {
-  return invoke<number>("retranscribe_meeting", { id });
+  return unwrap(commands.retranscribeMeeting(id));
 }
 
 // ---------------------------------------------------------------------------

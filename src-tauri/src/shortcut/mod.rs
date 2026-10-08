@@ -938,6 +938,17 @@ pub fn change_paste_method_setting(app: AppHandle, method: String) -> Result<(),
     Ok(())
 }
 
+/// Delay (ms) between writing the clipboard and sending the paste keystroke.
+/// Clamped to 0–2000 ms so a typo cannot stall every paste for minutes.
+#[tauri::command]
+#[specta::specta]
+pub fn change_paste_delay_ms_setting(app: AppHandle, delay_ms: u64) -> Result<(), String> {
+    settings::update_settings(&app, |settings| {
+        settings.paste_delay_ms = delay_ms.min(2000);
+    });
+    Ok(())
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn get_available_typing_tools() -> Vec<String> {

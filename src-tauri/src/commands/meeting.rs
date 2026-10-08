@@ -1,72 +1,62 @@
-// Meeting mode (Step 3) commands.
+// Meeting mode commands.
 //
 // Thin Tauri command wrappers around `MeetingManager`. The manager is stored in
 // Tauri state as `Arc<MeetingManager>` (see `initialize_core_logic` in lib.rs).
+// The LLM summary/title logic lives in `meeting::summarize`.
 //
 // These commands are ADDITIVE and ISOLATED from the dictation flow.
 
 use std::sync::Arc;
 
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Manager, State};
 
 use crate::meeting::{
     InterruptedMeeting, MeetingImportProgress, MeetingListItem, MeetingManager, MeetingRecord,
-    MeetingState,
+    MeetingSessionInfo, MeetingState, StopMeetingResult,
 };
 
-/// Event emitted (with payload `"running"` or `"idle"`) whenever a meeting
-/// session is started or stopped through the shared helpers below — regardless
-/// of whether the trigger was the UI command, the tray menu item, or a global
-/// shortcut. Observers (e.g. the tray) listen for this to keep their recording
-/// indicator in sync.
+/// Event emitted with the slot state — `"idle"`, `"running"` or
+/// `"finalizing"` — whenever it changes, whatever triggered it (UI command,
+/// tray, global shortcut, auto-end, a capture failure). Observers (e.g. the
+/// tray) listen for this to keep their indicator in sync.
 pub const MEETING_STATE_CHANGED_EVENT: &str = "meeting-state-changed";
 
-/// Emit `MEETING_STATE_CHANGED_EVENT` with the manager's current status so any
-/// observer (the tray indicator) can refresh.
-fn emit_meeting_state(app: &AppHandle, manager: &MeetingManager) {
-    let status = match manager.status() {
-        MeetingState::Idle => "idle",
-        MeetingState::Running => "running",
-    };
-    let _ = app.emit(MEETING_STATE_CHANGED_EVENT, status);
-}
+/// Event emitted with a `MeetingSessionInfo` payload whenever the state
+/// changes AND as soon as the live meeting's row id becomes known.
+pub const MEETING_SESSION_CHANGED_EVENT: &str = "meeting-session-changed";
 
 /// SHARED start path used by the `start_meeting` command, the tray menu item,
-/// and (optionally) a global shortcut. Starts the session via the manager and
-/// emits `MEETING_STATE_CHANGED_EVENT` on success so the tray indicator updates.
+/// the global shortcut and the auto-detect prompt. The manager emits the
+/// state events itself.
 pub fn start_meeting_session(
-    app: &AppHandle,
+    _app: &AppHandle,
     meeting_manager: &Arc<MeetingManager>,
 ) -> Result<(), String> {
-    meeting_manager.start()?;
-    emit_meeting_state(app, meeting_manager);
-    Ok(())
+    meeting_manager.start()
 }
 
-/// SHARED stop path used by the `stop_meeting` command, the tray menu item, and
-/// (optionally) a global shortcut. Stops the session via the manager and emits
-/// `MEETING_STATE_CHANGED_EVENT` so the tray indicator returns to idle. Returns
-/// the final transcript.
+/// SHARED stop path used by the `stop_meeting` command, the tray menu item,
+/// the global shortcut and auto-end. Blocking (runs the finalize pass): call
+/// it off the main thread. A second stop while one is in progress returns
+/// `Err(ALREADY_STOPPING)`.
 pub fn stop_meeting_session(
-    app: &AppHandle,
+    _app: &AppHandle,
     meeting_manager: &Arc<MeetingManager>,
-) -> Result<String, String> {
-    let transcript = meeting_manager.stop()?;
-    emit_meeting_state(app, meeting_manager);
-    Ok(transcript)
+) -> Result<StopMeetingResult, String> {
+    meeting_manager.stop()
 }
 
-/// SHARED toggle path: stop if running, otherwise start. Used by the tray menu
-/// item and the optional global shortcut so a meeting can be controlled without
-/// opening the window. Returns the final transcript when stopping, `None` when
-/// starting.
+/// SHARED toggle path: stop if running, start if idle. While the previous
+/// meeting is still being saved there is nothing to toggle: starting would be
+/// refused and stopping is already happening.
 pub fn toggle_meeting_session(
     app: &AppHandle,
     meeting_manager: &Arc<MeetingManager>,
-) -> Result<Option<String>, String> {
+) -> Result<Option<StopMeetingResult>, String> {
     match meeting_manager.status() {
         MeetingState::Running => stop_meeting_session(app, meeting_manager).map(Some),
         MeetingState::Idle => start_meeting_session(app, meeting_manager).map(|()| None),
+        MeetingState::Finalizing => Err("The previous meeting is still being saved.".to_string()),
     }
 }
 
@@ -78,31 +68,14 @@ pub fn toggle_meeting_from_app(app: &AppHandle) {
     let manager = (*manager).clone();
     let app = app.clone();
     // The tray menu item and global shortcut both fire on the MAIN event-loop
-    // thread. stop() runs a long, blocking finalize pass; if we ran it inline
-    // here it would block the main thread and the tray's `meeting-state-changed`
-    // listener could not run, leaving the tray stuck on "Recording…". Dispatch
-    // to a blocking thread instead (the result is only logged, so we don't await
-    // it). stop() emits the idle state early so the tray clears promptly.
+    // thread, and stop() runs the long, blocking finalize pass. Dispatch to a
+    // blocking thread instead (the result is only logged).
     tauri::async_runtime::spawn_blocking(move || match toggle_meeting_session(&app, &manager) {
         Ok(Some(_)) => log::info!("Meeting stopped via tray/shortcut"),
         Ok(None) => log::info!("Meeting started via tray/shortcut"),
         Err(e) => log::warn!("Toggle meeting via tray/shortcut failed: {}", e),
     });
 }
-
-/// Default system prompt for summarizing a meeting transcript into notes.
-///
-/// Reused by `summarize_meeting`. Instructs the model to answer in the SAME
-/// language as the transcript (so a Turkish transcript yields Turkish notes)
-/// and to produce a short summary, key points, decisions, and action items.
-pub(crate) const DEFAULT_MEETING_SUMMARY_PROMPT: &str = "You are an assistant that writes clear, concise meeting notes from a raw meeting transcript. \
-Respond in the SAME LANGUAGE as the transcript (do not translate). \
-Produce well-structured notes with the following sections, using the section names in the transcript's language:\n\
-1. Summary - a short paragraph summarizing the meeting.\n\
-2. Key discussion points - a bullet list of the main topics discussed.\n\
-3. Decisions - a bullet list of decisions made (or note that none were made).\n\
-4. Action items - a bullet list of follow-up tasks, with the responsible person if mentioned.\n\
-Only use information present in the transcript. Do not invent details.";
 
 /// Start a continuous meeting session: ensure the transcription model is
 /// loaded, then begin capturing mixed mic + system audio, segmenting it with
@@ -119,19 +92,18 @@ pub fn start_meeting(
     start_meeting_session(&app, &meeting_manager)
 }
 
-/// Stop the meeting session and return the final accumulated transcript text.
+/// Stop the meeting session. Resolves once the meeting is fully saved, with
+/// the id of the row that was persisted (`None` when the empty session was
+/// discarded) and the final transcript. Errors when a stop is already in
+/// progress.
 #[tauri::command]
 #[specta::specta]
 pub async fn stop_meeting(
     app: AppHandle,
     meeting_manager: State<'_, Arc<MeetingManager>>,
-) -> Result<String, String> {
-    // Run the stop (which includes the long, blocking finalize/persist/LLM pass)
-    // on a blocking thread instead of the command's caller thread. The tray's
-    // `meeting-state-changed` listener must run on the main event loop; if stop()
-    // hogged the main thread the tray would stay stuck on "Recording…" for the
-    // whole finalize. Mirrors `recover_meeting`. stop() emits the idle state
-    // early (before finalize), so the tray clears the moment finalize begins.
+) -> Result<StopMeetingResult, String> {
+    // Run the stop (finalize/persist) on a blocking thread so the main event
+    // loop — and the tray's `meeting-state-changed` listener — keep running.
     let manager = (*meeting_manager).clone();
     tauri::async_runtime::spawn_blocking(move || stop_meeting_session(&app, &manager))
         .await
@@ -147,18 +119,24 @@ pub fn get_meeting_transcript(
     Ok(meeting_manager.full_transcript())
 }
 
-/// Return the meeting session status: "idle" or "running".
+/// Return the meeting slot status: `"idle"`, `"running"` or `"finalizing"`.
 #[tauri::command]
 #[specta::specta]
 pub fn get_meeting_status(meeting_manager: State<Arc<MeetingManager>>) -> Result<String, String> {
-    let status = match meeting_manager.status() {
-        MeetingState::Idle => "idle",
-        MeetingState::Running => "running",
-    };
-    Ok(status.to_string())
+    Ok(meeting_manager.status().as_str().to_string())
 }
 
-/// Return the running session's start time as epoch milliseconds, or `null`
+/// State, live row id and start time of the meeting slot — the same payload
+/// as the `meeting-session-changed` event.
+#[tauri::command]
+#[specta::specta]
+pub fn get_meeting_session(
+    meeting_manager: State<Arc<MeetingManager>>,
+) -> Result<MeetingSessionInfo, String> {
+    Ok(meeting_manager.session_info())
+}
+
+/// Return the live session's start time as epoch milliseconds, or `null`
 /// when no session is running. The UI uses it to render a truthful elapsed
 /// timer when it attaches to a session that was started elsewhere (tray, global
 /// shortcut, or the meeting auto-detect prompt).
@@ -170,36 +148,31 @@ pub fn get_meeting_started_at(
     Ok(meeting_manager.session_started_at_ms())
 }
 
-/// Summarize the accumulated meeting transcript into meeting notes using the
-/// SAME LLM provider/model/api-key the user already configured for dictation
-/// post-processing (reads `settings::get_settings`). Does NOT modify or depend
-/// on dictation's post-processing behavior; it only reuses `llm_client`
-/// read-only.
-///
-/// Returns the LLM-generated meeting notes, or a clear, actionable error if
-/// there is no transcript or no LLM provider/model configured.
+/// Summarize the most recent meeting's transcript into meeting notes using the
+/// SAME LLM provider/model/api-key the user configured for dictation
+/// post-processing. The summary is saved onto that meeting's row (and
+/// announced on `meeting-summary-update`) when it has been saved.
 #[tauri::command]
 #[specta::specta]
 pub async fn summarize_meeting(
-    app: AppHandle,
     meeting_manager: State<'_, Arc<MeetingManager>>,
 ) -> Result<String, String> {
-    summarize_current(&app, &meeting_manager, None).await
+    let manager = (*meeting_manager).clone();
+    manager.summarize_latest(None).await
 }
 
 /// Like `summarize_meeting`, but with an optional template selector + custom
-/// prompt override (Phase 2 item 4). `template` is matched first against a
-/// configured `meeting_summary_templates` id; if no template matches it is
-/// treated as a raw custom prompt. `None`/empty → the default prompt. The
-/// resulting summary is persisted onto the last-saved meeting row.
+/// prompt override. `template` is matched first against a configured
+/// `meeting_summary_templates` id; if no template matches it is treated as a
+/// raw custom prompt. `None`/empty → the default prompt.
 #[tauri::command]
 #[specta::specta]
 pub async fn summarize_meeting_with(
-    app: AppHandle,
     meeting_manager: State<'_, Arc<MeetingManager>>,
     template: Option<String>,
 ) -> Result<String, String> {
-    summarize_current(&app, &meeting_manager, template.as_deref()).await
+    let manager = (*meeting_manager).clone();
+    manager.summarize_latest(template.as_deref()).await
 }
 
 /// Regenerate the summary for an ALREADY-PERSISTED meeting `id` (e.g. the user
@@ -220,175 +193,15 @@ pub async fn regenerate_meeting_summary(
     if record.transcript.trim().is_empty() {
         return Err("This meeting has no transcript to summarize.".to_string());
     }
-    let content = summarize_transcript_ext(
+    let content = crate::meeting::summarize::summarize_transcript_ext(
         &app,
         &record.transcript,
         template.as_deref(),
         record.notes.as_deref(),
     )
     .await?;
-    meeting_manager
-        .store()
-        .update_summary(id, &content)
-        .map_err(|e| format!("Failed to persist summary: {}", e))?;
-    meeting_manager.export_markdown(id);
+    meeting_manager.save_summary(id, &content);
     Ok(content)
-}
-
-/// Shared body for `summarize_meeting`/`summarize_meeting_with`: summarize the
-/// manager's current transcript and persist onto the last-saved row.
-async fn summarize_current(
-    app: &AppHandle,
-    meeting_manager: &Arc<MeetingManager>,
-    template: Option<&str>,
-) -> Result<String, String> {
-    let transcript = meeting_manager.full_transcript();
-    if transcript.trim().is_empty() {
-        return Err("No transcript to summarize. Start and run a meeting first.".to_string());
-    }
-    let content = summarize_transcript_ext(app, &transcript, template, None).await?;
-    if let Err(e) = meeting_manager.update_saved_summary(&content) {
-        log::error!("{}", e);
-    }
-    Ok(content)
-}
-
-/// Summarize a meeting `transcript` into notes using the default prompt and the
-/// SAME active post-processing provider/model/api-key the user configured for
-/// dictation. Used by the on-stop auto-summarize path. Returns notes or an error.
-pub(crate) async fn summarize_transcript(
-    app: &AppHandle,
-    transcript: &str,
-) -> Result<String, String> {
-    summarize_transcript_ext(app, transcript, None, None).await
-}
-
-/// Extended summarization: resolves the system prompt from an optional
-/// `template` (a configured template id, else treated as a raw custom prompt,
-/// else the default), optionally appends the user's own `notes` as extra
-/// context, and sends to the active LLM provider. Returns the generated notes.
-pub(crate) async fn summarize_transcript_ext(
-    app: &AppHandle,
-    transcript: &str,
-    template: Option<&str>,
-    notes: Option<&str>,
-) -> Result<String, String> {
-    let settings = crate::settings::get_settings(app);
-
-    let provider = settings.active_post_process_provider().cloned().ok_or_else(|| {
-        "No LLM provider is configured. Set up a post-processing provider in Settings (e.g. a local Ollama instance or an API key) and try again.".to_string()
-    })?;
-
-    let model = settings
-        .post_process_models
-        .get(&provider.id)
-        .cloned()
-        .unwrap_or_default();
-    if model.trim().is_empty() {
-        return Err(format!(
-            "No model is configured for provider '{}'. Choose a model in Settings and try again.",
-            provider.id
-        ));
-    }
-
-    let api_key = settings.post_process_key_for(&provider.id);
-
-    // Resolve the system prompt: template id → custom prompt → default.
-    let system_prompt = match template.map(str::trim).filter(|t| !t.is_empty()) {
-        Some(sel) => settings
-            .meeting_summary_templates
-            .iter()
-            .find(|t| t.id == sel)
-            .map(|t| t.prompt.clone())
-            .unwrap_or_else(|| sel.to_string()),
-        None => DEFAULT_MEETING_SUMMARY_PROMPT.to_string(),
-    };
-
-    // Optionally include the user's own notes as additional context. Default
-    // behavior (no notes) is unchanged.
-    let notes_block = match notes.map(str::trim).filter(|n| !n.is_empty()) {
-        Some(n) => format!(
-            "\n\nThe user also provided their own notes. Treat them as additional context and \
-incorporate them where relevant:\n{}",
-            n
-        ),
-        None => String::new(),
-    };
-
-    // Plain (non-structured) chat completion: instructions as system prompt,
-    // transcript (+ optional notes) as the user message.
-    let prompt = format!(
-        "{}{}\n\nTranscript:\n{}",
-        system_prompt, notes_block, transcript
-    );
-
-    match crate::llm_client::send_chat_completion(&provider, api_key, &model, prompt).await {
-        Ok(Some(content)) => {
-            let content = content.trim().to_string();
-            if content.is_empty() {
-                Err("The LLM returned an empty summary.".to_string())
-            } else {
-                Ok(content)
-            }
-        }
-        Ok(None) => Err("The LLM response contained no content.".to_string()),
-        Err(e) => Err(format!("Failed to summarize meeting: {}", e)),
-    }
-}
-
-/// Generate a short, human-readable title from a meeting `transcript` using the
-/// active post-process LLM provider. Returns a single-line title (no quotes /
-/// markdown). Errors if no provider is configured or the call fails — callers
-/// (auto-title) treat that as a graceful fallback to the datetime title.
-pub(crate) async fn generate_title(app: &AppHandle, transcript: &str) -> Result<String, String> {
-    let settings = crate::settings::get_settings(app);
-    let provider = settings
-        .active_post_process_provider()
-        .cloned()
-        .ok_or_else(|| "No LLM provider configured for title generation.".to_string())?;
-    let model = settings
-        .post_process_models
-        .get(&provider.id)
-        .cloned()
-        .unwrap_or_default();
-    if model.trim().is_empty() {
-        return Err(format!(
-            "No model configured for provider '{}'.",
-            provider.id
-        ));
-    }
-    let api_key = settings.post_process_key_for(&provider.id);
-
-    // Cap the transcript fed to the title prompt: the opening is plenty for a
-    // title and keeps the request small.
-    let snippet: String = transcript.chars().take(4000).collect();
-    let prompt = format!(
-        "Generate a short, descriptive title (at most 8 words) for the following meeting \
-transcript. Respond in the SAME LANGUAGE as the transcript. Output ONLY the title text with no \
-quotes, no markdown, and no trailing punctuation.\n\nTranscript:\n{}",
-        snippet
-    );
-
-    match crate::llm_client::send_chat_completion(&provider, api_key, &model, prompt).await {
-        Ok(Some(content)) => {
-            // Sanitize: first non-empty line, strip surrounding quotes/markdown.
-            let title = content
-                .lines()
-                .map(str::trim)
-                .find(|l| !l.is_empty())
-                .unwrap_or("")
-                .trim_matches(|c| c == '"' || c == '\'' || c == '#' || c == '*')
-                .trim()
-                .to_string();
-            if title.is_empty() {
-                Err("The LLM returned an empty title.".to_string())
-            } else {
-                Ok(title)
-            }
-        }
-        Ok(None) => Err("The LLM response contained no content.".to_string()),
-        Err(e) => Err(format!("Failed to generate title: {}", e)),
-    }
 }
 
 /// List persisted meetings, newest-first (lightweight rows). When `query` is a
@@ -440,23 +253,13 @@ pub fn get_meeting_audio_path(
     }
 }
 
-/// Delete a persisted meeting by id.
+/// Delete a persisted meeting by id, with everything it owns on disk (capture
+/// buffers, playback audio, exported note). Errors for the meeting that is
+/// in progress (running or still being saved).
 #[tauri::command]
 #[specta::specta]
 pub fn delete_meeting(meeting_manager: State<Arc<MeetingManager>>, id: i64) -> Result<(), String> {
-    let store = meeting_manager.store();
-    // Read the audio path before the row goes; deleting only the row left the
-    // recording on disk with nothing pointing at it.
-    let audio_path = store.get_audio_path(id).ok().flatten();
-    store
-        .delete_meeting(id)
-        .map_err(|e| format!("Failed to delete meeting: {}", e))?;
-    if let Some(path) = audio_path {
-        if let Err(e) = std::fs::remove_file(&path) {
-            log::warn!("delete: could not remove audio {:?}: {}", path, e);
-        }
-    }
-    Ok(())
+    meeting_manager.delete_meeting(id)
 }
 
 /// Where a meeting's transcription would actually run, for the trust
@@ -510,55 +313,16 @@ pub fn get_transcription_location(app: AppHandle) -> Result<TranscriptionLocatio
 }
 
 /// Discard an interrupted meeting: delete the row AND the files only it
-/// referenced.
-///
-/// Distinct from [`delete_meeting`] because an interrupted row still owns its
-/// raw capture buffers, which exist purely so the row can be re-finalized.
-/// Dropping the row without them would strand hundreds of megabytes per
-/// meeting with nothing left in the database pointing at the files.
-///
-/// File removal is best-effort: a missing or unreadable file must not stop the
-/// user from clearing a card they have decided they do not want.
+/// referenced (its raw capture buffers, which exist purely so the row can be
+/// re-finalized, plus any playback audio). Errors for the meeting that is in
+/// progress — it is in `recording` status too, but it is not interrupted.
 #[tauri::command]
 #[specta::specta]
 pub fn discard_interrupted_meeting(
     meeting_manager: State<Arc<MeetingManager>>,
     id: i64,
 ) -> Result<(), String> {
-    let store = meeting_manager.store();
-
-    let mut paths: Vec<String> = Vec::new();
-    match store.get_buffers(id) {
-        Ok(buffers) => {
-            paths.extend(
-                [buffers.mic, buffers.system, buffers.mixed]
-                    .into_iter()
-                    .flatten(),
-            );
-        }
-        Err(e) => log::warn!("discard: could not read buffers for meeting {}: {}", id, e),
-    }
-    if let Ok(Some(audio)) = store.get_audio_path(id) {
-        paths.push(audio);
-    }
-
-    for path in &paths {
-        match std::fs::remove_file(path) {
-            Ok(()) => log::debug!("discard: removed {}", path),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => log::warn!("discard: could not remove {}: {}", path, e),
-        }
-    }
-
-    store
-        .delete_meeting(id)
-        .map_err(|e| format!("Failed to discard meeting: {}", e))?;
-    log::info!(
-        "discard: removed interrupted meeting {} and {} file(s)",
-        id,
-        paths.len()
-    );
-    Ok(())
+    meeting_manager.delete_meeting(id)
 }
 
 /// Manually rename a meeting (Phase 2 item 2). Overwrites the `title` column.
@@ -577,8 +341,10 @@ pub fn update_meeting_title(
     Ok(())
 }
 
-/// Save the user's own editable notes for a meeting (Phase 2 item 3). Distinct
-/// from the AI `summary`; stored in the `notes` column.
+/// Save the user's own editable notes for a meeting. Distinct from the AI
+/// `summary`; stored in the `notes` column. Works on the in-progress
+/// (`recording`) row too, so notes can be autosaved live — finalize never
+/// writes the notes column, so nothing typed here is overwritten.
 #[tauri::command]
 #[specta::specta]
 pub fn update_meeting_notes(
@@ -611,8 +377,9 @@ pub fn export_meeting_markdown(
 }
 
 /// List meetings interrupted by a crash/OS-kill (still in `recording` status),
-/// newest-first. Each item reports whether its temp audio buffers still exist so
-/// the UI can offer a high-quality re-finalize vs. salvaging the partial text.
+/// newest-first, excluding the meeting that is running or being saved right
+/// now. Each item reports whether its capture buffers still exist so the UI
+/// can offer a high-quality re-finalize vs. salvaging the partial text.
 #[tauri::command]
 #[specta::specta]
 pub fn list_interrupted_meetings(
@@ -620,7 +387,7 @@ pub fn list_interrupted_meetings(
 ) -> Result<Vec<InterruptedMeeting>, String> {
     meeting_manager
         .store()
-        .list_interrupted()
+        .list_interrupted(meeting_manager.live_meeting_id())
         .map_err(|e| format!("Failed to list interrupted meetings: {}", e))
 }
 

@@ -1,30 +1,35 @@
-// Meeting mode (Step 3): continuous meeting session manager.
+// Meeting mode: the continuous meeting session manager.
 //
-// Owns a long-running session that:
-//   1. Captures mixed mic + system audio at 16 kHz mono (reusing the exact
-//      capture/mix machinery proven in `commands::audio::capture_mixed_audio_test`).
-//   2. Segments the mixed stream with a dedicated `SmoothedVad` instance in
-//      480-sample (30 ms) frames.
-//   3. Sends each completed speech segment to `TranscriptionManager::transcribe`.
-//   4. Accumulates the returned text into a running transcript and emits a
-//      `"meeting-transcript-update"` event per segment.
+// Owns the meeting slot (idle / running / finalizing) and the lifecycle of a
+// session:
+//   1. `start()` creates a fresh `Session` and spawns the capture thread
+//      (`capture.rs`): mic + system audio at 16 kHz, per-source VAD, raw
+//      capture buffers on disk, and a session worker that runs the rough live
+//      transcription and incremental persistence.
+//   2. `stop()` moves the slot to `Finalizing`, joins capture, re-transcribes
+//      the full audio (`finalize.rs`), persists the row, saves the playback
+//      audio, then kicks off the LLM title/summary — and only then returns to
+//      `Idle`. The session object is owned by that stop, so nothing a later
+//      start does can reach it.
 //
-// This module is ADDITIVE and ISOLATED from the dictation flow. It never touches
-// the `AudioRecordingManager` / `RecordingState` singletons. It uses a SEPARATE
-// VAD instance (not shared with dictation) and an independent cpal mic stream.
+// Imports, re-transcription and recovery live in `exclusive.rs`; Gemini Live
+// streaming in `live.rs`; the LLM prompts in `summarize.rs`.
+//
+// This module is ADDITIVE and ISOLATED from the dictation flow. It never
+// touches the `AudioRecordingManager` / `RecordingState` singletons.
 //
 // The capture loop is macOS-only (CoreAudio tap). On other platforms `start()`
 // returns an "unsupported" error; the struct and commands still compile.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri::AppHandle;
 
 use crate::managers::transcription::TranscriptionManager;
+use crate::meeting::session::{MeetingSessionInfo, MeetingState, Session, StopMeetingResult};
 use crate::meeting::store::{MeetingRecordInput, MeetingStore};
 
 /// Which captured source a transcript segment came from.
@@ -146,805 +151,624 @@ pub struct MeetingImportFinished {
     pub error: Option<String>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum MeetingState {
-    Idle,
-    Running,
+/// Event payload emitted on `"meeting-summary-update"` when a summary is
+/// saved. Carries the row id so the UI only updates the matching meeting —
+/// the summary of a meeting that finished earlier may land while the user is
+/// already in the next one.
+#[derive(Clone, Debug, Serialize, Type)]
+pub struct MeetingSummaryUpdate {
+    pub id: i64,
+    pub summary: String,
 }
 
-/// CRASH-RECOVERY: number of newly-finalized transcript segments to accumulate
-/// before writing the partial transcript to the in-progress meeting row. Batches
-/// incremental persistence so a busy meeting does ~one UPDATE every few segments
-/// instead of per segment. Small enough that a crash loses at most this many
-/// segments of partial transcript.
-const INCREMENTAL_PERSIST_BATCH: usize = 3;
+/// Error returned by `stop()` while a stop is already in progress (tray and
+/// UI clicked at once, or the auto-end timer raced a click).
+pub const ALREADY_STOPPING: &str = "The meeting is already being stopped.";
 
-/// Owns the state of a continuous meeting session.
+/// The meeting slot: what state it is in, and the session it holds (the live
+/// one, or the most recent one once idle — its transcript stays readable).
+pub(super) struct Slot {
+    pub state: MeetingState,
+    pub session: Option<Arc<Session>>,
+}
+
+/// Owns the meeting slot and everything shared across sessions.
 ///
-/// Cloneable handle around shared state; the actual capture work runs on a
-/// dedicated thread spawned in `start()`.
+/// Cloneable handle around shared state; the capture work runs on a dedicated
+/// thread spawned in `start()`.
 #[derive(Clone)]
 pub struct MeetingManager {
-    app_handle: AppHandle,
-    transcription_manager: Arc<TranscriptionManager>,
-    /// Idle/Running state guard. Held briefly to serialize start/stop.
-    state: Arc<Mutex<MeetingState>>,
-    /// Accumulated transcript segments.
-    transcript: Arc<Mutex<Vec<TranscriptSegment>>>,
-    /// Stop signal for the capture loop.
-    stop_signal: Arc<AtomicBool>,
-    /// Fast-path flag the TranscriptionManager idle-watcher checks to avoid
-    /// unloading the model mid-meeting. Set true while a session runs.
-    active: Arc<AtomicBool>,
-    /// Handle of the running capture thread, joined on stop.
-    worker: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
+    pub(super) app_handle: AppHandle,
+    pub(super) transcription_manager: Arc<TranscriptionManager>,
     /// Persistence store for meeting sessions (same history.db as dictation).
-    store: MeetingStore,
-    /// Absolute epoch-ms timestamp of when the current session started.
-    /// Set in `start()`; used to compute `started_at`/`duration_ms` on save.
-    session_started_at_ms: Arc<Mutex<Option<i64>>>,
-    /// Row id of the meeting persisted on the most recent `stop()`. Used by
-    /// `summarize_meeting` to update the same row with the generated summary.
-    last_saved_meeting_id: Arc<Mutex<Option<i64>>>,
-    /// Row id of the CURRENTLY in-progress meeting (status `recording`). The row
-    /// is INSERTED on start() (crash-recovery: a kill mid-meeting still leaves a
-    /// recoverable row) and updated incrementally during capture. Flipped to
-    /// `last_saved_meeting_id` + status `completed` on stop().
-    current_meeting_id: Arc<Mutex<Option<i64>>>,
-    /// Monotonic counter of segments persisted to the in-progress row, used to
-    /// batch incremental DB writes (write every N new segments) so a long
-    /// meeting doesn't thrash SQLite.
-    persisted_segment_count: Arc<Mutex<usize>>,
-    /// Absolute path to the persisted mixed playback audio written on the most recent
-    /// `stop()`, if any. Stored on the meeting row via `audio_path`.
-    last_saved_audio_path: Arc<Mutex<Option<String>>>,
-    /// Raw f32 (little-endian, 16 kHz mono) buffer files the capture loop
-    /// streams the FULL per-source audio into for the on-stop finalize pass.
-    /// Bounded-memory: written incrementally, read back once on stop. Set by the
-    /// capture loop, consumed by `finalize_session`.
-    buffer_paths: Arc<Mutex<Option<SessionBuffers>>>,
-    /// Monotonic instant of the most recent speech frame from EITHER source's
-    /// VAD, or the session start when no speech has been seen yet. The
-    /// prolonged-silence auto-end flow compares its `elapsed()` against
-    /// `meeting_silence_timeout_secs`. Reset to "now" at session start and via
-    /// `reset_silence_timer` when the user keeps a meeting going.
-    silence_anchor: Arc<Mutex<Instant>>,
-    /// True while a session is streaming to the Gemini Live API in ANY mode.
-    /// The stream produces the transcript itself, so the normal per-segment
-    /// live transcription stands down.
-    live_gemini_active: Arc<AtomicBool>,
-    /// True while that stream is a TRANSLATION. Narrower than
-    /// `live_gemini_active` because the two modes differ in what may replace
-    /// their output: a translated transcript is final (re-transcribing would
-    /// throw the translation away), whereas a live-transcribed one may still be
-    /// upgraded by the Gemini batch pass, which can attribute speakers.
-    live_translate_active: Arc<AtomicBool>,
-    /// Rolling text for the live subtitle strip. Fed only by the SYSTEM source:
-    /// subtitles of your own voice are noise, and interleaving two independent
-    /// streams onto one strip reads as gibberish.
-    #[cfg(target_os = "macos")]
-    subtitles: Arc<Mutex<SubtitleFeed>>,
-    /// Tokens this session has spent across every Gemini path, so the finished
-    /// meeting can show what it cost. Cleared at session start.
-    session_usage: Arc<Mutex<crate::ai_usage::MeetingUsage>>,
-    /// Error surfaced by the most recent finalize pass when EVERY transcription
-    /// window failed (no balance, network down, model unavailable). Distinct
-    /// from "the meeting was genuinely silent": in this case `persist_session`
-    /// keeps both the row and the audio, and the UI shows the reason instead of
-    /// failing silently. Cleared at the start of every session.
-    last_finalize_error: Arc<Mutex<Option<String>>>,
-    /// Explicit title for the CURRENT session resolved from the calendar or
-    /// the meeting app's window title (`meeting_naming`), `None` until (and
-    /// unless) the background resolution succeeds. When set, it names the
-    /// persisted row and suppresses the LLM auto-title on stop.
-    session_title: Arc<Mutex<Option<String>>>,
-    /// True while a recording FILE is being imported (`import_recording`).
-    /// An import owns the engine and the shared usage tally exactly like a
-    /// live session does, so the two exclude each other.
-    importing: Arc<AtomicBool>,
+    pub(super) store: MeetingStore,
+    /// State + current session, serializing start/stop/exclusive jobs.
+    pub(super) slot: Arc<Mutex<Slot>>,
+    /// Lock-free mirror of "a meeting owns the engine" (running OR
+    /// finalizing). The TranscriptionManager idle-watcher and dictation read
+    /// it; it stays set until `stop()` has fully finished, so dictation cannot
+    /// grab or unload the engine in the middle of the finalize pass.
+    pub(super) active: Arc<AtomicBool>,
+    /// Source of session generations.
+    next_generation: Arc<AtomicU64>,
+    /// True while an exclusive job (import, re-transcription, recovery) runs.
+    /// It owns the engine exactly like a live session does, so they exclude
+    /// each other.
+    pub(super) importing: Arc<AtomicBool>,
     /// Set by `cancel_import`; checked between decode packets and between
     /// transcription windows.
-    import_cancel: Arc<AtomicBool>,
+    pub(super) import_cancel: Arc<AtomicBool>,
     /// Last progress reported by the running import, so a window that opens
     /// mid-import can show where it is instead of nothing.
-    import_progress: Arc<Mutex<Option<MeetingImportProgress>>>,
+    pub(super) import_progress: Arc<Mutex<Option<MeetingImportProgress>>>,
 }
 
-/// Tally of transcription failures seen during a finalize pass, used to tell
-/// "the meeting was silent" apart from "every transcription call failed". Only
-/// the first error message is kept — the windows all fail for the same reason
-/// (no API balance, network down, model missing) and one line is what the UI
-/// shows.
-#[cfg(target_os = "macos")]
-#[derive(Default)]
-struct FinalizeErrors {
-    count: usize,
-    first: Option<String>,
+/// Returns the slot to `Idle` when `stop()` ends — normally or by panic — so
+/// a crash inside the finalize pass can never wedge the app in "finalizing".
+struct FinalizeGuard<'a> {
+    manager: &'a MeetingManager,
+    generation: u64,
 }
 
-/// How a Gemini batch finalize pass ended. All three variants stop the finalize
-/// pass — none of them fall through to the local Whisper path, because the user
-/// asked for Gemini and silently substituting a different (slow, minutes-long)
-/// transcription would be worse than reporting what went wrong.
-#[cfg(target_os = "macos")]
-enum GeminiFinalizeOutcome {
-    /// A transcript was produced (or the audio was genuinely silent).
-    Done,
-    /// Every request failed; the reason is recorded and surfaced.
-    Failed,
-    /// The capture buffers were empty, so there was nothing to transcribe.
-    NoAudio,
-}
-
-/// Turns the API's raw speaker tags into display labels, numbered by the order
-/// each speaker first talks.
-///
-/// Deliberately ignores whatever number the tag itself carries. The documented
-/// shape is `spk_1`, but the API actually returns `spk:0` — different separator
-/// AND zero-based — so any attempt to reuse its numbering is a guess that has
-/// already been wrong once. Order of first appearance is derived from data we
-/// can see, always starts at 1, and survives whatever the tag looks like next.
-#[cfg(target_os = "macos")]
-#[derive(Default)]
-struct SpeakerLabels {
-    seen: Vec<String>,
-}
-
-#[cfg(target_os = "macos")]
-impl SpeakerLabels {
-    fn label(&mut self, raw: &str) -> String {
-        let index = match self.seen.iter().position(|s| s == raw) {
-            Some(i) => i,
-            None => {
-                self.seen.push(raw.to_string());
-                self.seen.len() - 1
+impl Drop for FinalizeGuard<'_> {
+    fn drop(&mut self) {
+        let changed = {
+            let mut slot = self
+                .manager
+                .slot
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let same = slot
+                .session
+                .as_ref()
+                .is_some_and(|s| s.generation == self.generation);
+            if same && slot.state == MeetingState::Finalizing {
+                slot.state = MeetingState::Idle;
+                self.manager.active.store(false, Ordering::SeqCst);
+                true
+            } else {
+                false
             }
         };
-        format!("Speaker {}", index + 1)
-    }
-}
-
-#[cfg(target_os = "macos")]
-impl FinalizeErrors {
-    fn record(&mut self, err: String) {
-        self.count += 1;
-        if self.first.is_none() {
-            self.first = Some(err);
+        if changed {
+            self.manager.emit_state();
         }
     }
-}
-
-/// The per-source Gemini Live sessions owned by a running capture loop.
-#[cfg(target_os = "macos")]
-struct LiveSessions {
-    mic: crate::gemini_live::LiveSession,
-    system: crate::gemini_live::LiveSession,
-    /// Each source's in-progress accumulator, so the trailing utterance can be
-    /// flushed when the meeting stops rather than stranded.
-    mic_pending: LiveBuilder,
-    system_pending: LiveBuilder,
-    /// Model both sessions run on, needed to price their tokens.
-    model: String,
-}
-
-/// Shared handle on a source's segment accumulator.
-#[cfg(target_os = "macos")]
-type LiveBuilder = Arc<Mutex<LiveSegmentBuilder>>;
-
-#[cfg(target_os = "macos")]
-impl LiveSessions {
-    fn stop(&self) {
-        self.mic.stop();
-        self.system.stop();
-    }
-}
-
-/// Accumulates streamed Live API fragments into one finished segment.
-///
-/// The API emits the original and the translation as separate partial strings,
-/// so both are concatenated until the turn closes. The timestamp is taken from
-/// the FIRST fragment of a turn, so a segment is ordered by when its speech
-/// started rather than when the model finished translating it.
-#[cfg(target_os = "macos")]
-#[derive(Default)]
-struct LiveSegmentBuilder {
-    original: String,
-    translation: String,
-    timestamp_ms: Option<u64>,
-    /// Latest speculative hypothesis for the utterance in progress.
-    ///
-    /// Kept as a LAST RESORT for the stored transcript. The API sometimes
-    /// streams an utterance as interim updates and never finalizes it before
-    /// the meeting stops — which produced subtitles the user could read while
-    /// the saved transcript had nothing from that source at all. An
-    /// unfinalized sentence is worth far more than a missing one.
-    last_interim: String,
-}
-
-#[cfg(target_os = "macos")]
-struct LiveSegment {
-    original: String,
-    translation: Option<String>,
-    timestamp_ms: u64,
-}
-
-#[cfg(target_os = "macos")]
-impl LiveSegmentBuilder {
-    fn absorb(&mut self, fragment: &crate::gemini_live::LiveTranscript, elapsed_ms: u64) {
-        if fragment.original.is_some() || fragment.translation.is_some() {
-            self.timestamp_ms.get_or_insert(elapsed_ms);
-        }
-        if let Some(text) = &fragment.interim {
-            // Replaces, never appends: each interim restates the whole
-            // in-progress utterance.
-            self.last_interim = text.clone();
-            self.timestamp_ms.get_or_insert(elapsed_ms);
-        }
-        if let Some(text) = &fragment.original {
-            self.original.push_str(text);
-        }
-        if let Some(text) = &fragment.translation {
-            self.translation.push_str(text);
-        }
-    }
-
-    /// Take the accumulated segment, resetting for the next turn. Returns
-    /// `None` for a turn that produced no text (the model emitted only audio).
-    fn take(&mut self) -> Option<LiveSegment> {
-        self.take_inner(false)
-    }
-
-    /// As `take`, but allowed to fall back to the unfinalized hypothesis.
-    ///
-    /// Only used when the session is ending. Mid-session the finalized text is
-    /// usually moments away, and emitting the guess first would store the same
-    /// sentence twice; at stop there is no "moments away" left.
-    fn take_final(&mut self) -> Option<LiveSegment> {
-        self.take_inner(true)
-    }
-
-    fn take_inner(&mut self, allow_interim: bool) -> Option<LiveSegment> {
-        let mut original = std::mem::take(&mut self.original).trim().to_string();
-        let translation = std::mem::take(&mut self.translation).trim().to_string();
-        let interim = std::mem::take(&mut self.last_interim).trim().to_string();
-        let timestamp_ms = self.timestamp_ms.take().unwrap_or(0);
-        // Nothing was ever finalized, but the model told us what it heard.
-        // Storing that beats storing silence.
-        if allow_interim && original.is_empty() && translation.is_empty() && !interim.is_empty() {
-            original = interim;
-        }
-        if original.is_empty() && translation.is_empty() {
-            return None;
-        }
-        // When only the translation came through, it IS the transcript — better
-        // than dropping the turn entirely.
-        let (original, translation) = if original.is_empty() {
-            (translation, String::new())
-        } else {
-            (original, translation)
-        };
-        Some(LiveSegment {
-            original,
-            translation: if translation.is_empty() {
-                None
-            } else {
-                Some(translation)
-            },
-            timestamp_ms,
-        })
-    }
-}
-
-/// Rolling text for the subtitle strip.
-///
-/// Keeps the last few finalized lines plus the utterance still being spoken.
-/// Bounded on purpose: a strip that grows without limit either overflows its
-/// window or shrinks its own text, and the useful reading window during a
-/// conversation is the last sentence or two, not the meeting so far.
-#[cfg(target_os = "macos")]
-#[derive(Default)]
-struct SubtitleFeed {
-    settled: std::collections::VecDeque<String>,
-    pending: String,
-}
-
-/// How many finalized lines stay on screen under the in-progress one.
-#[cfg(target_os = "macos")]
-const SUBTITLE_HISTORY_LINES: usize = 1;
-
-/// Hard cap on what the strip may show at once.
-///
-/// Sized like a real subtitle: roughly three lines at the strip's width. The
-/// limit is enforced HERE rather than left to CSS, because a clamp that
-/// silently stops applying (build tools are known to drop
-/// `-webkit-box-orient`) turns into text running off the bottom of the window
-/// with nothing to catch it.
-#[cfg(target_os = "macos")]
-const SUBTITLE_MAX_CHARS: usize = 160;
-
-/// Below this many characters of leftover budget, history is dropped entirely
-/// rather than shown as a stump. A three-letter tail of a sentence that has
-/// scrolled away is not context, it is litter.
-#[cfg(target_os = "macos")]
-const SUBTITLE_MIN_HISTORY_CHARS: usize = 24;
-
-#[cfg(target_os = "macos")]
-impl SubtitleFeed {
-    /// A speculative hypothesis REPLACES the pending line — the API resends the
-    /// whole in-progress utterance each time, so appending would stutter the
-    /// text back on itself.
-    fn set_pending(&mut self, text: &str) {
-        self.pending = text.trim().to_string();
-    }
-
-    /// Finalized text retires the pending line and joins the history.
-    fn settle(&mut self, text: &str) {
-        let text = text.trim();
-        self.pending.clear();
-        if text.is_empty() {
-            return;
-        }
-        self.settled.push_back(text.to_string());
-        while self.settled.len() > SUBTITLE_HISTORY_LINES {
-            self.settled.pop_front();
-        }
-    }
-
-    /// What the strip should show, trimmed to fit.
-    ///
-    /// Trims from the FRONT: the newest words are the ones being spoken right
-    /// now, so they are what must survive. History gives way before the
-    /// in-progress line does, and an unusually long in-progress line is cut
-    /// from its own start rather than truncated at the end.
-    fn snapshot(&self) -> crate::subtitle_overlay::SubtitleUpdate {
-        let pending = tail_chars(&self.pending, SUBTITLE_MAX_CHARS);
-        // Whatever the in-progress line leaves over is spent on history — but
-        // only if it is enough to be worth reading.
-        let budget = SUBTITLE_MAX_CHARS.saturating_sub(pending.chars().count());
-        let settled = if budget < SUBTITLE_MIN_HISTORY_CHARS {
-            String::new()
-        } else {
-            tail_chars(
-                &self.settled.iter().cloned().collect::<Vec<_>>().join(" "),
-                budget,
-            )
-        };
-        crate::subtitle_overlay::SubtitleUpdate { settled, pending }
-    }
-
-    fn is_empty(&self) -> bool {
-        self.settled.is_empty() && self.pending.is_empty()
-    }
-}
-
-/// Last `max` characters of `text`, starting at a word boundary so the strip
-/// never opens mid-word.
-#[cfg(target_os = "macos")]
-fn tail_chars(text: &str, max: usize) -> String {
-    let text = text.trim();
-    if max == 0 {
-        return String::new();
-    }
-    let len = text.chars().count();
-    if len <= max {
-        return text.to_string();
-    }
-    let tail: String = text.chars().skip(len - max).collect();
-    // Start at the next whole word; fall back to the hard cut when the tail is
-    // a single very long token.
-    match tail.find(' ') {
-        Some(space) => tail[space + 1..].trim_start().to_string(),
-        None => tail,
-    }
-}
-
-/// Temp-file paths holding the full session audio for the on-stop finalize
-/// pass. All paths are raw little-endian f32 at 16 kHz mono.
-#[derive(Clone, Debug)]
-struct SessionBuffers {
-    /// Full microphone ("you") audio.
-    mic: std::path::PathBuf,
-    /// Full system ("others") audio.
-    system: std::path::PathBuf,
-    /// Full mixed mono audio (used for the saved playback audio).
-    mixed: std::path::PathBuf,
 }
 
 impl MeetingManager {
     pub fn new(app_handle: &AppHandle, transcription_manager: Arc<TranscriptionManager>) -> Self {
-        // Resolve the persistence store. If the app data dir cannot be resolved
-        // (should not happen in practice), fall back to a store pointing at a
-        // best-effort path; save errors are logged, not fatal.
+        // If the app data dir cannot be resolved (should not happen in
+        // practice), every store call fails with the reason rather than
+        // writing a stray database into the working directory.
         let store = MeetingStore::new(app_handle).unwrap_or_else(|e| {
             log::error!("Failed to initialize MeetingStore: {}", e);
-            MeetingStore::with_db_path(std::path::PathBuf::from("history.db"))
+            MeetingStore::unavailable(e.to_string())
         });
         Self {
             app_handle: app_handle.clone(),
             transcription_manager,
-            state: Arc::new(Mutex::new(MeetingState::Idle)),
-            transcript: Arc::new(Mutex::new(Vec::new())),
-            stop_signal: Arc::new(AtomicBool::new(false)),
-            active: Arc::new(AtomicBool::new(false)),
-            worker: Arc::new(Mutex::new(None)),
             store,
-            session_started_at_ms: Arc::new(Mutex::new(None)),
-            last_saved_meeting_id: Arc::new(Mutex::new(None)),
-            last_saved_audio_path: Arc::new(Mutex::new(None)),
-            buffer_paths: Arc::new(Mutex::new(None)),
-            current_meeting_id: Arc::new(Mutex::new(None)),
-            persisted_segment_count: Arc::new(Mutex::new(0)),
-            silence_anchor: Arc::new(Mutex::new(Instant::now())),
-            live_gemini_active: Arc::new(AtomicBool::new(false)),
-            live_translate_active: Arc::new(AtomicBool::new(false)),
-            #[cfg(target_os = "macos")]
-            subtitles: Arc::new(Mutex::new(SubtitleFeed::default())),
-            session_usage: Arc::new(Mutex::new(crate::ai_usage::MeetingUsage::default())),
-            last_finalize_error: Arc::new(Mutex::new(None)),
-            session_title: Arc::new(Mutex::new(None)),
+            slot: Arc::new(Mutex::new(Slot {
+                state: MeetingState::Idle,
+                session: None,
+            })),
+            active: Arc::new(AtomicBool::new(false)),
+            next_generation: Arc::new(AtomicU64::new(0)),
             importing: Arc::new(AtomicBool::new(false)),
             import_cancel: Arc::new(AtomicBool::new(false)),
             import_progress: Arc::new(Mutex::new(None)),
         }
     }
 
-    /// Whether a meeting session (or a recording import) currently owns the
-    /// transcription engine. Consulted by the TranscriptionManager idle-watcher
-    /// to keep the model loaded, and by dictation to leave the engine alone.
+    /// Whether a meeting session (running or finalizing) or an exclusive job
+    /// currently owns the transcription engine. Consulted by the
+    /// TranscriptionManager idle-watcher to keep the model loaded, and by
+    /// dictation to leave the engine alone.
     pub fn is_active(&self) -> bool {
-        self.active.load(Ordering::Relaxed) || self.importing.load(Ordering::Relaxed)
+        self.active.load(Ordering::SeqCst) || self.importing.load(Ordering::SeqCst)
     }
 
     pub fn status(&self) -> MeetingState {
-        *self.state.lock().unwrap()
+        self.slot.lock().unwrap().state
     }
 
-    /// Absolute epoch-ms start time of the running session, or `None` when idle.
+    /// The session in the slot: live, finalizing, or the most recent one.
+    pub(super) fn current_session(&self) -> Option<Arc<Session>> {
+        self.slot.lock().unwrap().session.clone()
+    }
+
+    /// Snapshot for `get_meeting_session` / `meeting-session-changed`.
+    pub fn session_info(&self) -> MeetingSessionInfo {
+        let slot = self.slot.lock().unwrap();
+        match (&slot.session, slot.state) {
+            (Some(session), MeetingState::Running | MeetingState::Finalizing) => {
+                MeetingSessionInfo {
+                    state: slot.state.as_str().to_string(),
+                    meeting_id: session.meeting_id(),
+                    started_at_ms: Some(session.started_at_ms),
+                }
+            }
+            _ => MeetingSessionInfo {
+                state: slot.state.as_str().to_string(),
+                meeting_id: None,
+                started_at_ms: None,
+            },
+        }
+    }
+
+    /// Row id of the meeting that is running or still being saved.
+    pub fn live_meeting_id(&self) -> Option<i64> {
+        self.session_info().meeting_id
+    }
+
+    /// Refuse to touch the meeting that is live or finalizing: deleting,
+    /// discarding, recovering or re-transcribing it would destroy the meeting
+    /// in progress (or be overwritten by its finalize a moment later).
+    pub fn ensure_not_live(&self, id: i64) -> Result<(), String> {
+        if self.live_meeting_id() == Some(id) {
+            Err(
+                "This meeting is in progress; stop it and wait for it to be saved first."
+                    .to_string(),
+            )
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Absolute epoch-ms start time of the live session, or `None` when idle.
     /// Lets a UI that opens (or reloads) mid-meeting show the REAL elapsed time
     /// instead of counting up from the moment it attached.
     pub fn session_started_at_ms(&self) -> Option<i64> {
-        match self.status() {
-            MeetingState::Running => *self.session_started_at_ms.lock().unwrap(),
-            MeetingState::Idle => None,
-        }
+        self.session_info().started_at_ms
     }
 
-    /// Reset the prolonged-silence timer used by the auto-end flow, as if
-    /// speech had just been detected. Called when the user answers the
-    /// "end meeting?" prompt with "keep going".
+    /// Reset the prolonged-silence timer used by the auto-end flow. Called
+    /// when the user answers the "end meeting?" prompt with "keep going".
     pub fn reset_silence_timer(&self) {
-        self.note_speech();
+        if let Some(session) = self.current_session() {
+            session.reset_silence_timer();
+        }
     }
 
-    /// Record that speech was just observed (from either capture source's VAD),
-    /// so the prolonged-silence auto-end flow starts counting fresh. Cheap: a
-    /// single mutex store of `Instant::now()`, called per speech frame.
-    fn note_speech(&self) {
-        *self.silence_anchor.lock().unwrap() = Instant::now();
-    }
-
-    /// Return the full accumulated transcript text. Segments are sorted by their
-    /// relative timestamp first (segments now arrive from two independent
-    /// per-source VAD pipelines, so insertion order is not chronological) and
-    /// joined by spaces.
+    /// The transcript of the live (or most recent) session.
     pub fn full_transcript(&self) -> String {
-        let segs = self.transcript.lock().unwrap();
-        let mut ordered: Vec<&TranscriptSegment> = segs.iter().collect();
-        ordered.sort_by_key(|s| s.timestamp_ms);
-        ordered
-            .iter()
-            .map(|s| s.text.as_str())
-            .filter(|t| !t.is_empty())
-            .collect::<Vec<_>>()
-            .join(" ")
+        self.current_session().map(|s| s.text()).unwrap_or_default()
     }
 
-    /// Start a meeting session. Ensures the transcription model is loaded
-    /// (using the same path dictation uses), resets the transcript, and spawns
-    /// the capture+mix+VAD+transcribe loop.
-    pub fn start(&self) -> Result<(), String> {
-        // Serialize against concurrent start/stop.
-        let mut state = self.state.lock().unwrap();
-        if *state == MeetingState::Running {
-            return Err("Meeting already running".to_string());
-        }
-        if self.importing.load(Ordering::SeqCst) {
-            return Err(
-                "A recording is being imported. Wait for it to finish or cancel it first."
-                    .to_string(),
-            );
-        }
+    /// Access the persistence store (used by list/get commands).
+    pub fn store(&self) -> &MeetingStore {
+        &self.store
+    }
 
+    /// Start a meeting session. Ensures the transcription model is loading,
+    /// creates a fresh session and spawns the capture loop.
+    pub fn start(&self) -> Result<(), String> {
         #[cfg(not(target_os = "macos"))]
         {
-            let _ = &self.transcription_manager;
+            let _ = (&self.transcription_manager, &self.next_generation);
             return Err("Meeting mode capture is only supported on macOS".to_string());
         }
 
         #[cfg(target_os = "macos")]
         {
-            // Ensure the model is loaded (background load, same path as dictation).
-            // The capture loop's transcribe() calls will also block-wait on the
-            // loading condvar if needed, so this is a best-effort kickstart.
+            let session = {
+                let mut slot = self.slot.lock().unwrap();
+                match slot.state {
+                    MeetingState::Running => return Err("Meeting already running".to_string()),
+                    MeetingState::Finalizing => {
+                        return Err(
+                            "The previous meeting is still being saved. Try again in a moment."
+                                .to_string(),
+                        )
+                    }
+                    MeetingState::Idle => {}
+                }
+                if self.importing.load(Ordering::SeqCst) {
+                    return Err(
+                        "A recording is being imported. Wait for it to finish or cancel it first."
+                            .to_string(),
+                    );
+                }
+                let generation = self.next_generation.fetch_add(1, Ordering::SeqCst) + 1;
+                let session = Arc::new(Session::new(generation, now_epoch_ms()));
+                slot.session = Some(session.clone());
+                slot.state = MeetingState::Running;
+                self.active.store(true, Ordering::SeqCst);
+                session
+            };
+
+            // Kick off the model load (background, same path as dictation). The
+            // live transcription calls block-wait on the loading condvar if
+            // needed.
             let settings = crate::settings::get_settings(&self.app_handle);
             self.transcription_manager
                 .initiate_model_load_for(settings.meeting_model_id());
 
-            // Reset session state.
-            {
-                let mut segs = self.transcript.lock().unwrap();
-                segs.clear();
-            }
-            // Record the ABSOLUTE session start time (epoch ms). Segment
-            // timestamps remain relative to this.
-            *self.session_started_at_ms.lock().unwrap() = Some(now_epoch_ms());
-            *self.last_saved_meeting_id.lock().unwrap() = None;
-            *self.last_saved_audio_path.lock().unwrap() = None;
-            *self.buffer_paths.lock().unwrap() = None;
-            *self.current_meeting_id.lock().unwrap() = None;
-            *self.persisted_segment_count.lock().unwrap() = 0;
-            self.live_gemini_active.store(false, Ordering::Relaxed);
-            self.live_translate_active.store(false, Ordering::Relaxed);
-            *self.last_finalize_error.lock().unwrap() = None;
-            *self.session_usage.lock().unwrap() = crate::ai_usage::MeetingUsage::default();
-            *self.session_title.lock().unwrap() = None;
-            // Start the prolonged-silence timer fresh so it never inherits a
-            // stale anchor from a previous session.
-            self.note_speech();
-            self.stop_signal.store(false, Ordering::Relaxed);
-            self.active.store(true, Ordering::Relaxed);
-
-            let manager = self.clone();
-            let handle = std::thread::spawn(move || {
-                if let Err(e) = manager.run_capture_loop() {
-                    log::error!("Meeting capture loop ended with error: {}", e);
-                }
-                manager.active.store(false, Ordering::Relaxed);
-            });
-            *self.worker.lock().unwrap() = Some(handle);
+            let handle = {
+                let manager = self.clone();
+                let session = session.clone();
+                std::thread::spawn(move || {
+                    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        manager.run_capture_loop(&session)
+                    }));
+                    let error = match outcome {
+                        Ok(Ok(())) => None,
+                        Ok(Err(e)) => Some(e),
+                        Err(_) => Some("The meeting capture thread crashed.".to_string()),
+                    };
+                    if let Some(error) = error {
+                        log::error!("Meeting capture loop ended with error: {}", error);
+                        manager.abort_session(&session, &error);
+                    }
+                })
+            };
+            *session.worker.lock().unwrap() = Some(handle);
 
             // TITLE (naming): try to name the session after the real meeting
             // (calendar event, else the meeting app's window title) in the
             // background — AX / EventKit calls must never delay the start.
             {
                 let manager = self.clone();
-                std::thread::spawn(move || manager.resolve_session_title());
+                let session = session.clone();
+                std::thread::spawn(move || manager.resolve_session_title(&session));
             }
 
-            *state = MeetingState::Running;
+            self.emit_state();
             log::info!("Meeting session started");
             Ok(())
         }
     }
 
-    /// Stop the meeting session, join the capture thread, and return the final
-    /// accumulated transcript text.
-    pub fn stop(&self) -> Result<String, String> {
-        let mut state = self.state.lock().unwrap();
-        if *state == MeetingState::Idle {
-            // Idempotent: return whatever transcript exists.
-            return Ok(self.full_transcript());
+    /// The capture thread failed (mic denied, no device, tap failure, VAD
+    /// init, or a panic). Return the slot to idle and tell the UI why — the
+    /// state used to stay "running" with nothing captured.
+    ///
+    /// A failure before the sources came up leaves no row; its buffers are
+    /// removed. A failure mid-meeting keeps the row (still `recording`) so the
+    /// audio captured so far can be recovered.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    fn abort_session(&self, session: &Arc<Session>, error: &str) {
+        let aborted = {
+            let mut slot = self.slot.lock().unwrap();
+            let same = slot
+                .session
+                .as_ref()
+                .is_some_and(|s| s.generation == session.generation);
+            if same && slot.state == MeetingState::Running {
+                slot.state = MeetingState::Idle;
+                self.active.store(false, Ordering::SeqCst);
+                true
+            } else {
+                // A stop() is already finalizing it and will persist or
+                // discard whatever there is.
+                false
+            }
+        };
+        if !aborted {
+            return;
         }
+        session.stop_signal.store(true, Ordering::SeqCst);
+        #[cfg(target_os = "macos")]
+        self.clear_subtitles(session);
+        match session.meeting_id() {
+            None => {
+                if let Some(buffers) = session.buffers() {
+                    buffers.remove_files();
+                }
+                self.emit_error(&format!("Could not start the meeting: {}", error));
+            }
+            Some(id) => {
+                self.persist_incremental_now(session);
+                self.update_progress_clock(session);
+                log::warn!(
+                    "meeting: row {} left recoverable after a capture failure",
+                    id
+                );
+                self.emit_error(&format!(
+                    "The meeting stopped unexpectedly ({}). What was recorded can be recovered.",
+                    error
+                ));
+            }
+        }
+        self.emit_state();
+    }
 
-        self.stop_signal.store(true, Ordering::Relaxed);
+    /// Stop the meeting: end capture, run the finalize pass, persist, save the
+    /// audio, start the LLM title/summary. The slot reads `Finalizing` for the
+    /// whole stop and only returns to `Idle` once everything is written.
+    ///
+    /// When idle, returns the most recent session's result (idempotent). A
+    /// second stop while one is in progress returns `Err(ALREADY_STOPPING)`.
+    pub fn stop(&self) -> Result<StopMeetingResult, String> {
+        let session = {
+            let mut slot = self.slot.lock().unwrap();
+            match slot.state {
+                MeetingState::Idle => {
+                    return Ok(match &slot.session {
+                        Some(s) => StopMeetingResult {
+                            meeting_id: s.saved_id(),
+                            transcript: s.text(),
+                        },
+                        None => StopMeetingResult {
+                            meeting_id: None,
+                            transcript: String::new(),
+                        },
+                    });
+                }
+                MeetingState::Finalizing => return Err(ALREADY_STOPPING.to_string()),
+                MeetingState::Running => {}
+            }
+            let Some(session) = slot.session.clone() else {
+                slot.state = MeetingState::Idle;
+                self.active.store(false, Ordering::SeqCst);
+                return Ok(StopMeetingResult {
+                    meeting_id: None,
+                    transcript: String::new(),
+                });
+            };
+            slot.state = MeetingState::Finalizing;
+            session
+        };
+        let guard = FinalizeGuard {
+            manager: self,
+            generation: session.generation,
+        };
+        // The tray and UI see "finalizing" right away, before the (possibly
+        // minutes-long) finalize pass.
+        self.emit_state();
 
-        // Take the worker handle out and join it WITHOUT holding the state lock
-        // for the join duration would be ideal, but we hold `state` to serialize
-        // start/stop. The join completes promptly because the loop polls the
-        // stop signal each iteration.
-        let handle = self.worker.lock().unwrap().take();
+        session.stop_signal.store(true, Ordering::SeqCst);
+        // start() stores the capture handle right after the slot turns
+        // Running; a stop racing that instant waits for it (bounded).
+        let mut handle = session.worker.lock().unwrap().take();
+        for _ in 0..100 {
+            if handle.is_some() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            handle = session.worker.lock().unwrap().take();
+        }
         if let Some(handle) = handle {
-            // Release the state lock during join to avoid blocking status reads.
-            drop(state);
             if let Err(e) = handle.join() {
                 log::warn!("Failed to join meeting capture thread: {:?}", e);
             }
-            state = self.state.lock().unwrap();
-        }
-
-        self.active.store(false, Ordering::Relaxed);
-        *state = MeetingState::Idle;
-        // Release the state lock before persisting (DB I/O shouldn't block
-        // status reads).
-        drop(state);
-
-        // Refresh the tray indicator NOW that the session is logically stopped,
-        // BEFORE the (potentially minutes-long, blocking) finalize/persist/LLM
-        // work below. Without this the tray's "recording" icon + title/tooltip
-        // stay stuck for the entire finalize pass — and permanently if any step
-        // panics. The state is already Idle, so the listener re-reading status()
-        // sees the stop and reverts to idle. The caller (`stop_meeting_session`)
-        // emits again after stop() returns; that's harmless (idempotent).
-        {
-            use tauri::Emitter;
-            let _ = self.app_handle.emit(
-                crate::commands::meeting::MEETING_STATE_CHANGED_EVENT,
-                "idle",
-            );
         }
 
         // Hybrid transcription: re-transcribe the FULL per-source audio for a
         // higher-quality, labeled transcript that REPLACES the live preview.
-        // macOS-only; on other platforms this is a no-op (no buffers written).
         #[cfg(target_os = "macos")]
-        self.finalize_session();
+        self.finalize_session(&session);
 
-        // Persist the session. Failures are logged, never propagated, so a
-        // stop always succeeds and returns the transcript.
-        self.persist_session();
+        // Persist. Failures are logged, never propagated, so a stop always
+        // succeeds and returns the transcript.
+        self.persist_session(&session);
 
-        // Save the mixed audio for playback (needs the persisted row id).
         #[cfg(target_os = "macos")]
-        self.save_session_audio();
+        self.save_session_audio(&session);
 
-        // Best-effort auto-title from the transcript via the active LLM provider.
-        // Replaces the datetime default; keeps the datetime title on any error or
-        // when no provider is configured. Runs after persistence so it can update
-        // the saved row. Never blocks/fails the stop.
-        self.maybe_auto_title();
+        // Best-effort LLM title + summary, spawned; they carry the row id they
+        // were started for.
+        self.maybe_auto_title(&session);
+        self.maybe_auto_summarize(&session);
 
-        // Best-effort auto-summarize (behind a setting). Runs after persistence
-        // so it can update the saved row. Never blocks/fails the stop.
-        self.maybe_auto_summarize();
-
+        let result = StopMeetingResult {
+            meeting_id: session.saved_id(),
+            transcript: session.text(),
+        };
+        drop(guard);
         log::info!("Meeting session stopped");
-        Ok(self.full_transcript())
+        Ok(result)
     }
 
-    /// Persist the accumulated session on stop(). The common path FINALIZES the
-    /// in-progress row inserted at start() (status `recording` → `completed`,
-    /// writing the final transcript/segments and clearing the temp-buffer paths).
-    /// If no in-progress row exists (e.g. the row insert failed, or a platform
-    /// where capture never ran), falls back to a plain INSERT so the transcript
-    /// isn't lost. Skips empty meetings. Remembers the saved row id so a later
-    /// summary can update the same record. Never panics or propagates errors.
-    fn persist_session(&self) {
-        let segments: Vec<TranscriptSegment> = { self.transcript.lock().unwrap().clone() };
-        let transcript = self.full_transcript();
+    /// The app is quitting. A running meeting cannot be finalized in the time
+    /// a quit allows, so end capture (bounded), flush the capture buffers and
+    /// the transcript so far, and leave the row `recording` — the recovery
+    /// banner offers it on next launch. A meeting already finalizing is left
+    /// as is: its row is still `recording` until finalize writes it, so an
+    /// interrupted save is recoverable the same way.
+    pub fn shutdown(&self) {
+        let session = {
+            let slot = self.slot.lock().unwrap();
+            match slot.state {
+                MeetingState::Running => slot.session.clone(),
+                _ => None,
+            }
+        };
+        let Some(session) = session else {
+            return;
+        };
+        log::info!("meeting: app quitting mid-meeting; saving what was captured for recovery");
+        session.shutting_down.store(true, Ordering::SeqCst);
+        session.stop_signal.store(true, Ordering::SeqCst);
+        let handle = session.worker.lock().unwrap().take();
+        if let Some(handle) = handle {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(6);
+            while !handle.is_finished() && std::time::Instant::now() < deadline {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            if handle.is_finished() {
+                let _ = handle.join();
+            } else {
+                log::warn!("meeting: capture did not stop in time during quit");
+            }
+        }
+        self.persist_incremental_now(&session);
+        self.update_progress_clock(&session);
+    }
 
+    /// Persist the session on stop(). The common path FINALIZES the in-progress
+    /// row (status `recording` → `completed`, final transcript/segments,
+    /// buffer paths cleared). If no in-progress row exists (the insert failed),
+    /// or finalizing it fails, falls back to a plain INSERT so the transcript
+    /// isn't lost. Empty sessions are discarded or kept for recovery.
+    fn persist_session(&self, session: &Session) {
+        let (segments, transcript) = {
+            let t = session.transcript();
+            (t.segments().to_vec(), t.text().to_string())
+        };
         let ended_at = now_epoch_ms();
-        let started_at = self
-            .session_started_at_ms
-            .lock()
-            .unwrap()
-            .unwrap_or(ended_at);
+        let started_at = session.started_at_ms;
         let duration_ms = (ended_at - started_at).max(0);
-
-        let current_id = *self.current_meeting_id.lock().unwrap();
+        let current_id = session.meeting_id();
 
         // An empty transcript means one of two very different things:
         //   1. Nothing was said, or nothing was captured — nothing worth keeping.
-        //   2. Audio WAS captured but every transcription call failed (no API
-        //      balance, network down, model unavailable).
+        //   2. Audio WAS captured but every transcription call failed.
         // Deleting the row in case 2 destroys a recording the user cannot get
-        // back. Keep it instead, as an in-progress row so the EXISTING recovery
-        // flow can re-run the finalize pass once the cause is fixed, and write
-        // the playback audio now so the audio outlives the temp directory.
+        // back. Keep it instead, as an in-progress row the recovery flow can
+        // re-run once the cause is fixed.
         if transcript.trim().is_empty() {
-            let failure = self.last_finalize_error.lock().unwrap().clone();
-            let spent_tokens = !self.session_usage.lock().unwrap().is_empty();
-            let captured_samples = self.captured_sample_count();
-            match empty_session_outcome(failure.as_deref(), captured_samples, spent_tokens) {
+            let failure = session.finalize_error.lock().unwrap().clone();
+            let spent_tokens = !session.usage.lock().unwrap().is_empty();
+            let captured_samples = session
+                .buffers()
+                .map(|b| super::buffers::sample_count(&b.mixed))
+                .unwrap_or(0);
+            let voiced = session.voiced.load(Ordering::Relaxed);
+            match empty_session_outcome(failure.as_deref(), captured_samples, spent_tokens, voiced)
+            {
                 EmptySessionOutcome::PreserveForRecovery => {
                     log::warn!(
-                        "meeting: transcription failed on a session with {} samples of audio; \
+                        "meeting: no transcript from a session with {} samples of audio; \
                          keeping it for recovery (reason: {})",
                         captured_samples,
-                        failure.as_deref().unwrap_or("unknown")
+                        failure.as_deref().unwrap_or("no text despite speech")
                     );
-                    self.preserve_failed_session();
+                    self.preserve_failed_session(session);
                     return;
                 }
                 EmptySessionOutcome::Discard => {
-                    log::debug!("Meeting transcript empty; skipping persistence");
+                    log::debug!("Meeting transcript empty; discarding the session");
                     if let Some(id) = current_id {
-                        let _ = self.store.delete_meeting(id);
-                        *self.current_meeting_id.lock().unwrap() = None;
+                        if let Err(e) = self.store.delete_meeting(id) {
+                            log::warn!("meeting: failed to discard empty row {}: {}", id, e);
+                        }
+                        *session.meeting_id.lock().unwrap() = None;
+                    }
+                    if let Some(buffers) = session.buffers() {
+                        buffers.remove_files();
                     }
                     return;
                 }
             }
         }
 
-        match current_id {
-            Some(id) => {
-                // Finalize the existing in-progress row.
-                match self
-                    .store
-                    .finalize_meeting(id, &transcript, &segments, ended_at, duration_ms)
-                {
-                    Ok(()) => {
-                        log::info!("Finalized meeting row {} (completed)", id);
-                        self.persist_usage(id);
-                        self.export_markdown(id);
-                        *self.last_saved_meeting_id.lock().unwrap() = Some(id);
-                        *self.current_meeting_id.lock().unwrap() = None;
-                    }
-                    Err(e) => log::error!("Failed to finalize meeting row {}: {}", id, e),
+        if let Some(id) = current_id {
+            match self
+                .store
+                .finalize_meeting(id, &transcript, &segments, ended_at, duration_ms)
+            {
+                Ok(()) => {
+                    log::info!("Finalized meeting row {} (completed)", id);
+                    self.persist_usage(id, &session.usage);
+                    self.export_markdown(id);
+                    *session.saved_id.lock().unwrap() = Some(id);
+                    return;
                 }
+                Err(e) => log::error!(
+                    "Failed to finalize meeting row {}: {}; saving as a new row",
+                    id,
+                    e
+                ),
             }
-            None => {
-                // Fallback: no in-progress row (insert failed or capture path
-                // never ran). Insert a completed row directly.
-                let title = self
-                    .session_title
-                    .lock()
-                    .unwrap()
-                    .clone()
-                    .unwrap_or_else(|| default_meeting_title(started_at));
-                let record = MeetingRecordInput {
-                    started_at,
-                    ended_at,
-                    duration_ms,
-                    title,
-                    transcript,
-                    segments,
-                    summary: None,
-                    audio_path: None,
-                };
-                match self.store.save_meeting(&record) {
-                    Ok(id) => {
-                        log::info!("Persisted meeting session as row {}", id);
-                        self.export_markdown(id);
-                        *self.last_saved_meeting_id.lock().unwrap() = Some(id);
-                    }
-                    Err(e) => log::error!("Failed to persist meeting session: {}", e),
-                }
+        }
+
+        // Fallback: no usable in-progress row. Insert a completed row directly.
+        let title = session
+            .title()
+            .unwrap_or_else(|| default_meeting_title(started_at));
+        let record = MeetingRecordInput {
+            started_at,
+            ended_at,
+            duration_ms,
+            title,
+            transcript,
+            segments,
+            summary: None,
+            audio_path: None,
+        };
+        match self.store.save_meeting(&record) {
+            Ok(id) => {
+                log::info!("Persisted meeting session as row {}", id);
+                self.persist_usage(id, &session.usage);
+                self.export_markdown(id);
+                *session.saved_id.lock().unwrap() = Some(id);
             }
+            Err(e) => log::error!("Failed to persist meeting session: {}", e),
         }
     }
 
-    /// Number of 16 kHz mono samples the capture loop wrote to the mixed
-    /// session buffer, from the file size alone (the buffer is raw f32). Used to
-    /// tell "no audio was captured" apart from "audio captured, transcription
-    /// failed" when deciding whether an empty-transcript session is worth
-    /// keeping. Returns 0 when no buffer exists (non-macOS, or capture never
-    /// started).
-    fn captured_sample_count(&self) -> u64 {
-        let buffers = match self.buffer_paths.lock().unwrap().clone() {
-            Some(b) => b,
-            None => return 0,
-        };
-        std::fs::metadata(&buffers.mixed)
-            .map(|m| m.len() / std::mem::size_of::<f32>() as u64)
-            .unwrap_or(0)
-    }
-
     /// Keep a session whose transcription failed wholesale. The row stays in
-    /// `recording` status on purpose: that is exactly what the crash-recovery
-    /// banner offers a "Recover" button for, so once the user fixes the cause
-    /// (adds API balance, switches to a local model) one click re-runs the
-    /// finalize pass over the SAME audio. Its clock is brought up to date and
-    /// the mixed playback audio is written now, so the recording survives even if
-    /// the temp buffers are cleaned up before the user gets to it. The temp
-    /// buffers are deliberately NOT deleted — the recovery pass needs them.
-    fn preserve_failed_session(&self) {
-        let Some(id) = *self.current_meeting_id.lock().unwrap() else {
+    /// `recording` status on purpose: that is exactly what the recovery banner
+    /// offers a "Recover" button for, so once the user fixes the cause one
+    /// click re-runs the finalize pass over the SAME audio. The playback audio
+    /// is written now; the capture buffers are kept for the recovery pass.
+    fn preserve_failed_session(&self, session: &Session) {
+        let Some(id) = session.meeting_id() else {
             return;
         };
-        let _ = id;
-        self.update_progress_clock();
+        self.persist_incremental_now(session);
+        self.update_progress_clock(session);
         #[cfg(target_os = "macos")]
-        self.write_playback_audio(id);
+        if let Some(buffers) = session.buffers() {
+            if let Err(e) = self.save_audio_from_raw(id, &buffers.mixed) {
+                log::error!("meeting: failed to save playback audio: {}", e);
+            }
+        }
+        #[cfg(not(target_os = "macos"))]
+        let _ = id;
     }
 
-    /// Returns the row id of the most recently persisted meeting (set on stop),
-    /// or `None` if the last session was empty/unsaved.
-    pub fn last_saved_meeting_id(&self) -> Option<i64> {
-        *self.last_saved_meeting_id.lock().unwrap()
-    }
-
-    /// Update the summary of the persisted meeting row, if one exists.
-    pub fn update_saved_summary(&self, summary: &str) -> Result<(), String> {
-        let id = match self.last_saved_meeting_id() {
-            Some(id) => id,
-            None => return Ok(()),
+    /// Save the playback audio of the meeting `persist_session` saved, then
+    /// drop the capture buffers now that the session is fully on disk. When
+    /// the audio cannot be written the buffers are kept (and swept later).
+    #[cfg(target_os = "macos")]
+    fn save_session_audio(&self, session: &Session) {
+        let (Some(id), Some(buffers)) = (session.saved_id(), session.buffers()) else {
+            return;
         };
-        self.store
-            .update_summary(id, summary)
-            .map_err(|e| format!("Failed to update meeting summary: {}", e))?;
-        self.export_markdown(id);
-        Ok(())
+        match self.save_audio_from_raw(id, &buffers.mixed) {
+            Ok(_) => buffers.remove_files(),
+            Err(e) => log::error!("meeting: failed to save playback audio: {}", e),
+        }
+    }
+
+    /// Insert the in-progress row of `session` (status `recording`) with its
+    /// buffer paths, once capture is up. Announces the row id.
+    #[cfg(target_os = "macos")]
+    pub(super) fn insert_session_row(
+        &self,
+        session: &Session,
+        buffers: &super::session::SessionBuffers,
+    ) {
+        let started_at = session.started_at_ms;
+        // Prefer the explicit session title (calendar / window) when the
+        // background resolution already landed; datetime otherwise.
+        let title = session
+            .title()
+            .unwrap_or_else(|| default_meeting_title(started_at));
+        let stored = crate::meeting::store::StoredBuffers {
+            mic: Some(buffers.mic.to_string_lossy().to_string()),
+            system: Some(buffers.system.to_string_lossy().to_string()),
+            mixed: Some(buffers.mixed.to_string_lossy().to_string()),
+        };
+        match self.store.start_meeting(started_at, &title, &stored) {
+            Ok(id) => {
+                log::info!("meeting: inserted in-progress row {} (recording)", id);
+                *session.meeting_id.lock().unwrap() = Some(id);
+                // Close the race with the naming thread: if it stashed a title
+                // after we read it but before the id was registered above,
+                // rename the row now.
+                if let Some(resolved) = session.title() {
+                    if resolved != title {
+                        self.apply_title(id, &resolved);
+                    }
+                }
+                self.emit_session_changed();
+            }
+            Err(e) => log::error!("meeting: failed to insert in-progress row: {}", e),
+        }
     }
 
     /// Refresh meeting `id`'s copy in the user's export folder (Obsidian vault
@@ -953,29 +777,31 @@ impl MeetingManager {
         super::export::sync_to_export_dir(&self.app_handle, &self.store, id);
     }
 
-    /// TITLE (naming): resolve an explicit session title from the calendar
-    /// event in progress or the meeting app's window title, on a background
-    /// thread spawned by `start()`. Tries twice (browser tab titles can take a
-    /// moment to reflect the joined meeting). On success stashes the title so
-    /// the capture loop's row insert picks it up, renames the in-progress row
-    /// if it already exists, and emits `"meeting-title-update"`.
+    /// TITLE (naming): resolve an explicit title for `session` from the
+    /// calendar event in progress or the meeting app's window title. Tries
+    /// twice (browser tab titles can take a moment to reflect the joined
+    /// meeting). Scoped to its own session: a slow attempt that finishes after
+    /// this meeting stopped (and another started) can no longer rename the
+    /// wrong meeting.
     #[cfg(target_os = "macos")]
-    fn resolve_session_title(&self) {
+    fn resolve_session_title(&self, session: &Session) {
         for attempt in 0..2 {
             if attempt > 0 {
                 std::thread::sleep(std::time::Duration::from_secs(12));
             }
-            if self.status() != MeetingState::Running {
+            if session.is_stopping() {
                 return;
             }
             let Some(title) = crate::meeting_naming::resolve_session_title(&self.app_handle) else {
                 continue;
             };
-            *self.session_title.lock().unwrap() = Some(title.clone());
+            if session.is_stopping() {
+                return;
+            }
+            *session.title.lock().unwrap() = Some(title.clone());
             // Rename the in-progress row when it is already inserted; otherwise
             // the capture loop reads the stash at insert time.
-            let id = *self.current_meeting_id.lock().unwrap();
-            if let Some(id) = id {
+            if let Some(id) = session.meeting_id() {
                 self.apply_title(id, &title);
             }
             return;
@@ -985,7 +811,7 @@ impl MeetingManager {
     /// Persist `title` on meeting row `id` and notify the UI via
     /// `"meeting-title-update"`. Shared by the naming resolution and the LLM
     /// auto-title.
-    fn apply_title(&self, id: i64, title: &str) {
+    pub(super) fn apply_title(&self, id: i64, title: &str) {
         if let Err(e) = self.store.update_title(id, title) {
             log::error!("meeting title: failed to persist: {}", e);
             return;
@@ -1001,34 +827,29 @@ impl MeetingManager {
         );
     }
 
-    /// AUTO-TITLE (Phase 2 item 2). Generate a short title from the transcript
-    /// via the active post-process LLM provider and store it on the saved row,
-    /// replacing the datetime default. Best-effort + graceful: if no provider is
-    /// configured or the call errors, the datetime title is kept. Runs async so
-    /// it never blocks stop(). Emits `"meeting-title-update"` on success so the
-    /// UI can refresh. Skipped entirely when the session already carries an
-    /// explicit name from the calendar / window title.
-    fn maybe_auto_title(&self) {
-        if self.session_title.lock().unwrap().is_some() {
+    /// AUTO-TITLE. Generate a short title from the transcript via the active
+    /// post-process LLM provider and store it on the saved row, replacing the
+    /// datetime default. Spawned, so it never blocks stop(). Skipped when the
+    /// session already carries an explicit name from the calendar / window.
+    fn maybe_auto_title(&self, session: &Session) {
+        if session.title().is_some() {
             return;
         }
-        let id = match self.last_saved_meeting_id() {
-            Some(id) => id,
-            None => return,
+        let Some(id) = session.saved_id() else {
+            return;
         };
-        let transcript = self.full_transcript();
+        let transcript = session.text();
         if transcript.trim().is_empty() {
             return;
         }
         let manager = self.clone();
         tauri::async_runtime::spawn(async move {
-            match crate::commands::meeting::generate_title(&manager.app_handle, &transcript).await {
+            match super::summarize::generate_title(&manager.app_handle, &transcript).await {
                 Ok(title) => {
                     let title = title.trim().to_string();
-                    if title.is_empty() {
-                        return;
+                    if !title.is_empty() {
+                        manager.apply_title(id, &title);
                     }
-                    manager.apply_title(id, &title);
                 }
                 // Graceful fallback: keep the datetime title.
                 Err(e) => log::info!("meeting auto-title skipped: {}", e),
@@ -1036,1245 +857,92 @@ impl MeetingManager {
         });
     }
 
-    /// Access the persistence store (used by list/get/delete commands).
-    pub fn store(&self) -> &MeetingStore {
-        &self.store
-    }
-
-    /// CRASH-RECOVERY (Phase 2 item 1). Recover an interrupted meeting `id` left
-    /// in `recording` status. On macOS, if the per-source temp buffers still
-    /// exist, re-runs the finalize pass for a high-quality labeled transcript and
-    /// writes the mixed playback audio. Otherwise (or on other platforms) keeps the
-    /// partial transcript that was incrementally saved. The row is flipped to
-    /// `completed` and temp files are removed. Returns the recovered transcript.
-    ///
-    /// Refuses to run while a live session is active (to avoid clobbering shared
-    /// state / the loaded model).
-    pub fn recover_meeting(&self, id: i64) -> Result<String, String> {
-        if self.status() == MeetingState::Running {
-            return Err("Cannot recover while a meeting is running.".to_string());
-        }
-
-        let record = self
-            .store
-            .get_meeting(id)
-            .map_err(|e| format!("Failed to load meeting {}: {}", id, e))?;
-        if record.status != crate::meeting::store::STATUS_RECORDING {
-            // Already completed (or recovered concurrently). Nothing to do.
-            return Ok(record.transcript);
-        }
-
-        // Default outcome: keep the partial transcript/segments already saved.
-        let mut final_segments = record.segments.clone();
-        let mut final_transcript = record.transcript.clone();
-
-        #[cfg(target_os = "macos")]
-        {
-            let buffers = self
-                .store
-                .get_buffers(id)
-                .map_err(|e| format!("Failed to read meeting buffers: {}", e))?;
-            let outcome = self.refinalize_from_buffers(&buffers);
-
-            // Save mixed playback audio if the mixed buffer survived. Do this
-            // before any early return so the audio is preserved either way.
-            if let Some(mixed) = buffers.mixed.as_deref() {
-                self.save_recovered_audio(id, std::path::Path::new(mixed));
-            }
-
-            match outcome {
-                Ok(recovered) => {
-                    if let Some(recovered) = recovered {
-                        if recovered.iter().any(|s| !s.text.trim().is_empty()) {
-                            final_segments = recovered;
-                            final_transcript = join_segments(&final_segments);
-                        }
-                    }
-                    // Clean up temp buffers: this meeting is about to complete.
-                    for p in [&buffers.mic, &buffers.system, &buffers.mixed]
-                        .into_iter()
-                        .flatten()
-                    {
-                        let _ = std::fs::remove_file(p);
-                    }
-                }
-                // Every window failed again (still no API balance, still
-                // offline). KEEP the buffers and leave the row in `recording`
-                // so the user gets another attempt once the cause is fixed —
-                // completing it here would discard the only copy of the audio
-                // the recovery pass can read.
-                Err(reason) => {
-                    log::warn!(
-                        "meeting: recovery of row {} failed ({}); leaving it recoverable",
-                        id,
-                        reason
-                    );
-                    return Err(reason);
-                }
-            }
-        }
-
-        let ended_at = if record.ended_at > record.started_at {
-            record.ended_at
-        } else {
-            now_epoch_ms()
-        };
-        let duration_ms = (ended_at - record.started_at).max(0);
-        self.store
-            .finalize_meeting(
-                id,
-                &final_transcript,
-                &final_segments,
-                ended_at,
-                duration_ms,
-            )
-            .map_err(|e| format!("Failed to finalize recovered meeting: {}", e))?;
-        // The recovery pass ran real cloud transcription; charge it too.
-        self.persist_usage(id);
-        self.export_markdown(id);
-        log::info!("meeting: recovered interrupted row {} (completed)", id);
-        Ok(final_transcript)
-    }
-
-    /// macOS recovery helper: re-run the finalize windowing/transcription over
-    /// the saved per-source temp buffers. Loads the final model for the pass and
-    /// restores the prior model afterwards. `Ok(None)` when neither buffer is
-    /// readable / present; `Err` when every transcription call failed, so the
-    /// caller can keep the meeting recoverable instead of burning its buffers.
-    #[cfg(target_os = "macos")]
-    fn refinalize_from_buffers(
-        &self,
-        buffers: &crate::meeting::store::StoredBuffers,
-    ) -> Result<Option<Vec<TranscriptSegment>>, String> {
-        use tauri::Manager;
-        // Ensure a transcription model is available for the pass.
-        {
-            let settings = crate::settings::get_settings(&self.app_handle);
-            self.transcription_manager
-                .initiate_model_load_for(settings.meeting_model_id());
-        }
-        let restore_model = self.swap_in_final_model();
-
-        let vad_path = self.app_handle.path().resolve(
-            "resources/models/silero_vad_v4.onnx",
-            tauri::path::BaseDirectory::Resource,
-        );
-
-        let mut out: Vec<TranscriptSegment> = Vec::new();
-        let mut errors = FinalizeErrors::default();
-        let mut any = false;
-        for (path_opt, source) in [
-            (&buffers.mic, TranscriptSource::Mic),
-            (&buffers.system, TranscriptSource::System),
-        ] {
-            let path = match path_opt {
-                Some(p) => std::path::PathBuf::from(p),
-                None => continue,
-            };
-            match read_f32_raw(&path) {
-                Ok(audio) if !audio.is_empty() => {
-                    any = true;
-                    let windows = match &vad_path {
-                        Ok(p) => chunk_for_finalize(&audio, p),
-                        Err(_) => chunk_fixed(&audio),
-                    };
-                    self.transcribe_windows(
-                        &audio,
-                        &windows,
-                        source,
-                        &mut out,
-                        &mut errors,
-                        |_, _| true,
-                    );
-                }
-                _ => {}
-            }
-        }
-
-        self.restore_model(restore_model);
-        let produced_text = out.iter().any(|s| !s.text.trim().is_empty());
-        if errors.count > 0 && !produced_text {
-            let reason = errors
-                .first
-                .clone()
-                .unwrap_or_else(|| "transcription failed".to_string());
-            log::error!(
-                "meeting recovery: all {} window(s) failed; first error: {}",
-                errors.count,
-                reason
-            );
-            self.emit_error(&reason);
-            // Signal a FAILED pass (as opposed to "the audio really is silent")
-            // so the caller can leave the meeting recoverable.
-            return Err(reason);
-        }
-        if any {
-            out.sort_by_key(|s| s.timestamp_ms);
-            Ok(Some(out))
-        } else {
-            Ok(None)
-        }
-    }
-
-    /// Progress of the running import, or `None` when nothing is importing.
-    pub fn import_progress(&self) -> Option<MeetingImportProgress> {
-        self.import_progress.lock().unwrap().clone()
-    }
-
-    /// Ask the running import to stop at its next checkpoint. A no-op when
-    /// nothing is importing.
-    pub fn cancel_import(&self) {
-        if self.importing.load(Ordering::SeqCst) {
-            self.import_cancel.store(true, Ordering::SeqCst);
-        }
-    }
-
-    /// Import a recording made elsewhere (a phone voice memo, a conference
-    /// recording) as a completed meeting, and return its row id.
-    ///
-    /// Runs the same transcription the on-stop finalize pass uses — Gemini
-    /// batch when Gemini is the meeting model, the local final model in
-    /// windows otherwise — then the usual auto-title and auto-summary, so the
-    /// result is a normal meeting in History. Blocking: call it off the main
-    /// thread. Nothing is saved when transcription fails; the user still has
-    /// the file and can simply try again.
-    pub fn import_recording(&self, path: &std::path::Path) -> Result<i64, String> {
-        self.run_exclusive(|| {
-            #[cfg(target_os = "macos")]
-            return self.run_import(path);
-            #[cfg(not(target_os = "macos"))]
-            {
-                let _ = path;
-                Err("Importing recordings is only supported on macOS".to_string())
-            }
-        })
-    }
-
-    /// Transcribe a saved meeting again from its stored audio and replace its
-    /// transcript in place — the way out when a meeting came back empty,
-    /// partial or garbled (provider outage, wrong model, no balance). Notes,
-    /// title and audio stay; the summary is regenerated when the meeting had
-    /// one (or auto-summarize is on), and a datetime placeholder title gets
-    /// the LLM title. The saved audio is the mixed track, so the result is
-    /// labelled as one source, like an imported recording. Blocking.
-    pub fn retranscribe_meeting(&self, id: i64) -> Result<i64, String> {
-        self.run_exclusive(|| {
-            #[cfg(target_os = "macos")]
-            return self.run_retranscribe(id);
-            #[cfg(not(target_os = "macos"))]
-            {
-                let _ = id;
-                Err("Re-transcription is only supported on macOS".to_string())
-            }
-        })
-    }
-
-    /// Run `job` as THE engine-owning background job: refuses while a meeting
-    /// is live or another job runs, then reports the outcome on
-    /// `"meeting-import-finished"` however it ends. Imports and
-    /// re-transcriptions share this slot, its progress events and its cancel.
-    fn run_exclusive(&self, job: impl FnOnce() -> Result<i64, String>) -> Result<i64, String> {
-        {
-            let state = self.state.lock().unwrap();
-            if *state == MeetingState::Running {
-                return Err("Stop the current meeting first.".to_string());
-            }
-            if self.importing.swap(true, Ordering::SeqCst) {
-                return Err("Another recording is already being transcribed.".to_string());
-            }
-        }
-        self.import_cancel.store(false, Ordering::SeqCst);
-
-        let result = job();
-
-        *self.import_progress.lock().unwrap() = None;
-        self.importing.store(false, Ordering::SeqCst);
-        {
-            use tauri::Emitter;
-            let _ = self.app_handle.emit(
-                "meeting-import-finished",
-                MeetingImportFinished {
-                    id: result.as_ref().ok().copied(),
-                    error: result.as_ref().err().cloned(),
-                },
-            );
-        }
-        result
-    }
-
-    #[cfg(target_os = "macos")]
-    fn run_retranscribe(&self, id: i64) -> Result<i64, String> {
-        use super::import;
-
-        let record = self
-            .store
-            .get_meeting(id)
-            .map_err(|e| format!("Failed to load meeting {}: {}", id, e))?;
-        if record.status != crate::meeting::store::STATUS_COMPLETED {
-            return Err(
-                "This meeting is still being recovered; use Recover on it instead.".to_string(),
-            );
-        }
-        let audio_path = record
-            .audio_path
-            .clone()
-            .filter(|p| std::path::Path::new(p).exists())
-            .ok_or_else(|| "This meeting has no saved audio to transcribe again.".to_string())?;
-        let label = if record.title.trim().is_empty() {
-            format!("#{}", id)
-        } else {
-            record.title.trim().to_string()
-        };
-
-        self.report_import(&label, MeetingImportStage::Decoding, Some(0.0));
-        let decoded = import::decode_file(
-            std::path::Path::new(&audio_path),
-            &self.import_cancel,
-            |p| self.report_import(&label, MeetingImportStage::Decoding, Some(p)),
-        )?;
-
-        *self.session_usage.lock().unwrap() = crate::ai_usage::MeetingUsage::default();
-        let segments = self.transcribe_import(&decoded.samples, &label)?;
-        drop(decoded);
-        if self.import_cancel.load(Ordering::SeqCst) {
-            return Err(import::CANCELLED.to_string());
-        }
-        if !segments.iter().any(|s| !s.text.trim().is_empty()) {
-            // Keep what the meeting had rather than replacing it with nothing.
-            return Err("No speech was found; the existing transcript was kept.".to_string());
-        }
-
-        let transcript = join_segments(&segments);
-        self.store
-            .finalize_meeting(
-                id,
-                &transcript,
-                &segments,
-                record.ended_at,
-                record.duration_ms,
-            )
-            .map_err(|e| format!("Failed to save the new transcript: {}", e))?;
-        // Merged into what the meeting already cost, not replacing it.
-        self.persist_usage(id);
-
-        let settings = crate::settings::get_settings(&self.app_handle);
-        let placeholder_title = record.title.trim() == default_meeting_title(record.started_at);
-        let resummarize = record
-            .summary
-            .as_deref()
-            .is_some_and(|s| !s.trim().is_empty())
-            || settings.meeting_auto_summarize;
-        if placeholder_title || resummarize {
-            self.report_import(&label, MeetingImportStage::Summarizing, None);
-        }
-        if placeholder_title {
-            match tauri::async_runtime::block_on(crate::commands::meeting::generate_title(
-                &self.app_handle,
-                &transcript,
-            )) {
-                Ok(title) if !title.trim().is_empty() => self.apply_title(id, title.trim()),
-                Ok(_) => {}
-                Err(e) => log::info!("meeting retranscribe: auto-title skipped: {}", e),
-            }
-        }
-        if resummarize {
-            match tauri::async_runtime::block_on(
-                crate::commands::meeting::summarize_transcript_ext(
-                    &self.app_handle,
-                    &transcript,
-                    None,
-                    record.notes.as_deref(),
-                ),
-            ) {
-                Ok(summary) => {
-                    if let Err(e) = self.store.update_summary(id, &summary) {
-                        log::error!("meeting retranscribe: failed to save summary: {}", e);
-                    }
-                }
-                // The old summary stays; it is stale but better than nothing.
-                Err(e) => log::warn!("meeting retranscribe: summary failed: {}", e),
-            }
-        }
-
-        self.export_markdown(id);
-        log::info!("meeting retranscribe: meeting {} transcribed again", id);
-        Ok(id)
-    }
-
-    fn report_import(&self, file_name: &str, stage: MeetingImportStage, progress: Option<f32>) {
-        let update = MeetingImportProgress {
-            file_name: file_name.to_string(),
-            stage,
-            progress,
-        };
-        *self.import_progress.lock().unwrap() = Some(update.clone());
-        use tauri::Emitter;
-        let _ = self.app_handle.emit("meeting-import-progress", update);
-    }
-
-    #[cfg(target_os = "macos")]
-    fn run_import(&self, path: &std::path::Path) -> Result<i64, String> {
-        use super::import;
-
-        let file_name = path
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_default();
-
-        self.report_import(&file_name, MeetingImportStage::Decoding, Some(0.0));
-        let decoded = import::decode_file(path, &self.import_cancel, |p| {
-            self.report_import(&file_name, MeetingImportStage::Decoding, Some(p))
-        })?;
-        if decoded.samples.is_empty() {
-            return Err("The file contains no audio.".to_string());
-        }
-        let duration_ms = decoded.duration_ms();
-        log::info!(
-            "meeting import: decoded {:?} ({} s)",
-            file_name,
-            duration_ms / 1000
-        );
-
-        // The usage tally is per session; an import is one.
-        *self.session_usage.lock().unwrap() = crate::ai_usage::MeetingUsage::default();
-        let segments = self.transcribe_import(&decoded.samples, &file_name)?;
-        if self.import_cancel.load(Ordering::SeqCst) {
-            return Err(import::CANCELLED.to_string());
-        }
-        if !segments.iter().any(|s| !s.text.trim().is_empty()) {
-            return Err("No speech was found in the recording.".to_string());
-        }
-
-        let started_at = import::recording_started_at(path, decoded.recorded_at_ms, duration_ms);
-        let file_title = import::title_from_path(path);
-        let transcript = join_segments(&segments);
-        let record = MeetingRecordInput {
-            started_at,
-            ended_at: started_at + duration_ms,
-            duration_ms,
-            title: file_title
-                .clone()
-                .unwrap_or_else(|| default_meeting_title(started_at)),
-            transcript: transcript.clone(),
-            segments,
-            summary: None,
-            audio_path: None,
-        };
-        let id = self
-            .store
-            .save_meeting(&record)
-            .map_err(|e| format!("Failed to save the imported meeting: {}", e))?;
-        self.persist_usage(id);
-        if let Err(e) = self.write_meeting_audio(id, &decoded.samples) {
-            // The transcript is the point; playback is a nicety.
-            log::warn!("meeting import: playback audio not saved: {}", e);
-        }
-        drop(decoded);
-
-        // Title and summary run inline (not spawned like after a live stop):
-        // the import is already a background job the user is waiting on, and
-        // this way the meeting opens complete instead of filling in later.
-        let settings = crate::settings::get_settings(&self.app_handle);
-        if file_title.is_none() || settings.meeting_auto_summarize {
-            self.report_import(&file_name, MeetingImportStage::Summarizing, None);
-        }
-        if file_title.is_none() {
-            match tauri::async_runtime::block_on(crate::commands::meeting::generate_title(
-                &self.app_handle,
-                &transcript,
-            )) {
-                Ok(title) if !title.trim().is_empty() => self.apply_title(id, title.trim()),
-                Ok(_) => {}
-                Err(e) => log::info!("meeting import: auto-title skipped: {}", e),
-            }
-        }
-        if settings.meeting_auto_summarize {
-            match tauri::async_runtime::block_on(crate::commands::meeting::summarize_transcript(
-                &self.app_handle,
-                &transcript,
-            )) {
-                Ok(summary) => {
-                    if let Err(e) = self.store.update_summary(id, &summary) {
-                        log::error!("meeting import: failed to save summary: {}", e);
-                    }
-                }
-                Err(e) => log::warn!("meeting import: auto-summary failed: {}", e),
-            }
-        }
-
-        self.export_markdown(id);
-        log::info!("meeting import: saved {:?} as row {}", file_name, id);
-        Ok(id)
-    }
-
-    /// Transcribe an imported recording. The whole file is one source: a
-    /// phone on the table cannot tell "you" from "others", so everything is
-    /// labelled as the room ("others"), which is also the stream Gemini may
-    /// diarize.
-    #[cfg(target_os = "macos")]
-    fn transcribe_import(
-        &self,
-        audio: &[f32],
-        file_name: &str,
-    ) -> Result<Vec<TranscriptSegment>, String> {
-        use crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE;
-        let source = TranscriptSource::System;
-
-        if let Some(config) = self.gemini_finalize_config() {
-            let duration_secs = audio.len() as u64 / WHISPER_SAMPLE_RATE as u64;
-            let mut request = config.clone();
-            // Speaker numbers only mean something within one request, so
-            // diarize only when the whole recording fits in one.
-            request.diarize =
-                config.diarize && crate::gemini_transcribe::supports_diarization(duration_secs);
-            let pieces = gemini_import_pieces(audio.len());
-            let mut speakers = SpeakerLabels::default();
-            let mut segments = Vec::new();
-            for (index, &(start, end)) in pieces.iter().enumerate() {
-                if self.import_cancel.load(Ordering::SeqCst) {
-                    return Err(super::import::CANCELLED.to_string());
-                }
-                let progress = (pieces.len() > 1).then(|| index as f32 / pieces.len() as f32);
-                self.report_import(file_name, MeetingImportStage::Transcribing, progress);
-                let result = crate::gemini_transcribe::transcribe_samples(
-                    &request,
-                    &audio[start..end],
-                    WHISPER_SAMPLE_RATE,
-                    &format!("import-{}", index + 1),
-                )
-                .map_err(|e| e.to_string())?;
-                let offset_ms = start as u64 * 1000 / WHISPER_SAMPLE_RATE as u64;
-                self.absorb_gemini_result(
-                    &request.model,
-                    result,
-                    offset_ms,
-                    source,
-                    &mut speakers,
-                    &mut segments,
-                );
-            }
-            segments.sort_by_key(|s| s.timestamp_ms);
-            return Ok(segments);
-        }
-
-        self.report_import(file_name, MeetingImportStage::Transcribing, Some(0.0));
-        self.transcription_manager.initiate_model_load_for(
-            crate::settings::get_settings(&self.app_handle).meeting_model_id(),
-        );
-        let restore_model = self.swap_in_final_model();
-        let windows = {
-            use tauri::Manager;
-            match self.app_handle.path().resolve(
-                "resources/models/silero_vad_v4.onnx",
-                tauri::path::BaseDirectory::Resource,
-            ) {
-                Ok(vad) => chunk_for_finalize(audio, &vad),
-                Err(_) => chunk_fixed(audio),
-            }
-        };
-        let mut segments = Vec::new();
-        let mut errors = FinalizeErrors::default();
-        self.transcribe_windows(
-            audio,
-            &windows,
-            source,
-            &mut segments,
-            &mut errors,
-            |index, total| {
-                self.report_import(
-                    file_name,
-                    MeetingImportStage::Transcribing,
-                    Some(index as f32 / total.max(1) as f32),
-                );
-                !self.import_cancel.load(Ordering::SeqCst)
-            },
-        );
-        self.restore_model(restore_model);
-
-        if self.import_cancel.load(Ordering::SeqCst) {
-            return Err(super::import::CANCELLED.to_string());
-        }
-        if errors.count > 0 && !segments.iter().any(|s| !s.text.trim().is_empty()) {
-            return Err(errors
-                .first
-                .unwrap_or_else(|| "Transcription failed.".to_string()));
-        }
-        Ok(segments)
-    }
-
-    /// Write 16 kHz mono `samples` as the playback audio of meeting `id`
-    /// (`{app_data_dir}/meetings/{id}.mp3`), record the path on the row, and
-    /// drop any older WAV copy of the same meeting.
-    #[cfg(target_os = "macos")]
-    fn write_meeting_audio(&self, id: i64, samples: &[f32]) -> Result<std::path::PathBuf, String> {
-        use crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE;
-        use crate::audio_toolkit::mp3;
-        let dir = crate::portable::app_data_dir(&self.app_handle)
-            .map_err(|e| e.to_string())?
-            .join("meetings");
-        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-        let path = dir.join(format!("{}.mp3", id));
-        mp3::write_mp3_file(&path, samples, WHISPER_SAMPLE_RATE, mp3::STORAGE_BITRATE)?;
-        self.store
-            .update_audio_path(id, &path.to_string_lossy())
-            .map_err(|e| e.to_string())?;
-        let _ = std::fs::remove_file(dir.join(format!("{}.wav", id)));
-        Ok(path)
-    }
-
-    /// Convert every meeting still stored as WAV to MP3, one at a time.
-    /// Meetings recorded before MP3 storage kept 32-bit float WAVs (~230 MB
-    /// per hour), which were slow to open. Runs on a background thread at
-    /// startup; each file is replaced only after its MP3 is written and the
-    /// row points at it, so an interrupted run just resumes next launch.
-    #[cfg(target_os = "macos")]
-    pub fn convert_wav_audio_to_mp3(&self) {
-        let pending = match self.store.list_wav_audio() {
-            Ok(rows) => rows,
-            Err(e) => {
-                log::warn!("audio conversion: cannot list meetings: {}", e);
-                return;
-            }
-        };
-        if pending.is_empty() {
-            return;
-        }
-        log::info!(
-            "audio conversion: {} meeting(s) to convert to MP3",
-            pending.len()
-        );
-        for (id, wav) in pending {
-            let wav = std::path::PathBuf::from(wav);
-            if !wav.exists() {
-                continue;
-            }
-            // Streamed, not decoded whole: one forgotten session ran for
-            // seven hours (1.6 GB of WAV).
-            let mp3 = wav.with_extension("mp3");
-            use crate::audio_toolkit::mp3;
-            if let Err(e) = mp3::transcode_wav_file(&wav, &mp3, mp3::STORAGE_BITRATE) {
-                log::warn!("audio conversion: meeting {} failed: {}", id, e);
-                continue;
-            }
-            match self.store.update_audio_path(id, &mp3.to_string_lossy()) {
-                Ok(()) => {
-                    let _ = std::fs::remove_file(&wav);
-                    log::info!("audio conversion: meeting {} -> {:?}", id, mp3);
-                }
-                Err(e) => {
-                    log::warn!("audio conversion: meeting {} not updated: {}", id, e);
-                    let _ = std::fs::remove_file(&mp3);
-                }
-            }
-        }
-    }
-
-    /// macOS recovery helper: write the mixed playback audio for a recovered
-    /// meeting from its mixed temp buffer and record the path on the row.
-    #[cfg(target_os = "macos")]
-    fn save_recovered_audio(&self, id: i64, mixed_path: &std::path::Path) {
-        let mixed = match read_f32_raw(mixed_path) {
-            Ok(m) if !m.is_empty() => m,
-            _ => return,
-        };
-        if let Err(e) = self.write_meeting_audio(id, &mixed) {
-            log::warn!("meeting recovery: playback audio not saved: {}", e);
-        }
-    }
-
-    /// HYBRID TRANSCRIPTION (Feature 2). On stop, re-transcribe the FULL mic and
-    /// system audio buffered to temp files during the session, producing a
-    /// higher-quality labeled transcript that REPLACES the live rough preview.
-    ///
-    /// Rather than one blob per source (which would collapse chronology to a
-    /// single t=0 block), each source is split into TIME-ORDERED ~25-30 s
-    /// windows that close preferentially at VAD silence boundaries (so words
-    /// aren't cut). Each window keeps its real start offset → `timestamp_ms`.
-    /// Mic + system windows are merged and sorted by timestamp, yielding an
-    /// interleaved, speaker-labeled transcript with near-full-context quality.
-    ///
-    /// Emits `"meeting-finalizing"` (true) before and (false) after. If no
-    /// buffers were captured (e.g. capture failed early), leaves the live
-    /// transcript untouched.
-    #[cfg(target_os = "macos")]
-    fn finalize_session(&self) {
-        // Gemini batch transcription, when configured, replaces the local window
-        // pass entirely — it is the only path that can attribute speech to
-        // individual participants.
-        let gemini = self.gemini_finalize_config();
-
-        // A Gemini Live stream already produced a transcript, so the question is
-        // only what may overwrite it. The batch pass may: it re-reads the same
-        // audio with a stronger model and adds speaker attribution, which is a
-        // strict upgrade. The local Whisper pass may not — that would swap a
-        // cloud transcript for a weaker local one the user did not ask for. And
-        // a TRANSLATED transcript is final either way: any re-transcription
-        // loses the translation.
-        if self.live_gemini_active.load(Ordering::Relaxed)
-            && (self.live_translate_active.load(Ordering::Relaxed) || gemini.is_none())
-        {
-            log::info!("meeting finalize: skipped (gemini live produced the transcript)");
-            return;
-        }
-
-        let buffers = match self.buffer_paths.lock().unwrap().clone() {
-            Some(b) => b,
-            None => return,
-        };
-
-        self.emit_finalizing(true);
-
-        // It reports its own failure through `last_finalize_error`, so a failed
-        // run still preserves the recording.
-        if let Some(config) = gemini {
-            let outcome = self.finalize_via_gemini(&buffers, &config);
-            self.emit_finalizing(false);
-            match outcome {
-                GeminiFinalizeOutcome::Done => return,
-                // Nothing usable came back and the reason is already recorded;
-                // falling through to Whisper would re-run minutes of work for a
-                // transcript the user did not ask for.
-                GeminiFinalizeOutcome::Failed => return,
-                // The audio never made it into the buffers, so there is nothing
-                // for either path to transcribe.
-                GeminiFinalizeOutcome::NoAudio => return,
-            }
-        }
-
-        // Swap in the stronger FINAL model (default "turbo") for the duration of
-        // the finalize pass, then restore the user's normal selected model. The
-        // LIVE path already used whatever model was loaded; we never hold two
-        // models resident. If the final model isn't downloaded / fails to load,
-        // we fall back gracefully to the currently-loaded model. This is
-        // invisible to the user (the "finalizing" spinner is already showing).
-        let restore_model = self.swap_in_final_model();
-
-        // Resolve the VAD model once for the silence-boundary chunker.
-        let vad_path = {
-            use tauri::Manager;
-            self.app_handle.path().resolve(
-                "resources/models/silero_vad_v4.onnx",
-                tauri::path::BaseDirectory::Resource,
-            )
-        };
-
-        let mut final_segments: Vec<TranscriptSegment> = Vec::new();
-        let mut errors = FinalizeErrors::default();
-        for (path, source) in [
-            (&buffers.mic, TranscriptSource::Mic),
-            (&buffers.system, TranscriptSource::System),
-        ] {
-            match read_f32_raw(path) {
-                Ok(audio) if !audio.is_empty() => {
-                    let windows = match &vad_path {
-                        Ok(p) => chunk_for_finalize(&audio, p),
-                        Err(e) => {
-                            log::warn!(
-                                "meeting finalize: VAD path unresolved ({}); using fixed windows",
-                                e
-                            );
-                            chunk_fixed(&audio)
-                        }
-                    };
-                    self.transcribe_windows(
-                        &audio,
-                        &windows,
-                        source,
-                        &mut final_segments,
-                        &mut errors,
-                        |_, _| true,
-                    );
-                }
-                Ok(_) => {}
-                Err(e) => log::warn!("meeting finalize: failed to read {:?}: {}", path, e),
-            }
-        }
-
-        // Cross-channel echo removal: drop "you" segments that merely echo a
-        // nearby "others" segment (residual speaker leakage the live duck didn't
-        // fully suppress). Runs before the chronological sort/merge.
-        let final_segments = drop_cross_channel_echo(final_segments);
-
-        // Only replace the live transcript if the finalize pass produced
-        // something; otherwise keep the live preview as-is.
-        let has_text = final_segments.iter().any(|s| !s.text.trim().is_empty());
-        if has_text {
-            let mut final_segments = final_segments;
-            final_segments.sort_by_key(|s| s.timestamp_ms);
-            self.replace_transcript(final_segments);
-        } else {
-            log::warn!(
-                "meeting finalize: full re-transcription yielded no text; keeping live transcript"
-            );
-        }
-
-        // Every window failing is a FAILURE, not a silent meeting. Record it so
-        // `persist_session` keeps the recording instead of discarding it, and
-        // tell the UI why the transcript is empty rather than failing silently.
-        if !has_text && errors.count > 0 {
-            let reason = errors
-                .first
-                .unwrap_or_else(|| "transcription failed".to_string());
-            log::error!(
-                "meeting finalize: all {} window(s) failed; first error: {}",
-                errors.count,
-                reason
-            );
-            *self.last_finalize_error.lock().unwrap() = Some(reason.clone());
-            self.emit_error(&reason);
-        }
-
-        // Restore the user's normal model so dictation / subsequent meetings use
-        // the expected model again.
-        self.restore_model(restore_model);
-
-        self.emit_finalizing(false);
-    }
-
-    /// Build the batch-transcription config, or `None` when this meeting is not
-    /// running on Gemini.
-    ///
-    /// Keyed off the MEETING MODEL rather than a separate toggle. Picking
-    /// Gemini in Settings → Models is the whole decision, and it routes
-    /// finalize through this per-source path — which preserves the you/others
-    /// labels and can diarize — instead of the generic single-blob cloud path
-    /// that `transcribe_with_opts` would otherwise take.
-    #[cfg(target_os = "macos")]
-    fn gemini_finalize_config(&self) -> Option<crate::gemini_transcribe::BatchTranscribeConfig> {
-        use crate::gemini_transcribe::{
-            BatchTranscribeConfig, TranscriptionMode, DEFAULT_BATCH_TRANSCRIBE_MODEL,
-        };
-        use tauri::Manager;
-
-        let settings = crate::settings::get_settings(&self.app_handle);
-        let meeting_model = self
-            .app_handle
-            .try_state::<std::sync::Arc<crate::managers::model::ModelManager>>()
-            .and_then(|mm| mm.get_model_info(settings.meeting_model_id()))?;
-        if !matches!(
-            meeting_model.engine_type,
-            crate::managers::model::EngineType::Gemini
-        ) {
-            return None;
-        }
-
-        let api_key = settings.gemini_api_key.trim().to_string();
-        if api_key.is_empty() {
-            log::warn!("meeting: the Gemini model is selected but no Gemini API key is set");
-            return None;
-        }
-        // The catalogue entry carries the bare model id in `filename`, same
-        // slug-in-filename convention every cloud entry uses.
-        let model = {
-            let m = meeting_model.filename.trim();
-            if m.is_empty() {
-                DEFAULT_BATCH_TRANSCRIBE_MODEL.to_string()
-            } else {
-                m.to_string()
-            }
-        };
-        Some(BatchTranscribeConfig {
-            api_key,
-            model,
-            language_codes: self.meeting_language_hints(&settings),
-            // One vocabulary for the whole app: the same terms that correct
-            // dictation also prime the meeting model. Two lists meant the user
-            // had to guess which one a name belonged in.
-            custom_vocabulary: settings.custom_words.clone(),
-            mode: if settings.meeting_gemini_smart {
-                TranscriptionMode::Smart
-            } else {
-                TranscriptionMode::Verbatim
-            },
-            diarize: settings.meeting_gemini_diarize,
-        })
-    }
-
-    /// Re-transcribe the session through Gemini's batch model.
-    ///
-    /// The mic and system buffers go up as SEPARATE requests, which is what
-    /// keeps the existing "you" / "others" labeling intact — a single mixed
-    /// upload would come back as anonymous `spk_N` with no way to tell which
-    /// one is the user. It also means diarization is only worth asking for on
-    /// the system stream: the mic stream is one person by definition, and
-    /// leaving it off there lifts that stream past the API's 30-minute
-    /// diarization ceiling.
-    #[cfg(target_os = "macos")]
-    fn finalize_via_gemini(
-        &self,
-        buffers: &SessionBuffers,
-        config: &crate::gemini_transcribe::BatchTranscribeConfig,
-    ) -> GeminiFinalizeOutcome {
-        use crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE;
-
-        let mut segments: Vec<TranscriptSegment> = Vec::new();
-        let mut errors = FinalizeErrors::default();
-        let mut had_audio = false;
-
-        for (path, source, label) in [
-            (&buffers.mic, TranscriptSource::Mic, "you"),
-            (&buffers.system, TranscriptSource::System, "others"),
-        ] {
-            let audio = match read_f32_raw(path) {
-                Ok(audio) if !audio.is_empty() => audio,
-                Ok(_) => continue,
-                Err(e) => {
-                    log::warn!("meeting finalize: failed to read {:?}: {}", path, e);
-                    continue;
-                }
-            };
-            had_audio = true;
-
-            let duration_secs = audio.len() as u64 / WHISPER_SAMPLE_RATE as u64;
-            let mut request = config.clone();
-            // The mic is a single known speaker; attributing it is meaningless
-            // and would only cost us the length limit.
-            request.diarize = config.diarize
-                && source == TranscriptSource::System
-                && crate::gemini_transcribe::supports_diarization(duration_secs);
-            if config.diarize && source == TranscriptSource::System && !request.diarize {
-                log::info!(
-                    "meeting finalize: {} min of audio exceeds the diarization limit; \
-                     transcribing without speaker attribution",
-                    duration_secs / 60
-                );
-            }
-
-            // Numbering restarts per source, which is right: the mic stream is
-            // never diarized, so only the system stream ever produces labels.
-            let mut speakers = SpeakerLabels::default();
-            match crate::gemini_transcribe::transcribe_samples(
-                &request,
-                &audio,
-                WHISPER_SAMPLE_RATE,
-                &format!("meeting-{}", label),
-            ) {
-                Ok(result) => {
-                    self.absorb_gemini_result(
-                        &request.model,
-                        result,
-                        0,
-                        source,
-                        &mut speakers,
-                        &mut segments,
-                    );
-                }
-                Err(e) => {
-                    log::warn!("meeting finalize: gemini {} stream failed: {}", label, e);
-                    errors.record(e.to_string());
-                }
-            }
-        }
-
-        if !had_audio {
-            log::warn!("meeting finalize: no captured audio to send to Gemini");
-            return GeminiFinalizeOutcome::NoAudio;
-        }
-
-        if segments.iter().any(|s| !s.text.trim().is_empty()) {
-            segments.sort_by_key(|s| s.timestamp_ms);
-            log::info!(
-                "meeting finalize: gemini produced {} segment(s)",
-                segments.len()
-            );
-            self.replace_transcript(segments);
-            return GeminiFinalizeOutcome::Done;
-        }
-
-        // Same rule as the local path: every request failing is a FAILURE, not
-        // a silent meeting, and `persist_session` must keep the recording.
-        if errors.count > 0 {
-            let reason = errors
-                .first
-                .unwrap_or_else(|| "Gemini transcription failed".to_string());
-            log::error!("meeting finalize: gemini failed: {}", reason);
-            *self.last_finalize_error.lock().unwrap() = Some(reason.clone());
-            self.emit_error(&reason);
-            return GeminiFinalizeOutcome::Failed;
-        }
-
-        log::warn!("meeting finalize: gemini returned no text; keeping live transcript");
-        GeminiFinalizeOutcome::Done
-    }
-
-    /// Record what a Gemini batch request cost and turn its segments into
-    /// transcript segments, shifted by `offset_ms` (non-zero when a long
-    /// recording was sent in several pieces).
-    #[cfg(target_os = "macos")]
-    fn absorb_gemini_result(
-        &self,
-        model: &str,
-        result: crate::gemini_transcribe::BatchTranscribeResult,
-        offset_ms: u64,
-        source: TranscriptSource,
-        speakers: &mut SpeakerLabels,
-        out: &mut Vec<TranscriptSegment>,
-    ) {
-        self.record_usage(model, result.usage.0, result.usage.1);
-        for segment in result.segments {
-            let text = segment.text.trim();
-            if text.is_empty() {
-                continue;
-            }
-            out.push(TranscriptSegment {
-                text: text.to_string(),
-                timestamp_ms: offset_ms + segment.start_ms,
-                source,
-                translation: None,
-                speaker: segment.speaker.as_deref().map(|raw| speakers.label(raw)),
-            });
-        }
-    }
-
-    /// Whether the user's selected transcription model is a cloud (OpenRouter)
-    /// model. Cloud models are unsuitable for the per-segment LIVE pass — each
-    /// VAD segment would be a separate network request — so meetings skip the
-    /// live pass for them and let the finalize pass do the work in bounded
-    /// windows. (The finalize transcription is already keyed off the selected
-    /// model, so a cloud selection routes there automatically.)
-    #[cfg(target_os = "macos")]
-    fn meeting_model_is_cloud(&self) -> bool {
-        use tauri::Manager;
-        let settings = crate::settings::get_settings(&self.app_handle);
-        self.app_handle
-            .try_state::<std::sync::Arc<crate::managers::model::ModelManager>>()
-            .and_then(|mm| mm.get_model_info(settings.meeting_model_id()))
-            .map_or(false, |m| m.engine_type.is_cloud())
-    }
-
-    /// Load the configured `meeting_final_model` (default "turbo") for the
-    /// finalize pass, returning the model id that should be restored afterwards
-    /// (the model that was loaded before, or the configured meeting model).
-    /// Returns `None` if no swap happened (already on the final model, or the
-    /// final model couldn't be loaded — in which case the loaded model is kept).
-    #[cfg(target_os = "macos")]
-    fn swap_in_final_model(&self) -> Option<String> {
-        // Cloud selection: don't swap in the local final model. The finalize
-        // transcription routes to the cloud model (keyed off the selected
-        // model), so loading the local final model here would just load a model
-        // the cloud path ignores.
-        if self.meeting_model_is_cloud() {
-            return None;
-        }
-
-        let settings = crate::settings::get_settings(&self.app_handle);
-        let final_model = settings.meeting_final_model.trim().to_string();
-        if final_model.is_empty() {
-            return None;
-        }
-
-        // What is loaded right now (used by the LIVE pass). Fall back to the
-        // configured meeting model if nothing is loaded.
-        let current = self
-            .transcription_manager
-            .get_current_model()
-            .unwrap_or_else(|| settings.meeting_model_id().to_string());
-
-        if current == final_model {
-            // Already on the final model; nothing to swap or restore.
-            return None;
-        }
-
-        match self.transcription_manager.load_model(&final_model) {
-            Ok(()) => {
-                log::info!(
-                    "meeting finalize: swapped model {} -> {} for final pass",
-                    current,
-                    final_model
-                );
-                Some(current)
-            }
-            Err(e) => {
-                // Graceful fallback: keep using whatever is loaded (the live
-                // model). Don't crash the finalize pass.
-                log::warn!(
-                    "meeting finalize: could not load final model '{}' ({}); using loaded model",
-                    final_model,
-                    e
-                );
-                None
-            }
-        }
-    }
-
-    /// Restore the model recorded by `swap_in_final_model`. No-op when `None`.
-    #[cfg(target_os = "macos")]
-    fn restore_model(&self, restore: Option<String>) {
-        if let Some(model_id) = restore {
-            if let Err(e) = self.transcription_manager.load_model(&model_id) {
-                log::warn!(
-                    "meeting finalize: failed to restore model '{}': {}",
-                    model_id,
-                    e
-                );
-            }
-        }
-    }
-
-    /// Transcribe each `[start, end)` window of `audio` into one timestamped,
-    /// labeled segment via the meeting FINALIZE path
-    /// (`transcribe_meeting_finalize`: forced meeting language + Turkish style
-    /// prompt + higher no_speech_thold + temperature-fallback anti-hallucination
-    /// knobs + `no_context` so independent windows don't share decoder state).
-    /// ~25-30 s windows give whisper plenty of context per call.
-    #[cfg(target_os = "macos")]
-    fn transcribe_windows(
-        &self,
-        audio: &[f32],
-        windows: &[(usize, usize)],
-        source: TranscriptSource,
-        out: &mut Vec<TranscriptSegment>,
-        errors: &mut FinalizeErrors,
-        mut on_window: impl FnMut(usize, usize) -> bool,
-    ) {
-        use crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE;
-        // Tail text of the previous window for this source, used to de-dup the
-        // overlapping region (Item 6).
-        let mut prev_tail: Option<String> = None;
-        for (index, &(start, end)) in windows.iter().enumerate() {
-            // `on_window` reports progress and returns false to stop early
-            // (a cancelled import).
-            if !on_window(index, windows.len()) {
-                return;
-            }
-            let slice = &audio[start..end];
-            match self
-                .transcription_manager
-                .transcribe_meeting_finalize(slice.to_vec())
-            {
-                Ok(text) => {
-                    let text = text.trim().to_string();
-                    if !text.is_empty() {
-                        // De-dup the overlap: drop a leading sentence of this
-                        // window that repeats the trailing sentence of the
-                        // previous (overlapping) window.
-                        let deduped = match &prev_tail {
-                            Some(prev) => dedup_overlap(prev, &text),
-                            None => text.clone(),
-                        };
-                        prev_tail = Some(text);
-                        let deduped = deduped.trim().to_string();
-                        if !deduped.is_empty() {
-                            let timestamp_ms =
-                                (start as u64).saturating_mul(1000) / WHISPER_SAMPLE_RATE as u64;
-                            out.push(TranscriptSegment {
-                                text: deduped,
-                                timestamp_ms,
-                                source,
-                                translation: None,
-                                speaker: None,
-                            });
-                        }
-                    }
-                }
-                Err(e) => {
-                    log::warn!(
-                        "meeting finalize: transcription failed for {:?} window [{}..{}]: {}",
-                        source,
-                        start,
-                        end,
-                        e
-                    );
-                    errors.record(e.to_string());
-                }
-            }
-        }
-    }
-
-    /// Write the session's mixed 16 kHz mono audio to
-    /// `{app_data_dir}/meetings/{id}.mp3` and record the path on row `id`.
-    /// Leaves the temp buffers alone — the caller decides whether they are still
-    /// needed. Returns whether the audio was written. Best-effort: failures are
-    /// logged, never propagated.
-    #[cfg(target_os = "macos")]
-    fn write_playback_audio(&self, id: i64) -> bool {
-        let buffers = match self.buffer_paths.lock().unwrap().clone() {
-            Some(b) => b,
-            None => return false,
-        };
-        let mixed = match read_f32_raw(&buffers.mixed) {
-            Ok(m) if !m.is_empty() => m,
-            Ok(_) => return false,
-            Err(e) => {
-                log::warn!("meeting: failed to read mixed buffer: {}", e);
-                return false;
-            }
-        };
-
-        let path = match self.write_meeting_audio(id, &mixed) {
-            Ok(path) => path,
-            Err(e) => {
-                log::error!("meeting: failed to save playback audio: {}", e);
-                return false;
-            }
-        };
-        let path_str = path.to_string_lossy().to_string();
-        *self.last_saved_audio_path.lock().unwrap() = Some(path_str);
-        log::info!("meeting: saved playback audio to {:?}", path);
-        true
-    }
-
-    /// AUDIO SAVE (Feature 4). Persist the mixed audio for the meeting saved by
-    /// `persist_session`, then drop the temp buffers now that the session is
-    /// fully on disk. Does nothing when the session was not saved (nothing
-    /// captured, or kept for recovery — that path keeps its buffers).
-    #[cfg(target_os = "macos")]
-    fn save_session_audio(&self) {
-        let id = match self.last_saved_meeting_id() {
-            Some(id) => id,
-            None => return,
-        };
-        if !self.write_playback_audio(id) {
-            return;
-        }
-        let buffers = match self.buffer_paths.lock().unwrap().clone() {
-            Some(b) => b,
-            None => return,
-        };
-        // Clean up the temp buffer files now that everything is persisted.
-        let _ = std::fs::remove_file(&buffers.mic);
-        let _ = std::fs::remove_file(&buffers.system);
-        let _ = std::fs::remove_file(&buffers.mixed);
-    }
-
-    /// AUTO-SUMMARIZE (Feature 3). If `meeting_auto_summarize` is enabled, run
-    /// the same summary path as the `summarize_meeting` command and persist +
-    /// emit the result. Best-effort: spawned async, never blocks/fails stop.
-    fn maybe_auto_summarize(&self) {
+    /// AUTO-SUMMARIZE. If `meeting_auto_summarize` is enabled, summarize the
+    /// meeting just saved and persist + emit the result for THAT row (the id
+    /// is captured now; reading "the last saved meeting" when the LLM answered
+    /// wrote summaries onto whichever meeting had finished since).
+    fn maybe_auto_summarize(&self, session: &Session) {
         let settings = crate::settings::get_settings(&self.app_handle);
         if !settings.meeting_auto_summarize {
             return;
         }
-        let transcript = self.full_transcript();
+        let Some(id) = session.saved_id() else {
+            return;
+        };
+        let transcript = session.text();
         if transcript.trim().is_empty() {
             return;
         }
         let manager = self.clone();
         tauri::async_runtime::spawn(async move {
-            match crate::commands::meeting::summarize_transcript(&manager.app_handle, &transcript)
-                .await
+            // The user's notes (typed during the meeting) are useful context.
+            let notes = manager.store.get_meeting(id).ok().and_then(|r| r.notes);
+            match super::summarize::summarize_transcript(
+                &manager.app_handle,
+                &transcript,
+                notes.as_deref(),
+            )
+            .await
             {
-                Ok(summary) => {
-                    if let Err(e) = manager.update_saved_summary(&summary) {
-                        log::error!("meeting auto-summarize: failed to persist: {}", e);
-                    }
-                    use tauri::Emitter;
-                    let _ = manager.app_handle.emit("meeting-summary-update", summary);
-                }
+                Ok(summary) => manager.save_summary(id, &summary),
                 Err(e) => log::error!("meeting auto-summarize failed: {}", e),
             }
         });
     }
 
-    /// Append a transcribed segment and emit an update event.
-    fn push_segment(&self, text: String, timestamp_ms: u64, source: TranscriptSource) {
-        self.push_segment_with(text, None, None, timestamp_ms, source);
+    /// Summarize the most recent session's transcript (the `summarize_meeting`
+    /// commands). The target row is read once, up front, and the summary is
+    /// saved onto it — never onto whatever happens to be "last" when the LLM
+    /// answers.
+    pub async fn summarize_latest(&self, template: Option<&str>) -> Result<String, String> {
+        let (id, transcript) = match self.current_session() {
+            Some(session) => (session.saved_id(), session.text()),
+            None => (None, String::new()),
+        };
+        if transcript.trim().is_empty() {
+            return Err("No transcript to summarize. Start and run a meeting first.".to_string());
+        }
+        let notes = id
+            .and_then(|id| self.store.get_meeting(id).ok())
+            .and_then(|r| r.notes);
+        let content = super::summarize::summarize_transcript_ext(
+            &self.app_handle,
+            &transcript,
+            template,
+            notes.as_deref(),
+        )
+        .await?;
+        if let Some(id) = id {
+            self.save_summary(id, &content);
+        }
+        Ok(content)
     }
 
-    /// Append a segment that may carry a translation alongside the original
-    /// text (the Gemini Live path) and emit an update event.
-    fn push_segment_with(
+    /// Store `summary` on row `id`, refresh its export, and emit
+    /// `"meeting-summary-update"` with `{ id, summary }`.
+    pub fn save_summary(&self, id: i64, summary: &str) {
+        if let Err(e) = self.store.update_summary(id, summary) {
+            log::error!("meeting {}: failed to save summary: {}", id, e);
+            return;
+        }
+        self.export_markdown(id);
+        use tauri::Emitter;
+        let _ = self.app_handle.emit(
+            "meeting-summary-update",
+            MeetingSummaryUpdate {
+                id,
+                summary: summary.to_string(),
+            },
+        );
+    }
+
+    /// Append a segment (optionally with a translation / speaker) to
+    /// `session` and emit `"meeting-transcript-update"`. The incremental
+    /// persist happens on the session worker, never here: this runs on the
+    /// Gemini Live callback (async runtime) and the session worker.
+    pub(super) fn push_segment_with(
         &self,
+        session: &Session,
         text: String,
         translation: Option<String>,
         speaker: Option<String>,
@@ -2291,14 +959,12 @@ impl MeetingManager {
             translation,
             speaker,
         };
-        {
-            let mut segs = self.transcript.lock().unwrap();
-            segs.push(segment.clone());
-        }
-        let full = self.full_transcript();
-        // CRASH-RECOVERY: incrementally persist the partial transcript to the
-        // in-progress row, batched so SQLite isn't thrashed on a busy meeting.
-        self.maybe_persist_incremental();
+        let full = {
+            let mut transcript = session.transcript();
+            transcript.push(segment.clone());
+            transcript.text().to_string()
+        };
+        session.persist_dirty.store(true, Ordering::SeqCst);
         use tauri::Emitter;
         let _ = self.app_handle.emit(
             "meeting-transcript-update",
@@ -2309,58 +975,61 @@ impl MeetingManager {
         );
     }
 
-    /// CRASH-RECOVERY: persist the current partial transcript + segments to the
-    /// in-progress meeting row, batched. Writes only once `INCREMENTAL_PERSIST_BATCH`
-    /// new segments have accumulated since the last write, so a long meeting does
-    /// a single-row UPDATE every few segments rather than per segment. Best-effort:
-    /// failures are logged, never propagated.
-    fn maybe_persist_incremental(&self) {
-        let id = match *self.current_meeting_id.lock().unwrap() {
-            Some(id) => id,
-            None => return,
+    /// Replace the session's transcript with `segments` (the FINAL transcript)
+    /// and emit a synthetic update so the UI swaps the live preview for it.
+    /// The emitted `segment` is the last one, for payload-shape compatibility;
+    /// the authoritative content is `full_transcript` plus the saved record.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    pub(super) fn replace_transcript(&self, session: &Session, segments: Vec<TranscriptSegment>) {
+        let (full, last) = {
+            let mut transcript = session.transcript();
+            transcript.replace(segments);
+            (
+                transcript.text().to_string(),
+                transcript.segments().last().cloned(),
+            )
         };
-        let seg_count = { self.transcript.lock().unwrap().len() };
-        {
-            let mut persisted = self.persisted_segment_count.lock().unwrap();
-            if seg_count.saturating_sub(*persisted) < INCREMENTAL_PERSIST_BATCH {
-                return;
-            }
-            *persisted = seg_count;
+        if let Some(segment) = last {
+            use tauri::Emitter;
+            let _ = self.app_handle.emit(
+                "meeting-transcript-update",
+                MeetingTranscriptUpdate {
+                    segment,
+                    full_transcript: full,
+                },
+            );
         }
-        self.persist_incremental_now(id);
     }
 
-    /// Force an incremental persist of the current transcript to the in-progress
-    /// row (ignores the batch threshold). Used to flush before finalize.
-    fn persist_incremental_now(&self, id: i64) {
-        let segments: Vec<TranscriptSegment> = { self.transcript.lock().unwrap().clone() };
-        let transcript = self.full_transcript();
+    /// CRASH-RECOVERY: write the session's current transcript + segments to
+    /// its in-progress row. Best-effort.
+    pub(super) fn persist_incremental_now(&self, session: &Session) {
+        let Some(id) = session.meeting_id() else {
+            return;
+        };
+        let (segments, transcript) = {
+            let t = session.transcript();
+            (t.segments().to_vec(), t.text().to_string())
+        };
         let ended_at = now_epoch_ms();
-        let started_at = self
-            .session_started_at_ms
-            .lock()
-            .unwrap()
-            .unwrap_or(ended_at);
-        let duration_ms = (ended_at - started_at).max(0);
+        let duration_ms = (ended_at - session.started_at_ms).max(0);
         if let Err(e) =
             self.store
                 .update_in_progress(id, &transcript, &segments, ended_at, duration_ms)
         {
-            log::error!("meeting: failed incremental persist of row {}: {}", id, e);
+            log::warn!("meeting: incremental persist of row {} skipped: {}", id, e);
         }
     }
 
-    /// Bump the in-progress row's `ended_at`/`duration_ms` to "now" so the saved
-    /// length of a running meeting stays truthful without rewriting the
-    /// transcript. No-op before the row exists. Best-effort: failures are logged.
-    fn update_progress_clock(&self) {
-        let id = match *self.current_meeting_id.lock().unwrap() {
-            Some(id) => id,
-            None => return,
+    /// Bump the in-progress row's `ended_at`/`duration_ms` to "now" so the
+    /// saved length of a running meeting stays truthful without rewriting the
+    /// transcript. No-op before the row exists. Best-effort.
+    pub(super) fn update_progress_clock(&self, session: &Session) {
+        let Some(id) = session.meeting_id() else {
+            return;
         };
         let now = now_epoch_ms();
-        let started_at = self.session_started_at_ms.lock().unwrap().unwrap_or(now);
-        let duration_ms = (now - started_at).max(0);
+        let duration_ms = (now - session.started_at_ms).max(0);
         if let Err(e) = self.store.update_progress_timestamp(id, now, duration_ms) {
             log::warn!(
                 "meeting: failed to update progress clock of row {}: {}",
@@ -2370,114 +1039,15 @@ impl MeetingManager {
         }
     }
 
-    /// Build the Gemini Live config from settings, or `None` when the feature
-    /// is off or unconfigured. A missing API key is worth a log line: the user
-    /// turned the feature on and would otherwise see silence.
-    #[cfg(target_os = "macos")]
-    fn live_config(&self) -> Option<crate::gemini_live::LiveConfig> {
-        use crate::gemini_live::LiveMode;
-        let settings = crate::settings::get_settings(&self.app_handle);
-
-        let (mode, configured_model) = match settings.meeting_live_mode.as_str() {
-            "translate" => {
-                let target = settings.meeting_live_translate_target.trim();
-                (
-                    LiveMode::Translate {
-                        target_language: if target.is_empty() {
-                            "en".to_string()
-                        } else {
-                            target.to_string()
-                        },
-                    },
-                    settings.meeting_live_translate_model.clone(),
-                )
-            }
-            "transcribe" => (
-                LiveMode::Transcribe {
-                    // Hints come from the meeting language when the user pinned
-                    // one; otherwise let the model detect, which is what a
-                    // mixed-language call needs.
-                    language_codes: self.meeting_language_hints(&settings),
-                    smart: settings.meeting_gemini_smart,
-                },
-                settings.meeting_live_transcribe_model.clone(),
-            ),
-            _ => return None,
-        };
-
-        let api_key = settings.gemini_api_key.trim().to_string();
-        if api_key.is_empty() {
-            log::warn!(
-                "meeting: live mode '{}' is enabled but no Gemini API key is set",
-                settings.meeting_live_mode
-            );
-            return None;
-        }
-
-        let model = {
-            let m = configured_model.trim();
-            if m.is_empty() {
-                mode.default_model().to_string()
-            } else {
-                m.to_string()
-            }
-        };
-        Some(crate::gemini_live::LiveConfig {
-            api_key,
-            model,
-            mode,
-        })
-    }
-
-    /// BCP-47 hints for the Gemini paths: the pinned meeting language, or empty
-    /// (auto-detect) when the user left it on automatic.
-    #[cfg(target_os = "macos")]
-    fn meeting_language_hints(&self, settings: &crate::settings::AppSettings) -> Vec<String> {
-        let language = settings.meeting_language.trim();
-        if language.is_empty() || language == "auto" {
-            Vec::new()
-        } else {
-            vec![language.to_string()]
-        }
-    }
-
-    /// Open one Gemini Live session per capture source, so the resulting
-    /// segments keep their "you" / "others" label. Returns `None` when live
-    /// mode is off, leaving the normal transcription paths in charge.
-    #[cfg(target_os = "macos")]
-    fn start_live_sessions(&self) -> Option<LiveSessions> {
-        let config = self.live_config()?;
-        log::info!(
-            "meeting: gemini live on (model={}, mode={:?})",
-            config.model,
-            config.mode
-        );
-        self.live_gemini_active.store(true, Ordering::Relaxed);
-        self.live_translate_active.store(
-            matches!(config.mode, crate::gemini_live::LiveMode::Translate { .. }),
-            Ordering::Relaxed,
-        );
-        let model = config.model.clone();
-        let (mic, mic_pending) =
-            self.open_live_source(config.clone(), TranscriptSource::Mic, "mic");
-        let (system, system_pending) =
-            self.open_live_source(config, TranscriptSource::System, "system");
-        Some(LiveSessions {
-            mic,
-            system,
-            mic_pending,
-            system_pending,
-            model,
-        })
-    }
-
-    /// Write the session's token usage onto row `id`.
+    /// Write the token usage tallied in `usage` onto row `id`.
     ///
     /// Skipped when nothing was spent, so a purely local meeting keeps a NULL
     /// column and the UI can tell "no cloud model was used" apart from "a cloud
-    /// model was used and cost nothing", which would be a lie.
-    fn persist_usage(&self, id: i64) {
-        let usage = self.session_usage.lock().unwrap().clone();
+    /// model was used and cost nothing". Merged into what the row already
+    /// records: a recovered meeting was charged once by the session that
+    /// crashed.
+    pub(super) fn persist_usage(&self, id: i64, usage: &Mutex<crate::ai_usage::MeetingUsage>) {
+        let usage = usage.lock().unwrap().clone();
         if usage.is_empty() {
             return;
         }
@@ -2493,9 +1063,6 @@ impl MeetingManager {
                 " (partial: unpriced model)"
             }
         );
-        // Merge rather than overwrite. A recovered meeting was already charged
-        // once by the session that crashed; replacing that with only what the
-        // re-finalize cost would under-report it.
         let mut merged = self
             .store
             .get_meeting(id)
@@ -2510,7 +1077,6 @@ impl MeetingManager {
                 entry.audio_seconds,
             );
         }
-
         match serde_json::to_string(&merged) {
             Ok(json) => {
                 if let Err(e) = self.store.update_usage(id, &json) {
@@ -2521,1694 +1087,63 @@ impl MeetingManager {
         }
     }
 
-    /// Fold one call's token usage into the session total.
-    fn record_usage(&self, model: &str, input_tokens: u64, output_tokens: u64) {
-        self.record_usage_with_audio(model, input_tokens, output_tokens, 0);
-    }
-
-    /// As above, but also recording the audio we measured ourselves — the only
-    /// basis for pricing a model that reports no tokens.
-    fn record_usage_with_audio(
-        &self,
-        model: &str,
-        input_tokens: u64,
-        output_tokens: u64,
-        audio_seconds: u64,
-    ) {
-        if input_tokens == 0 && output_tokens == 0 && audio_seconds == 0 {
-            return;
-        }
-        log::debug!(
-            "usage: {} +{} in / +{} out tokens",
-            model,
-            input_tokens,
-            output_tokens
+    /// Emit `"meeting-state-changed"` (the state string) and
+    /// `"meeting-session-changed"` (`MeetingSessionInfo`).
+    pub(super) fn emit_state(&self) {
+        use tauri::Emitter;
+        let info = self.session_info();
+        let _ = self.app_handle.emit(
+            crate::commands::meeting::MEETING_STATE_CHANGED_EVENT,
+            info.state.clone(),
         );
-        self.session_usage.lock().unwrap().add_with_audio(
-            model,
-            input_tokens,
-            output_tokens,
-            audio_seconds,
+        let _ = self.app_handle.emit(
+            crate::commands::meeting::MEETING_SESSION_CHANGED_EVENT,
+            info,
         );
     }
 
-    /// Update the subtitle strip: `live` is the utterance still being spoken,
-    /// `finished` (when present) is the line that just settled.
-    ///
-    /// Hides the strip once nothing is left to show, so a long silence does not
-    /// leave a stale sentence floating over the screen.
-    #[cfg(target_os = "macos")]
-    fn update_subtitles(&self, live: Option<&str>, finished: Option<&LiveSegment>) {
-        let snapshot = {
-            let mut feed = self.subtitles.lock().unwrap();
-            match finished {
-                // Prefer the translation when there is one: the strip exists so
-                // the user can follow a language they do not speak.
-                Some(segment) => feed.settle(
-                    segment
-                        .translation
-                        .as_deref()
-                        .unwrap_or(segment.original.as_str()),
-                ),
-                None => {
-                    if let Some(text) = live {
-                        feed.set_pending(text);
-                    }
-                }
-            }
-            if feed.is_empty() {
-                None
-            } else {
-                Some(feed.snapshot())
-            }
-        };
-        match snapshot {
-            Some(update) => {
-                log::debug!(
-                    "subtitle: settled={} chars, pending={} chars",
-                    update.settled.len(),
-                    update.pending.len()
-                );
-                crate::subtitle_overlay::show_subtitle(&self.app_handle, update)
-            }
-            None => crate::subtitle_overlay::hide_subtitle(&self.app_handle),
-        }
-    }
-
-    /// Start a live session for one source, accumulating streamed fragments into
-    /// whole segments.
-    #[cfg(target_os = "macos")]
-    fn open_live_source(
-        &self,
-        config: crate::gemini_live::LiveConfig,
-        source: TranscriptSource,
-        label: &str,
-    ) -> (crate::gemini_live::LiveSession, LiveBuilder) {
-        let manager = self.clone();
-        // Transcripts arrive as partial fragments; accumulate until the API
-        // marks the turn complete, then emit one segment.
-        let pending: LiveBuilder = Arc::new(Mutex::new(LiveSegmentBuilder::default()));
-        let drain_handle = pending.clone();
-        // Log the detected source language once per source. Worth having when a
-        // user reports the wrong language being translated.
-        let language_logged = Arc::new(AtomicBool::new(false));
-        let source_label = label.to_string();
-        // Only the remote side is subtitled, and only when the user asked for
-        // it. Both are settled once here rather than per fragment: the callback
-        // runs on every partial and `get_settings` deserializes the store.
-        let subtitled = source == TranscriptSource::System
-            && crate::settings::get_settings(&self.app_handle).meeting_subtitles;
-        let translating = matches!(config.mode, crate::gemini_live::LiveMode::Translate { .. });
-        log::info!(
-            "gemini-live[{}]: subtitles {}",
-            label,
-            if subtitled { "on" } else { "off" }
+    /// Emit only `"meeting-session-changed"` (the row id became known).
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    pub(super) fn emit_session_changed(&self) {
+        use tauri::Emitter;
+        let _ = self.app_handle.emit(
+            crate::commands::meeting::MEETING_SESSION_CHANGED_EVENT,
+            self.session_info(),
         );
-        let session = crate::gemini_live::LiveSession::start(config, label, move |fragment| {
-            if let Some(language) = &fragment.source_language {
-                if !language_logged.swap(true, Ordering::Relaxed) {
-                    log::info!(
-                        "gemini-live[{}]: detected source language {}",
-                        source_label,
-                        language
-                    );
-                }
-            }
-            let (finished, running_translation) = {
-                let mut builder = pending.lock().unwrap();
-                builder.absorb(&fragment, manager.elapsed_ms());
-                // Snapshot the translation as it grows, for the strip. Taken
-                // under the same lock so it can never lag the fragment that
-                // produced it.
-                let running = builder.translation.trim().to_string();
-                // Translate sessions do not appear to send `turnComplete` at
-                // all — waiting for it produced hours of subtitles and an empty
-                // stored transcript. A finalized original with a translation
-                // already attached is a real, observed boundary, so it closes
-                // the segment too. The translation can trail slightly into the
-                // next one; a near-aligned transcript beats no transcript.
-                let ready = fragment.turn_complete
-                    || (translating && fragment.original.is_some() && !running.is_empty());
-                if ready {
-                    (builder.take(), running)
-                } else {
-                    (None, running)
-                }
-            };
-
-            if subtitled {
-                // The two modes have different "text so far". Translation
-                // arrives as appended fragments, so the running accumulation IS
-                // the in-progress line. Transcription instead resends a whole
-                // revised hypothesis on `interim`, which replaces it.
-                let live_text = if translating {
-                    Some(running_translation)
-                } else {
-                    fragment.interim.clone()
-                };
-                manager.update_subtitles(live_text.as_deref(), finished.as_ref());
-            }
-
-            if let Some(segment) = finished {
-                manager.push_segment_with(
-                    segment.original,
-                    segment.translation,
-                    None,
-                    segment.timestamp_ms,
-                    source,
-                );
-            }
-        });
-        (session, drain_handle)
     }
 
-    /// Emit whatever each source's builder still holds.
-    ///
-    /// The last utterance of a meeting has no following one to close it, so
-    /// without this it would sit in the accumulator and be lost — which for a
-    /// short meeting means the entire transcript.
-    #[cfg(target_os = "macos")]
-    fn drain_live_builders(&self, sessions: &LiveSessions) {
-        for (builder, source) in [
-            (&sessions.mic_pending, TranscriptSource::Mic),
-            (&sessions.system_pending, TranscriptSource::System),
-        ] {
-            let leftover = builder.lock().unwrap().take_final();
-            if let Some(segment) = leftover {
-                log::info!("gemini-live: flushed a trailing segment on stop");
-                self.push_segment_with(
-                    segment.original,
-                    segment.translation,
-                    None,
-                    segment.timestamp_ms,
-                    source,
-                );
-            }
-        }
-    }
-
-    /// Milliseconds since this session started, for timestamping live segments.
-    /// The Live API runs a few seconds behind the speaker, so this is the
-    /// arrival time rather than the exact moment the words were said — close
-    /// enough to keep segments in order, which is what the timestamp is for.
-    fn elapsed_ms(&self) -> u64 {
-        let started = *self.session_started_at_ms.lock().unwrap();
-        match started {
-            Some(started) => (now_epoch_ms() - started).max(0) as u64,
-            None => 0,
-        }
-    }
-
-    /// Emit a `"meeting-error"` signal so the UI can surface a transcription
-    /// failure instead of just showing an empty transcript. Best-effort.
-    fn emit_error(&self, message: &str) {
+    /// Emit a `"meeting-error"` signal so the UI can surface a failure instead
+    /// of just showing an empty transcript. Best-effort.
+    pub(super) fn emit_error(&self, message: &str) {
         use tauri::Emitter;
         let _ = self.app_handle.emit("meeting-error", message.to_string());
     }
 
     /// Emit a `"meeting-finalizing"` signal so the UI can show progress while
     /// the on-stop full-audio re-transcription runs.
-    fn emit_finalizing(&self, finalizing: bool) {
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    pub(super) fn emit_finalizing(&self, finalizing: bool) {
         use tauri::Emitter;
         let _ = self
             .app_handle
             .emit("meeting-finalizing", MeetingFinalizing { finalizing });
     }
 
-    /// Replace the entire accumulated transcript with `segments` (the FINAL
-    /// labeled transcript) and emit a synthetic update so the UI swaps the live
-    /// preview for the final result. The emitted `segment` is the last one for
-    /// payload-shape compatibility; the authoritative content is
-    /// `full_transcript` plus the persisted record.
-    fn replace_transcript(&self, segments: Vec<TranscriptSegment>) {
-        {
-            let mut segs = self.transcript.lock().unwrap();
-            *segs = segments;
-        }
-        let full = self.full_transcript();
-        let last = { self.transcript.lock().unwrap().last().cloned() };
-        if let Some(segment) = last {
-            use tauri::Emitter;
-            let _ = self.app_handle.emit(
-                "meeting-transcript-update",
-                MeetingTranscriptUpdate {
-                    segment,
-                    full_transcript: full,
-                },
-            );
-        }
-    }
-
     /// Emit a throttled `"meeting-audio-level"` event for the live visualizer.
-    /// Cheap: caller passes precomputed bars/wave/peak. Separate from the
-    /// dictation `mic-level` path.
-    fn emit_audio_level(&self, bars: Vec<f32>, wave: Vec<f32>, peak: f32) {
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    pub(super) fn emit_audio_level(&self, bars: Vec<f32>, wave: Vec<f32>, peak: f32) {
         use tauri::Emitter;
         let _ = self.app_handle.emit(
             "meeting-audio-level",
             MeetingAudioLevel { bars, wave, peak },
         );
     }
-
-    /// The capture + mix + VAD + transcribe loop. macOS-only.
-    ///
-    /// Mirrors the capture/mix machinery of `capture_mixed_audio_test`: an
-    /// independent cpal mic worker resamples to 16 kHz and forwards frames over a
-    /// channel; the Step-1 system-audio stream is resampled to 16 kHz; a
-    /// `MeetingMixer` produces mixed 16 kHz mono samples. Those samples are then
-    /// fed through a dedicated `SmoothedVad` in 480-sample frames to segment
-    /// speech, and each completed segment is transcribed.
-    #[cfg(target_os = "macos")]
-    fn run_capture_loop(&self) -> Result<(), String> {
-        use crate::audio_toolkit::audio::{
-            AudioVisualiser, FrameResampler, MeetingMixer, MixSource, SystemAudioCapture,
-        };
-        use crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE;
-        use crate::audio_toolkit::vad::SmoothedVad;
-        use crate::audio_toolkit::SileroVad;
-        use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-        use futures_util::StreamExt;
-        use std::sync::mpsc;
-        use std::time::{Duration, Instant};
-        use tauri::Manager;
-
-        // --- VAD setup (dedicated instance, NOT shared with dictation) ---
-        const VAD_FRAME_SAMPLES: usize = (WHISPER_SAMPLE_RATE as usize * 30) / 1000; // 480 samples / 30 ms
-
-        // ----- Meeting VAD segmentation tuning (WIDER / fewer segments) -----
-        // These are intentionally more generous than dictation's SmoothedVad so a
-        // speaker's brief pauses don't shatter an utterance into many tiny blocks.
-        //
-        // Pre-roll captured before speech onset (~450 ms). Same as dictation.
-        const VAD_PREFILL_FRAMES: usize = 15;
-        // Silence tail tolerated before a segment ends: 40 frames * 30 ms = 1200 ms.
-        // (Dictation uses 15 ≈ 450 ms.) Pauses shorter than this stay in one segment.
-        const VAD_HANGOVER_FRAMES: usize = 40;
-        // Consecutive voice frames required to (re)enter speech. Same as dictation.
-        const VAD_ONSET_FRAMES: usize = 2;
-        // Max samples per segment before forced flush (~22 s) so a continuous
-        // talker still gets periodic transcription.
-        const MAX_SEGMENT_SAMPLES: usize = WHISPER_SAMPLE_RATE as usize * 22;
-        // Minimum segment length worth transcribing (~400 ms) to skip blips. Raised
-        // from ~200 ms so very short noise bursts don't become standalone segments.
-        const MIN_SEGMENT_SAMPLES: usize = (WHISPER_SAMPLE_RATE as usize * 2) / 5;
-        // If a new segment starts within this gap of the previous one's END, merge
-        // them into a single transcript block instead of pushing separately
-        // (~800 ms). Belt-and-suspenders on top of the longer hangover, and also
-        // bridges the gap created by MAX_SEGMENT_SAMPLES forced flushes.
-        const SEGMENT_MERGE_GAP_SAMPLES: u64 = (WHISPER_SAMPLE_RATE as u64 * 4) / 5;
-
-        // --- Live audio-level visualizer (SEPARATE from dictation mic-level) ---
-        // Reuse the same AudioVisualiser config dictation uses for `bars`.
-        const VIS_BUCKETS: usize = 16;
-        const VIS_WINDOW_SIZE: usize = 512;
-        // Oscilloscope trace length sent to the frontend.
-        const WAVE_POINTS: usize = 96;
-        // Throttle: emit at most one event every 50 ms (~20 fps), accumulating
-        // mixed samples across the faster 30 ms VAD frames.
-        const LEVEL_EMIT_INTERVAL: Duration = Duration::from_millis(50);
-        let mut visualizer = AudioVisualiser::new(
-            WHISPER_SAMPLE_RATE,
-            VIS_WINDOW_SIZE,
-            VIS_BUCKETS,
-            80.0,
-            6000.0,
-        );
-        // Most recent mixed samples awaiting the next emit (raw, for the wave +
-        // peak). Capped to roughly one emit window so it stays cheap.
-        let mut level_accum: Vec<f32> = Vec::with_capacity(WHISPER_SAMPLE_RATE as usize / 10);
-        // Latest bar levels from the visualiser; reused if no new bars this tick.
-        let mut last_bars: Vec<f32> = vec![0.0; VIS_BUCKETS];
-        let mut last_level_emit = Instant::now();
-
-        let vad_path = self
-            .app_handle
-            .path()
-            .resolve(
-                "resources/models/silero_vad_v4.onnx",
-                tauri::path::BaseDirectory::Resource,
-            )
-            .map_err(|e| format!("Failed to resolve VAD path: {}", e))?;
-
-        // Build a fresh SmoothedVad tuned for WIDER meeting segments. We build
-        // TWO independent instances (mic + system) so each source is segmented
-        // and labeled separately (Feature 1). NOT shared with dictation.
-        let make_vad = || -> Result<SmoothedVad, String> {
-            let silero = SileroVad::new(&vad_path, 0.3)
-                .map_err(|e| format!("Failed to create SileroVad for meeting: {}", e))?;
-            Ok(SmoothedVad::new(
-                Box::new(silero),
-                VAD_PREFILL_FRAMES,
-                VAD_HANGOVER_FRAMES,
-                VAD_ONSET_FRAMES,
-            ))
-        };
-        let mic_vad = make_vad()?;
-        let system_vad = make_vad()?;
-
-        // --- Per-source full-audio buffer files (Feature 2: hybrid finalize) ---
-        // Stream each source's full 16 kHz mono audio (raw little-endian f32) to
-        // a temp file so a 2h meeting doesn't hold ~230 MB/source in RAM. Read
-        // back once on stop for the high-quality finalize pass.
-        let buf_dir = std::env::temp_dir();
-        let pid = std::process::id();
-        let stamp = now_epoch_ms();
-        let mic_buf_path = buf_dir.join(format!("fisilti_meeting_{}_{}_mic.f32", pid, stamp));
-        let system_buf_path = buf_dir.join(format!("fisilti_meeting_{}_{}_sys.f32", pid, stamp));
-        let mixed_buf_path = buf_dir.join(format!("fisilti_meeting_{}_{}_mix.f32", pid, stamp));
-        let mut mic_buf_writer = RawF32Writer::create(&mic_buf_path)
-            .map_err(|e| format!("Failed to create mic buffer: {}", e))?;
-        let mut system_buf_writer = RawF32Writer::create(&system_buf_path)
-            .map_err(|e| format!("Failed to create system buffer: {}", e))?;
-        let mut mixed_buf_writer = RawF32Writer::create(&mixed_buf_path)
-            .map_err(|e| format!("Failed to create mixed buffer: {}", e))?;
-        // Publish the buffer paths so stop()'s finalize/audio-save can read them.
-        *self.buffer_paths.lock().unwrap() = Some(SessionBuffers {
-            mic: mic_buf_path.clone(),
-            system: system_buf_path.clone(),
-            mixed: mixed_buf_path.clone(),
-        });
-
-        // CRASH-RECOVERY: INSERT the in-progress meeting row NOW (status
-        // `recording`), recording the per-source temp-buffer paths. If the app
-        // crashes / is killed mid-meeting, the row + incrementally-saved
-        // transcript + temp audio survive and can be recovered on next startup.
-        {
-            let started_at = self
-                .session_started_at_ms
-                .lock()
-                .unwrap()
-                .unwrap_or_else(now_epoch_ms);
-            // Prefer the explicit session title (calendar / window) when the
-            // background resolution already landed; datetime otherwise.
-            let title = self
-                .session_title
-                .lock()
-                .unwrap()
-                .clone()
-                .unwrap_or_else(|| default_meeting_title(started_at));
-            let stored = crate::meeting::store::StoredBuffers {
-                mic: Some(mic_buf_path.to_string_lossy().to_string()),
-                system: Some(system_buf_path.to_string_lossy().to_string()),
-                mixed: Some(mixed_buf_path.to_string_lossy().to_string()),
-            };
-            match self.store.start_meeting(started_at, &title, &stored) {
-                Ok(id) => {
-                    log::info!("meeting: inserted in-progress row {} (recording)", id);
-                    *self.current_meeting_id.lock().unwrap() = Some(id);
-                    *self.persisted_segment_count.lock().unwrap() = 0;
-                    // Close the race with the resolution thread: if it stashed
-                    // a title after we read it but before the row id was
-                    // registered above, rename the row now.
-                    if let Some(resolved) = self.session_title.lock().unwrap().clone() {
-                        if resolved != title {
-                            self.apply_title(id, &resolved);
-                        }
-                    }
-                }
-                Err(e) => log::error!("meeting: failed to insert in-progress row: {}", e),
-            }
-        }
-
-        // Per-source live segmentation state (mirrors the old single-VAD state).
-        let mut mic_proc = SourceProcessor::new(mic_vad, TranscriptSource::Mic);
-        let mut system_proc = SourceProcessor::new(system_vad, TranscriptSource::System);
-
-        // --- Mic capture on a dedicated thread (independent cpal stream) ---
-        let (mic_tx, mic_rx) = mpsc::channel::<Vec<f32>>();
-        let mic_stop = Arc::new(AtomicBool::new(false));
-        let mic_stop_worker = mic_stop.clone();
-        let (mic_init_tx, mic_init_rx) = mpsc::sync_channel::<Result<(), String>>(1);
-
-        let mic_handle = std::thread::spawn(move || {
-            let host = crate::audio_toolkit::get_cpal_host();
-            let device = match host.default_input_device() {
-                Some(d) => d,
-                None => {
-                    let _ = mic_init_tx.send(Err("No default input device".into()));
-                    return;
-                }
-            };
-            let config = match device.default_input_config() {
-                Ok(c) => c,
-                Err(e) => {
-                    let _ = mic_init_tx.send(Err(format!("No default input config: {e}")));
-                    return;
-                }
-            };
-            let in_rate = config.sample_rate().0;
-            let channels = config.channels() as usize;
-            let sample_format = config.sample_format();
-            log::info!(
-                "meeting: mic '{:?}' {} Hz {} ch {:?}",
-                device.name(),
-                in_rate,
-                channels,
-                sample_format
-            );
-
-            let (raw_tx, raw_rx) = mpsc::channel::<Vec<f32>>();
-
-            macro_rules! build {
-                ($t:ty) => {{
-                    let raw_tx = raw_tx.clone();
-                    device.build_input_stream(
-                        &config.clone().into(),
-                        move |data: &[$t], _: &cpal::InputCallbackInfo| {
-                            let mono: Vec<f32> = if channels <= 1 {
-                                data.iter()
-                                    .map(|&s| cpal::Sample::to_sample::<f32>(s))
-                                    .collect()
-                            } else {
-                                data.chunks_exact(channels)
-                                    .map(|f| {
-                                        f.iter()
-                                            .map(|&s| cpal::Sample::to_sample::<f32>(s))
-                                            .sum::<f32>()
-                                            / channels as f32
-                                    })
-                                    .collect()
-                            };
-                            let _ = raw_tx.send(mono);
-                        },
-                        |err| log::error!("meeting mic stream error: {err}"),
-                        None,
-                    )
-                }};
-            }
-
-            let stream = match sample_format {
-                cpal::SampleFormat::F32 => build!(f32),
-                cpal::SampleFormat::I16 => build!(i16),
-                cpal::SampleFormat::I32 => build!(i32),
-                cpal::SampleFormat::U8 => build!(u8),
-                other => {
-                    let _ = mic_init_tx.send(Err(format!("Unsupported mic format: {other:?}")));
-                    return;
-                }
-            };
-            let stream = match stream {
-                Ok(s) => s,
-                Err(e) => {
-                    let _ = mic_init_tx.send(Err(format!("Failed to build mic stream: {e}")));
-                    return;
-                }
-            };
-            if let Err(e) = stream.play() {
-                let _ = mic_init_tx.send(Err(format!("Failed to start mic stream: {e}")));
-                return;
-            }
-            let _ = mic_init_tx.send(Ok(()));
-
-            let mut resampler = FrameResampler::new(
-                in_rate as usize,
-                WHISPER_SAMPLE_RATE as usize,
-                Duration::from_millis(30),
-            );
-
-            loop {
-                if mic_stop_worker.load(Ordering::Relaxed) {
-                    break;
-                }
-                match raw_rx.recv_timeout(Duration::from_millis(100)) {
-                    Ok(raw) => {
-                        resampler.push(&raw, &mut |frame: &[f32]| {
-                            let _ = mic_tx.send(frame.to_vec());
-                        });
-                    }
-                    Err(mpsc::RecvTimeoutError::Timeout) => continue,
-                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
-                }
-            }
-            resampler.finish(&mut |frame: &[f32]| {
-                let _ = mic_tx.send(frame.to_vec());
-            });
-            drop(stream);
-        });
-
-        // Wait for mic init (or fail).
-        match mic_init_rx.recv() {
-            Ok(Ok(())) => {}
-            Ok(Err(e)) => {
-                mic_stop.store(true, Ordering::Relaxed);
-                let _ = mic_handle.join();
-                return Err(format!("Mic init failed: {e}"));
-            }
-            Err(e) => {
-                mic_stop.store(true, Ordering::Relaxed);
-                let _ = mic_handle.join();
-                return Err(format!("Mic worker died: {e}"));
-            }
-        }
-
-        // --- System audio capture (Step 1) on Tauri's async runtime ---
-        // The CoreAudio stream is a `Stream<Item = f32>`; drain it on a spawned
-        // async task and forward batched samples to this (sync) loop over a
-        // std mpsc channel, mirroring the mic worker. This avoids a per-sample
-        // `block_on` and keeps the capture loop purely synchronous.
-        let sys_stream = match SystemAudioCapture::start() {
-            Ok(s) => s,
-            Err(e) => {
-                mic_stop.store(true, Ordering::Relaxed);
-                let _ = mic_handle.join();
-                return Err(format!("Failed to start system capture: {e}"));
-            }
-        };
-        let sys_rate = sys_stream.sample_rate();
-        // Live system sample-rate handle (Item 4): the CoreAudio IO-proc updates
-        // this when the device rate changes (e.g. AirPods switching profiles).
-        // We poll it in the loop and rebuild `sys_resampler` on change so the
-        // ratio stays correct (else pitch/speed corruption).
-        let sys_rate_handle = sys_stream.sample_rate_handle();
-        let mut sys_resampler = FrameResampler::new(
-            sys_rate as usize,
-            WHISPER_SAMPLE_RATE as usize,
-            Duration::from_millis(30),
-        );
-        let mut sys_resampler_rate = sys_rate;
-
-        let (sys_tx, sys_rx) = mpsc::channel::<Vec<f32>>();
-        let sys_stop = Arc::new(AtomicBool::new(false));
-        let sys_stop_task = sys_stop.clone();
-        let sys_task = tauri::async_runtime::spawn(async move {
-            let mut stream = sys_stream;
-            let mut batch: Vec<f32> = Vec::with_capacity(1024);
-            loop {
-                if sys_stop_task.load(Ordering::Relaxed) {
-                    break;
-                }
-                match stream.next().await {
-                    Some(s) => {
-                        batch.push(s);
-                        if batch.len() >= 1024 {
-                            if sys_tx.send(std::mem::take(&mut batch)).is_err() {
-                                break;
-                            }
-                        }
-                    }
-                    None => break,
-                }
-            }
-            if !batch.is_empty() {
-                let _ = sys_tx.send(batch);
-            }
-            drop(stream);
-        });
-
-        log::info!(
-            "meeting: capture loop running at {} Hz (system in {} Hz)",
-            WHISPER_SAMPLE_RATE,
-            sys_rate
-        );
-
-        // --- Mixer (kept ONLY for the level meter + saved playback audio) ---
-        let mut mixer = MeetingMixer::new();
-        let mut mixed: Vec<f32> = Vec::new();
-        // Per-source 16 kHz frames pulled this tick, fed to each VAD + buffer.
-        let mut mic_frames: Vec<f32> = Vec::new();
-        let mut sys_frames: Vec<f32> = Vec::new();
-
-        // Segmentation tuning shared by both source processors.
-        let seg_cfg = SegConfig {
-            frame_samples: VAD_FRAME_SAMPLES,
-            min_samples: MIN_SEGMENT_SAMPLES,
-            max_samples: MAX_SEGMENT_SAMPLES,
-            merge_gap_samples: SEGMENT_MERGE_GAP_SAMPLES,
-        };
-
-        // --- Mic conditioning + echo mitigation (Items 3 & 5), mic frames only ---
-        // Echo duck: detect the output route once at start (built-in speakers vs
-        // headphones). A mid-meeting headphone plug/unplug isn't re-detected here
-        // to keep the hot loop allocation-free; the common case (fixed route for
-        // the session) is handled.
-        let mut echo_duck = EchoDuck::new(crate::audio_toolkit::audio::detect_output_route());
-        let mut mic_highpass = HighPass::new(MIC_HIGHPASS_HZ, WHISPER_SAMPLE_RATE as f32);
-        let mut mic_norm = MicLoudnessNorm::new(WHISPER_SAMPLE_RATE);
-
-        // --- Gemini Live streaming (opt-in) ---
-        // Streams the same 16 kHz frames the buffers get to the Gemini Live
-        // API. Sessions connect in the background, so a slow or failing connect
-        // never delays capture; if it is off this is `None` and every push
-        // below is a no-op.
-        let live_sessions = self.start_live_sessions();
-
-        // --- Prolonged-silence auto-end tracking ---
-        // Run the silence check about once a second (not per 30 ms frame), and
-        // refresh the cached auto-end settings only every few seconds:
-        // `get_settings` deserializes the tauri store, too heavy for the hot
-        // loop. `note_speech()` (above, in each source's VAD path) keeps the
-        // `silence_anchor` fresh; here we only read how long it's been.
-        const SILENCE_CHECK_INTERVAL: Duration = Duration::from_secs(1);
-        const SILENCE_SETTINGS_REFRESH: Duration = Duration::from_secs(5);
-        let mut silence_settings = crate::settings::get_settings(&self.app_handle);
-        let mut last_silence_check = Instant::now();
-        let mut last_settings_refresh = Instant::now();
-
-        // Keep the in-progress row's clock ticking. `maybe_persist_incremental`
-        // only writes once transcript segments accumulate, so a session that
-        // produces no live segments (cloud models skip the live pass entirely)
-        // would otherwise sit at duration_ms = 0 for its whole length — and a
-        // crash would leave it looking like a zero-second meeting.
-        const PROGRESS_CLOCK_INTERVAL: Duration = Duration::from_secs(5);
-        let mut last_progress_clock = Instant::now();
-
-        loop {
-            if self.stop_signal.load(Ordering::Relaxed) {
-                break;
-            }
-
-            // Prolonged-silence auto-end: about once a second, (occasionally)
-            // refresh the cached settings and, when enabled, ask to end the
-            // meeting if no speech has been seen for the configured timeout.
-            // `request_auto_end` owns the grace timer + stop and is idempotent
-            // while a prompt is pending, so calling it every second is fine.
-            if last_progress_clock.elapsed() >= PROGRESS_CLOCK_INTERVAL {
-                last_progress_clock = Instant::now();
-                self.update_progress_clock();
-            }
-
-            if last_silence_check.elapsed() >= SILENCE_CHECK_INTERVAL {
-                last_silence_check = Instant::now();
-                if last_settings_refresh.elapsed() >= SILENCE_SETTINGS_REFRESH {
-                    silence_settings = crate::settings::get_settings(&self.app_handle);
-                    last_settings_refresh = Instant::now();
-                }
-                if silence_settings.meeting_auto_end {
-                    let elapsed = self.silence_anchor.lock().unwrap().elapsed();
-                    if silence_exceeded(elapsed, silence_settings.meeting_silence_timeout_secs) {
-                        crate::meeting_detector::request_auto_end(
-                            &self.app_handle,
-                            crate::meeting_prompt::EndReason::Silence,
-                        );
-                    }
-                }
-            }
-
-            mic_frames.clear();
-            sys_frames.clear();
-
-            // Item 4: rebuild the system resampler if the device rate changed
-            // (AirPods/Bluetooth profile switch). Without this the fixed initial
-            // ratio would pitch/speed-corrupt all subsequent system audio.
-            let live_sys_rate = sys_rate_handle.load(Ordering::Acquire);
-            if live_sys_rate != 0 && live_sys_rate != sys_resampler_rate {
-                log::info!(
-                    "meeting: system sample rate changed {} -> {} Hz; rebuilding resampler",
-                    sys_resampler_rate,
-                    live_sys_rate
-                );
-                // Flush any tail of the old resampler into the mixer so samples
-                // aren't lost across the rebuild.
-                sys_resampler.finish(&mut |frame: &[f32]| {
-                    mixer.push(MixSource::System, frame);
-                    sys_frames.extend_from_slice(frame);
-                });
-                sys_resampler = FrameResampler::new(
-                    live_sys_rate as usize,
-                    WHISPER_SAMPLE_RATE as usize,
-                    Duration::from_millis(30),
-                );
-                sys_resampler_rate = live_sys_rate;
-            }
-
-            // Drain any available mic frames (already 16 kHz mono, non-blocking).
-            while let Ok(frame) = mic_rx.try_recv() {
-                mixer.push(MixSource::Microphone, &frame);
-                mic_frames.extend_from_slice(&frame);
-            }
-
-            // Pull a system-audio batch (blocks up to 100 ms to pace the loop).
-            match sys_rx.recv_timeout(Duration::from_millis(100)) {
-                Ok(batch) => {
-                    sys_resampler.push(&batch, &mut |frame: &[f32]| {
-                        mixer.push(MixSource::System, frame);
-                        sys_frames.extend_from_slice(frame);
-                    });
-                }
-                Err(mpsc::RecvTimeoutError::Timeout) => {
-                    // No system audio yet; keep looping so mic/stop are serviced.
-                }
-                Err(mpsc::RecvTimeoutError::Disconnected) => break,
-            }
-
-            // --- Mic conditioning + echo mitigation (Items 3 & 5) ---
-            // Update the smoothed system loudness every tick (so the duck
-            // releases promptly when system audio stops), then condition the
-            // mic. Order: echo duck -> high-pass -> loudness normalize. Applied
-            // to mic_frames BEFORE the buffer write + VAD feed, so BOTH the live
-            // pass and the on-stop finalize benefit. System audio + the saved
-            // playback mix (already pushed with raw mic above) are untouched.
-            echo_duck.observe_system(&sys_frames);
-            if !mic_frames.is_empty() {
-                let ducked = echo_duck.apply(&mut mic_frames);
-                if ducked {
-                    // Remote audio is loud on speakers → the mic frames are
-                    // (attenuated) echo of what the system tap already captured
-                    // cleanly. ZERO them in the buffer rather than writing the
-                    // attenuated leakage: the on-stop finalize pass re-VADs the
-                    // WHOLE mic buffer with no knowledge of live ducking, so any
-                    // residual leakage left here would be transcribed and
-                    // duplicated under the "you" label. Writing silence keeps the
-                    // mic buffer time-aligned (so real-speech timestamps stay
-                    // correct) while guaranteeing finalize can't resurrect the
-                    // echo. Mirrors skipping the live mic VAD below. Double-talk
-                    // tradeoff: a quiet local interjection over loud playback is
-                    // sacrificed — accepted to avoid the (worse) duplicated text.
-                    for s in mic_frames.iter_mut() {
-                        *s = 0.0;
-                    }
-                    let _ = mic_buf_writer.write(&mic_frames);
-                } else {
-                    mic_highpass.process(&mut mic_frames);
-                    if let Some(norm) = mic_norm.as_mut() {
-                        norm.process(&mut mic_frames);
-                    }
-                    let _ = mic_buf_writer.write(&mic_frames);
-                    mic_proc.feed(&mic_frames, &seg_cfg, self);
-                    if let Some(live) = &live_sessions {
-                        live.mic.push_audio(&mic_frames);
-                    }
-                }
-            }
-            if !sys_frames.is_empty() {
-                let _ = system_buf_writer.write(&sys_frames);
-                system_proc.feed(&sys_frames, &seg_cfg, self);
-                if let Some(live) = &live_sessions {
-                    live.system.push_audio(&sys_frames);
-                }
-            }
-
-            // --- Mixed stream: level meter + playback buffer ONLY ---
-            mixer.drain_into(&mut mixed);
-            if !mixed.is_empty() {
-                let _ = mixed_buf_writer.write(&mixed);
-                level_accum.extend_from_slice(&mixed);
-                if let Some(bars) = visualizer.feed(&mixed) {
-                    last_bars = bars;
-                }
-                if last_level_emit.elapsed() >= LEVEL_EMIT_INTERVAL {
-                    let (wave, peak) = downsample_wave(&level_accum, WAVE_POINTS);
-                    self.emit_audio_level(last_bars.clone(), wave, peak);
-                    level_accum.clear();
-                    last_level_emit = Instant::now();
-                }
-                mixed.clear();
-            }
-        }
-
-        // --- Teardown: stop mic + system, flush resamplers + mixer + final ---
-        // Close the live sessions first so the API flushes any in-flight turn
-        // while the rest of the teardown runs.
-        if let Some(live) = &live_sessions {
-            live.stop();
-            // Read the meters AFTER stopping, so the final usage report the
-            // server sends on close is included.
-            self.drain_live_builders(live);
-            let (mic_in, mic_out) = live.mic.usage_totals();
-            let (sys_in, sys_out) = live.system.usage_totals();
-            // Both sources are separate sessions streaming in parallel, so the
-            // billable audio is their SUM, not the meeting's wall-clock length.
-            let audio_seconds = live.mic.audio_seconds() + live.system.audio_seconds();
-            log::info!(
-                "usage: live sessions streamed {}s of audio, reported {} tokens",
-                audio_seconds,
-                mic_in + sys_in + mic_out + sys_out
-            );
-            self.record_usage_with_audio(
-                &live.model,
-                mic_in + sys_in,
-                mic_out + sys_out,
-                audio_seconds,
-            );
-        }
-        // Take the strip down with the stream that fed it, before the (possibly
-        // minutes-long) finalize pass, so it never outlives the meeting.
-        *self.subtitles.lock().unwrap() = SubtitleFeed::default();
-        crate::subtitle_overlay::hide_subtitle(&self.app_handle);
-        mic_stop.store(true, Ordering::Relaxed);
-        let _ = mic_handle.join();
-        sys_stop.store(true, Ordering::Relaxed);
-        // The async task tears down the CoreAudio tap on drop; wait for it.
-        let _ = tauri::async_runtime::block_on(sys_task);
-
-        // Drain trailing mic frames.
-        let mut tail_mic: Vec<f32> = Vec::new();
-        while let Ok(frame) = mic_rx.try_recv() {
-            mixer.push(MixSource::Microphone, &frame);
-            tail_mic.extend_from_slice(&frame);
-        }
-        if !tail_mic.is_empty() {
-            // Apply the same mic conditioning to the trailing tail (no ducking
-            // here — the session is ending and there's no fresh system RMS).
-            mic_highpass.process(&mut tail_mic);
-            if let Some(norm) = mic_norm.as_mut() {
-                norm.process(&mut tail_mic);
-            }
-            let _ = mic_buf_writer.write(&tail_mic);
-            mic_proc.feed(&tail_mic, &seg_cfg, self);
-        }
-
-        // Drain + flush trailing system audio.
-        let mut tail_sys: Vec<f32> = Vec::new();
-        while let Ok(batch) = sys_rx.try_recv() {
-            sys_resampler.push(&batch, &mut |frame: &[f32]| {
-                mixer.push(MixSource::System, frame);
-                tail_sys.extend_from_slice(frame);
-            });
-        }
-        sys_resampler.finish(&mut |frame: &[f32]| {
-            mixer.push(MixSource::System, frame);
-            tail_sys.extend_from_slice(frame);
-        });
-        if !tail_sys.is_empty() {
-            let _ = system_buf_writer.write(&tail_sys);
-            system_proc.feed(&tail_sys, &seg_cfg, self);
-        }
-
-        // Flush any remaining mixed audio to the playback buffer.
-        mixer.flush_into(&mut mixed);
-        if !mixed.is_empty() {
-            let _ = mixed_buf_writer.write(&mixed);
-        }
-
-        // Flush each source's final in-progress + pending segments.
-        mic_proc.finish(&seg_cfg, self);
-        system_proc.finish(&seg_cfg, self);
-
-        // Ensure buffers are fully written to disk before stop() reads them.
-        let _ = mic_buf_writer.flush();
-        let _ = system_buf_writer.flush();
-        let _ = mixed_buf_writer.flush();
-
-        // Emit one final flat level so the visualiser settles to a flat line.
-        self.emit_audio_level(vec![0.0; VIS_BUCKETS], vec![0.0; WAVE_POINTS], 0.0);
-
-        Ok(())
-    }
-
-    /// Transcribe a completed live segment and append the result with its source
-    /// label. Clears `segment`. This is the LIVE rough pass; the on-stop
-    /// finalize replaces these with full-audio re-transcription.
-    #[cfg(target_os = "macos")]
-    fn flush_segment(&self, segment: &mut Vec<f32>, start_samples: u64, source: TranscriptSource) {
-        use crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE;
-
-        if segment.is_empty() {
-            return;
-        }
-        let audio = std::mem::take(segment);
-        let timestamp_ms = start_samples.saturating_mul(1000) / WHISPER_SAMPLE_RATE as u64;
-
-        // Cloud models would send one OpenRouter request per VAD segment (and
-        // per source). Skip the live pass for them; the audio is still buffered
-        // to disk, and the on-stop finalize re-transcribes it with the cloud
-        // model in bounded windows. `audio` was already taken above, so the
-        // segment buffer is cleared either way.
-        //
-        // Live translation likewise produces its own segments from the same
-        // audio; running this pass too would duplicate every utterance.
-        if self.live_gemini_active.load(Ordering::Relaxed) || self.meeting_model_is_cloud() {
-            return;
-        }
-
-        match self.transcription_manager.transcribe_meeting(audio) {
-            Ok(text) => {
-                if !text.trim().is_empty() {
-                    log::info!(
-                        "meeting segment [{:?}] @ {}ms: {}",
-                        source,
-                        timestamp_ms,
-                        text
-                    );
-                    self.push_segment(text, timestamp_ms, source);
-                }
-            }
-            Err(e) => {
-                log::warn!("meeting segment transcription failed: {}", e);
-            }
-        }
-    }
-}
-
-/// Segmentation tuning shared by both per-source processors.
-#[cfg(target_os = "macos")]
-struct SegConfig {
-    frame_samples: usize,
-    min_samples: usize,
-    max_samples: usize,
-    merge_gap_samples: u64,
-}
-
-/// Owns the live VAD segmentation state for a SINGLE capture source (mic or
-/// system). Each source has its own `SmoothedVad`, segment buffer, and pending
-/// merge state, producing source-labeled segments (Feature 1). The previous
-/// implementation ran one VAD on the mix; this splits it in two.
-#[cfg(target_os = "macos")]
-struct SourceProcessor {
-    vad: crate::audio_toolkit::vad::SmoothedVad,
-    source: TranscriptSource,
-    /// Carry-over of samples not yet aligned to a VAD frame.
-    frame_accum: Vec<f32>,
-    /// Current in-progress speech segment.
-    segment: Vec<f32>,
-    /// Total samples seen for this source (relative timestamps).
-    total_samples: u64,
-    /// Sample index where the current segment began.
-    segment_start: u64,
-    /// Already-finished segment held back for possible merge with the next.
-    pending: Option<(Vec<f32>, u64)>,
-    /// Sample index where the pending segment's audio ended.
-    pending_end: u64,
-}
-
-#[cfg(target_os = "macos")]
-impl SourceProcessor {
-    fn new(vad: crate::audio_toolkit::vad::SmoothedVad, source: TranscriptSource) -> Self {
-        Self {
-            vad,
-            source,
-            frame_accum: Vec::new(),
-            segment: Vec::new(),
-            total_samples: 0,
-            segment_start: 0,
-            pending: None,
-            pending_end: 0,
-        }
-    }
-
-    /// Feed newly-captured 16 kHz mono samples for this source, segmenting them
-    /// and transcribing completed segments (live rough pass) via `manager`.
-    fn feed(&mut self, samples: &[f32], cfg: &SegConfig, manager: &MeetingManager) {
-        use crate::audio_toolkit::vad::{VadFrame, VoiceActivityDetector};
-
-        self.frame_accum.extend_from_slice(samples);
-        while self.frame_accum.len() >= cfg.frame_samples {
-            let frame: Vec<f32> = self.frame_accum.drain(0..cfg.frame_samples).collect();
-            self.total_samples += cfg.frame_samples as u64;
-
-            match self.vad.push_frame(&frame) {
-                Ok(VadFrame::Speech(speech)) => {
-                    // Either source speaking resets the prolonged-silence timer.
-                    manager.note_speech();
-                    if self.segment.is_empty() {
-                        let prelen = speech.len() as u64;
-                        self.segment_start = self.total_samples.saturating_sub(prelen);
-                    }
-                    self.segment.extend_from_slice(speech);
-                    if self.segment.len() >= cfg.max_samples {
-                        self.finish_current(cfg, manager);
-                    }
-                }
-                Ok(VadFrame::Noise) => {
-                    if !self.segment.is_empty() {
-                        if self.segment.len() >= cfg.min_samples {
-                            self.finish_current(cfg, manager);
-                        } else {
-                            self.segment.clear();
-                        }
-                    }
-                }
-                Err(e) => log::warn!("meeting VAD frame error [{:?}]: {}", self.source, e),
-            }
-        }
-    }
-
-    /// Finish the in-progress segment: merge into `pending` when close, else
-    /// flush the previous pending and make this the new pending. Mirrors the
-    /// previous free `finish_segment` function, scoped to one source.
-    fn finish_current(&mut self, cfg: &SegConfig, manager: &MeetingManager) {
-        if self.segment.is_empty() {
-            return;
-        }
-        let audio = std::mem::take(&mut self.segment);
-        let segment_start = self.segment_start;
-        let segment_end = self.total_samples;
-
-        match self.pending.take() {
-            Some((mut prev_audio, prev_start)) => {
-                let gap = segment_start.saturating_sub(self.pending_end);
-                if gap <= cfg.merge_gap_samples {
-                    prev_audio.extend(std::iter::repeat(0.0).take(gap as usize));
-                    prev_audio.extend_from_slice(&audio);
-                    self.pending = Some((prev_audio, prev_start));
-                    self.pending_end = segment_end;
-                } else {
-                    manager.flush_segment(&mut prev_audio, prev_start, self.source);
-                    self.pending = Some((audio, segment_start));
-                    self.pending_end = segment_end;
-                }
-            }
-            None => {
-                self.pending = Some((audio, segment_start));
-                self.pending_end = segment_end;
-            }
-        }
-    }
-
-    /// Flush any trailing in-progress + pending segment on teardown.
-    fn finish(&mut self, cfg: &SegConfig, manager: &MeetingManager) {
-        if !self.segment.is_empty() {
-            self.finish_current(cfg, manager);
-        }
-        if let Some((mut audio, start)) = self.pending.take() {
-            manager.flush_segment(&mut audio, start, self.source);
-        }
-    }
-}
-
-// ---- Mic conditioning + echo mitigation (Items 3 & 5) ----------------------
-//
-// These run on the MIC frames ONLY (16 kHz mono), in this order each tick:
-//   1. Echo duck  (Item 3): when output = speakers AND system audio is loud,
-//      attenuate the mic so the remote party (already cleanly captured by the
-//      system tap) isn't re-captured + duplicated in the transcript.
-//   2. High-pass  (Item 5): ~80 Hz one-pole HPF to remove rumble/DC before
-//      loudness measurement.
-//   3. Loudness   (Item 5): EBU R128 shortterm normalization toward -23 LUFS.
-// System audio and the saved mix are NOT touched by any of these.
-
-/// Mic attenuation applied while ducking (echo-prone speaker output + loud
-/// system audio). -15 dB ≈ ×0.178 linear. Chosen to strongly suppress leakage
-/// without fully gating, so a person talking OVER the remote audio (double-talk)
-/// is still partially captured rather than dropped entirely.
-#[cfg(target_os = "macos")]
-const ECHO_DUCK_GAIN_DB: f32 = -15.0;
-/// System-audio running-RMS threshold above which we consider remote audio to
-/// be "actively playing" and enable ducking. ~0.02 RMS on the 16 kHz system
-/// stream — above ambient tap noise/silence, below normal speech level.
-#[cfg(target_os = "macos")]
-const ECHO_DUCK_SYS_RMS_THRESHOLD: f32 = 0.02;
-/// Smoothing factor for the system running RMS (per mic-frame batch). Closer to
-/// 1.0 = slower/steadier; 0.2 reacts within ~5 ticks (~0.5 s).
-#[cfg(target_os = "macos")]
-const ECHO_DUCK_RMS_SMOOTH: f32 = 0.2;
-/// Target integrated loudness for mic normalization (EBU R128). -23 LUFS is the
-/// EBU broadcast reference; Whisper was trained on roughly this level of speech.
-#[cfg(target_os = "macos")]
-const MIC_TARGET_LUFS: f64 = -23.0;
-/// Clamp the normalization gain so a near-silent block isn't amplified into
-/// noise (and a hot block isn't over-attenuated). ±12 dB.
-#[cfg(target_os = "macos")]
-const MIC_NORM_MAX_GAIN_DB: f64 = 12.0;
-/// High-pass cutoff applied to the mic before normalization (Hz).
-#[cfg(target_os = "macos")]
-const MIC_HIGHPASS_HZ: f32 = 80.0;
-
-/// One-pole high-pass filter (DC/rumble removal). Stateful across frames.
-#[cfg(target_os = "macos")]
-struct HighPass {
-    alpha: f32,
-    prev_in: f32,
-    prev_out: f32,
-}
-
-#[cfg(target_os = "macos")]
-impl HighPass {
-    fn new(cutoff_hz: f32, sample_rate: f32) -> Self {
-        // Standard one-pole HPF coefficient.
-        let rc = 1.0 / (2.0 * std::f32::consts::PI * cutoff_hz);
-        let dt = 1.0 / sample_rate;
-        let alpha = rc / (rc + dt);
-        Self {
-            alpha,
-            prev_in: 0.0,
-            prev_out: 0.0,
-        }
-    }
-
-    fn process(&mut self, samples: &mut [f32]) {
-        for s in samples.iter_mut() {
-            let x = *s;
-            let y = self.alpha * (self.prev_out + x - self.prev_in);
-            self.prev_in = x;
-            self.prev_out = y;
-            *s = y;
-        }
-    }
-}
-
-/// EBU R128 shortterm loudness normalization toward `MIC_TARGET_LUFS`. We feed
-/// every mic frame into the meter, read the shortterm (3 s) loudness, and apply
-/// a clamped gain. Using shortterm keeps it adaptive to a moving talker without
-/// pumping on every sample.
-#[cfg(target_os = "macos")]
-struct MicLoudnessNorm {
-    meter: ebur128::EbuR128,
-}
-
-#[cfg(target_os = "macos")]
-impl MicLoudnessNorm {
-    fn new(sample_rate: u32) -> Option<Self> {
-        match ebur128::EbuR128::new(1, sample_rate, ebur128::Mode::S) {
-            Ok(meter) => Some(Self { meter }),
-            Err(e) => {
-                log::warn!(
-                    "meeting: failed to init EBU R128 meter: {}; mic norm disabled",
-                    e
-                );
-                None
-            }
-        }
-    }
-
-    /// Feed + normalize a block of mic samples in place.
-    fn process(&mut self, samples: &mut [f32]) {
-        if samples.is_empty() {
-            return;
-        }
-        if self.meter.add_frames_f32(samples).is_err() {
-            return;
-        }
-        // shortterm loudness needs ~3 s of audio; returns -inf / error early on.
-        let loudness = match self.meter.loudness_shortterm() {
-            Ok(l) if l.is_finite() => l,
-            _ => return,
-        };
-        // Gain (dB) to reach target, clamped, then linearized.
-        let gain_db =
-            (MIC_TARGET_LUFS - loudness).clamp(-MIC_NORM_MAX_GAIN_DB, MIC_NORM_MAX_GAIN_DB);
-        let gain = 10f64.powf(gain_db / 20.0) as f32;
-        for s in samples.iter_mut() {
-            *s = (*s * gain).clamp(-1.0, 1.0);
-        }
-    }
-}
-
-/// Echo / double-capture mitigation. On speaker output, the mic re-captures the
-/// remote party (already captured by the system tap) → duplicated transcript.
-/// We track a smoothed RMS of the SYSTEM frames; when output = speakers and the
-/// system is loud, we attenuate the mic by `ECHO_DUCK_GAIN_DB`.
-///
-/// Double-talk tradeoff: when both the local user and remote audio are loud at
-/// once, the local user's mic is also attenuated (~15 dB), so very quiet local
-/// interjections over loud playback may be missed. This is the accepted cost of
-/// preventing the (worse) duplicated/echoed transcript. Headphone output is
-/// detected separately and skips ducking entirely.
-#[cfg(target_os = "macos")]
-struct EchoDuck {
-    /// Whether the current output route is echo-prone (speakers/unknown).
-    enabled: bool,
-    /// Smoothed system RMS.
-    sys_rms: f32,
-    duck_gain: f32,
-}
-
-#[cfg(target_os = "macos")]
-impl EchoDuck {
-    fn new(route: crate::audio_toolkit::audio::OutputRoute) -> Self {
-        use crate::audio_toolkit::audio::OutputRoute;
-        let enabled = !matches!(route, OutputRoute::Headphones);
-        log::info!(
-            "meeting: echo duck {} (output route: {:?})",
-            if enabled {
-                "ENABLED"
-            } else {
-                "disabled (headphones)"
-            },
-            route
-        );
-        Self {
-            enabled,
-            sys_rms: 0.0,
-            duck_gain: 10f32.powf(ECHO_DUCK_GAIN_DB / 20.0),
-        }
-    }
-
-    /// Update the smoothed system RMS from this tick's system frames.
-    fn observe_system(&mut self, sys_frames: &[f32]) {
-        if sys_frames.is_empty() {
-            // Decay toward zero so a gap in system audio releases the duck.
-            self.sys_rms *= 1.0 - ECHO_DUCK_RMS_SMOOTH;
-            return;
-        }
-        let sum_sq: f32 = sys_frames.iter().map(|s| s * s).sum();
-        let rms = (sum_sq / sys_frames.len() as f32).sqrt();
-        self.sys_rms = ECHO_DUCK_RMS_SMOOTH * rms + (1.0 - ECHO_DUCK_RMS_SMOOTH) * self.sys_rms;
-    }
-
-    /// Whether the mic should currently be ducked.
-    fn is_ducking(&self) -> bool {
-        self.enabled && self.sys_rms > ECHO_DUCK_SYS_RMS_THRESHOLD
-    }
-
-    /// Attenuate mic samples in place if ducking is active. Returns whether the
-    /// mic was ducked this tick (caller may skip feeding the mic VAD).
-    fn apply(&self, mic_frames: &mut [f32]) -> bool {
-        if self.is_ducking() {
-            for s in mic_frames.iter_mut() {
-                *s *= self.duck_gain;
-            }
-            true
-        } else {
-            false
-        }
-    }
-}
-
-/// Incrementally append raw little-endian f32 samples to a file (bounded
-/// memory: full session audio lives on disk, not in RAM).
-#[cfg(target_os = "macos")]
-struct RawF32Writer {
-    inner: std::io::BufWriter<std::fs::File>,
-}
-
-#[cfg(target_os = "macos")]
-impl RawF32Writer {
-    fn create(path: &std::path::Path) -> std::io::Result<Self> {
-        Ok(Self {
-            inner: std::io::BufWriter::new(std::fs::File::create(path)?),
-        })
-    }
-
-    fn write(&mut self, samples: &[f32]) -> std::io::Result<()> {
-        use std::io::Write;
-        // f32 is plain-old-data; write the little-endian byte view directly.
-        let mut buf = Vec::with_capacity(samples.len() * 4);
-        for &s in samples {
-            buf.extend_from_slice(&s.to_le_bytes());
-        }
-        self.inner.write_all(&buf)
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        use std::io::Write;
-        self.inner.flush()
-    }
-}
-
-/// Read a raw little-endian f32 buffer file back into a Vec<f32>.
-#[cfg(target_os = "macos")]
-fn read_f32_raw(path: &std::path::Path) -> std::io::Result<Vec<f32>> {
-    let bytes = std::fs::read(path)?;
-    let mut out = Vec::with_capacity(bytes.len() / 4);
-    for chunk in bytes.chunks_exact(4) {
-        out.push(f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
-    }
-    Ok(out)
-}
-
-// ---- Finalize-pass windowing (Feature 2 fix: preserve chronology + labels) --
-//
-// Target window length the chunker aims for before it starts looking for a
-// silence boundary to close on (~25 s).
-#[cfg(target_os = "macos")]
-const FINALIZE_TARGET_SAMPLES: usize =
-    crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE as usize * 25;
-// Hard cap: force-close a window here even mid-speech (~30 s, whisper's native
-// window) so a continuous talker can't produce an unbounded window.
-#[cfg(target_os = "macos")]
-const FINALIZE_MAX_SAMPLES: usize =
-    crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE as usize * 30;
-// 30 ms frame for the VAD silence scan.
-#[cfg(target_os = "macos")]
-const FINALIZE_FRAME_SAMPLES: usize =
-    (crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE as usize * 30) / 1000;
-// Consecutive silent frames that mark a "safe" split point once past target
-// (~150 ms). Long enough to be an inter-word/sentence gap, not a glottal stop.
-#[cfg(target_os = "macos")]
-const FINALIZE_SILENCE_SPLIT_FRAMES: usize = 5;
-// Overlap (Item 6) between consecutive finalize windows (~4 s). The next window
-// starts `FINALIZE_OVERLAP_SAMPLES` before the previous window's end so words
-// cut at a `FINALIZE_MAX_SAMPLES` force-split aren't lost. The overlapping text
-// is de-duplicated at merge time (see `dedup_overlap`). Kept comfortably under
-// FINALIZE_TARGET_SAMPLES so windows still advance.
-#[cfg(target_os = "macos")]
-const FINALIZE_OVERLAP_SAMPLES: usize =
-    crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE as usize * 4;
-
-/// Split `audio` into time-ordered `[start, end)` windows for the finalize
-/// re-transcription. Uses the raw SileroVad to classify 30 ms frames as
-/// voice/silence and closes a window once it is past `FINALIZE_TARGET_SAMPLES`
-/// AND a run of `FINALIZE_SILENCE_SPLIT_FRAMES` silent frames is seen (so we
-/// split at a natural pause), or unconditionally at `FINALIZE_MAX_SAMPLES`.
-/// Windows containing no speech at all are dropped. Falls back to fixed-size
-/// windows if the VAD can't be constructed.
-#[cfg(target_os = "macos")]
-fn chunk_for_finalize(audio: &[f32], vad_path: &std::path::Path) -> Vec<(usize, usize)> {
-    use crate::audio_toolkit::vad::VoiceActivityDetector;
-    use crate::audio_toolkit::SileroVad;
-
-    let mut vad = match SileroVad::new(vad_path, 0.3) {
-        Ok(v) => v,
-        Err(e) => {
-            log::warn!(
-                "meeting finalize: SileroVad init failed ({}); fixed windows",
-                e
-            );
-            return chunk_fixed(audio);
-        }
-    };
-
-    let mut windows: Vec<(usize, usize)> = Vec::new();
-    let n = audio.len();
-    let mut win_start = 0usize; // start of the current window
-    let mut pos = 0usize; // current frame start offset
-    let mut silence_run = 0usize; // consecutive silent frames seen
-    let mut win_has_speech = false; // whether the current window contains speech
-
-    while pos < n {
-        let end = (pos + FINALIZE_FRAME_SAMPLES).min(n);
-        let frame = &audio[pos..end];
-        // is_voice on the raw VAD is a per-frame decision (no hangover).
-        let is_voice = vad.is_voice(frame).unwrap_or(false);
-        if is_voice {
-            win_has_speech = true;
-            silence_run = 0;
-        } else {
-            silence_run += 1;
-        }
-
-        let win_len = end - win_start;
-        let past_target = win_len >= FINALIZE_TARGET_SAMPLES;
-        let safe_split = past_target && silence_run >= FINALIZE_SILENCE_SPLIT_FRAMES;
-        let force_split = win_len >= FINALIZE_MAX_SAMPLES;
-
-        if safe_split || force_split {
-            if win_has_speech {
-                windows.push((win_start, end));
-            }
-            // Overlap (Item 6): start the next window before this one's end so a
-            // word cut at a force-split is recovered. Guarded so win_start only
-            // advances (overlap < target keeps progress monotonic).
-            let next_start = end.saturating_sub(FINALIZE_OVERLAP_SAMPLES);
-            win_start = next_start.max(win_start + 1).min(end);
-            win_has_speech = false;
-            silence_run = 0;
-            // Note: `pos` continues from `end`; the overlap region [win_start,end)
-            // is re-transcribed but not re-scanned for splits (cheap, fine).
-        }
-        pos = end;
-    }
-
-    // Close the trailing window.
-    if win_start < n && win_has_speech {
-        windows.push((win_start, n));
-    }
-    windows
-}
-
-/// Longest piece of an imported recording sent to Gemini in one request. The
-/// API takes an hour of plain transcription per request; staying well under
-/// it leaves room for its own accounting.
-#[cfg(target_os = "macos")]
-const GEMINI_IMPORT_PIECE_SECS: usize = 50 * 60;
-
-/// Split `len` samples into consecutive pieces of at most
-/// `GEMINI_IMPORT_PIECE_SECS`. Pieces are cut at fixed points: at one cut per
-/// 50 minutes, a clipped word is cheaper than another windowing heuristic.
-#[cfg(target_os = "macos")]
-fn gemini_import_pieces(len: usize) -> Vec<(usize, usize)> {
-    use crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE;
-    let piece = GEMINI_IMPORT_PIECE_SECS * WHISPER_SAMPLE_RATE as usize;
-    (0..len)
-        .step_by(piece)
-        .map(|start| (start, (start + piece).min(len)))
-        .collect()
-}
-
-/// Fallback chunker: fixed `FINALIZE_MAX_SAMPLES`-sized windows with
-/// `FINALIZE_OVERLAP_SAMPLES` overlap (Item 6), no VAD.
-#[cfg(target_os = "macos")]
-fn chunk_fixed(audio: &[f32]) -> Vec<(usize, usize)> {
-    let n = audio.len();
-    let mut windows = Vec::new();
-    let mut start = 0usize;
-    while start < n {
-        let end = (start + FINALIZE_MAX_SAMPLES).min(n);
-        windows.push((start, end));
-        if end >= n {
-            break;
-        }
-        // Advance with overlap; ensure forward progress.
-        start = end
-            .saturating_sub(FINALIZE_OVERLAP_SAMPLES)
-            .max(start + 1)
-            .min(end);
-    }
-    windows
-}
-
-/// Normalize a string for fuzzy text comparison: lowercase, strip punctuation,
-/// collapse whitespace. Used by `dedup_overlap` so casing/punctuation drift
-/// between two whisper passes over the same audio doesn't defeat the match.
-#[cfg(target_os = "macos")]
-fn normalize_for_match(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    let mut last_space = true;
-    for c in s.chars() {
-        if c.is_alphanumeric() {
-            for lc in c.to_lowercase() {
-                out.push(lc);
-            }
-            last_space = false;
-        } else if c.is_whitespace() || !c.is_alphanumeric() {
-            if !last_space {
-                out.push(' ');
-                last_space = true;
-            }
-        }
-    }
-    out.trim().to_string()
-}
-
-/// Split text into sentences on `. ! ? …` boundaries, keeping the delimiter with
-/// the sentence. Trailing fragment (no terminal punctuation) is its own piece.
-#[cfg(target_os = "macos")]
-fn split_sentences(s: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut cur = String::new();
-    for c in s.chars() {
-        cur.push(c);
-        if matches!(c, '.' | '!' | '?' | '…') {
-            let trimmed = cur.trim();
-            if !trimmed.is_empty() {
-                out.push(trimmed.to_string());
-            }
-            cur.clear();
-        }
-    }
-    let trimmed = cur.trim();
-    if !trimmed.is_empty() {
-        out.push(trimmed.to_string());
-    }
-    out
-}
-
-/// De-duplicate the overlapping region between two consecutive finalize windows
-/// (Item 6). `prev` is the previous window's full text, `curr` the current
-/// window's full text; the windows overlap by ~`FINALIZE_OVERLAP_SAMPLES`, so
-/// `curr`'s leading sentence(s) often repeat `prev`'s trailing sentence(s).
-///
-/// Strategy: take the last few sentences of `prev` as a "tail set" (normalized)
-/// and drop leading sentences of `curr` while they match something in that set.
-/// Falls back to a word-level longest-common-prefix trim when sentence matching
-/// finds nothing (e.g. one long unpunctuated window). Conservative: when in
-/// doubt it keeps text (a rare duplicate is less bad than dropping real words).
-#[cfg(target_os = "macos")]
-fn dedup_overlap(prev: &str, curr: &str) -> String {
-    let prev_sentences = split_sentences(prev);
-    let curr_sentences = split_sentences(curr);
-    if prev_sentences.is_empty() || curr_sentences.is_empty() {
-        return curr.to_string();
-    }
-
-    // Normalized trailing sentences of `prev` (look back a handful).
-    let tail_n = prev_sentences.len().min(4);
-    let prev_tail_norm: Vec<String> = prev_sentences[prev_sentences.len() - tail_n..]
-        .iter()
-        .map(|s| normalize_for_match(s))
-        .filter(|s| !s.is_empty())
-        .collect();
-
-    // Drop leading `curr` sentences that match any normalized prev-tail sentence.
-    let mut start_idx = 0;
-    for (i, sent) in curr_sentences.iter().enumerate() {
-        let norm = normalize_for_match(sent);
-        if norm.is_empty() {
-            start_idx = i + 1;
-            continue;
-        }
-        let is_dup = prev_tail_norm
-            .iter()
-            .any(|p| p == &norm || (norm.len() > 8 && p.contains(&norm)));
-        if is_dup {
-            start_idx = i + 1;
-        } else {
-            break;
-        }
-    }
-
-    if start_idx > 0 {
-        return curr_sentences[start_idx..].join(" ");
-    }
-
-    // No sentence-level match: try a word-level common-prefix trim against the
-    // prev tail (handles long unpunctuated windows). Only trims when a
-    // reasonably long run matches, to avoid eating distinct repeated words.
-    let prev_norm_words: Vec<&str> = prev.split_whitespace().collect::<Vec<_>>();
-    let prev_tail_words: Vec<String> = prev_norm_words
-        .iter()
-        .rev()
-        .take(40)
-        .rev()
-        .map(|w| normalize_for_match(w))
-        .filter(|w| !w.is_empty())
-        .collect();
-    let curr_words: Vec<&str> = curr.split_whitespace().collect();
-    let curr_norm: Vec<String> = curr_words.iter().map(|w| normalize_for_match(w)).collect();
-
-    // Find the longest k such that curr's first k words appear as a contiguous
-    // run at the end of prev's tail.
-    let mut best_k = 0;
-    let max_k = curr_norm.len().min(prev_tail_words.len());
-    for k in (4..=max_k).rev() {
-        let head = &curr_norm[..k];
-        if prev_tail_words.len() >= k && &prev_tail_words[prev_tail_words.len() - k..] == head {
-            best_k = k;
-            break;
-        }
-    }
-    if best_k > 0 {
-        return curr_words[best_k..].join(" ");
-    }
-
-    curr.to_string()
-}
-
-/// Maximum time gap (ms) between a mic segment and a system segment for the mic
-/// one to be considered a possible acoustic echo of the system one. Finalize
-/// windows are ~25-30 s and the two sources are segmented independently, so the
-/// same spoken passage can land in windows whose start timestamps differ by up
-/// to roughly one window length.
-#[cfg(target_os = "macos")]
-const CROSS_ECHO_MAX_GAP_MS: u64 = 35_000;
-/// Minimum normalized-token count for a mic segment to be eligible for
-/// cross-channel echo removal. Short utterances (e.g. "evet", "tamam") are NOT
-/// dropped even if they appear on both sides — a genuine local agreement with
-/// the remote party shouldn't be erased; only substantial verbatim copies are.
-#[cfg(target_os = "macos")]
-const CROSS_ECHO_MIN_TOKENS: usize = 6;
-/// Fraction of a mic segment's tokens that must also appear (in order, as a
-/// contiguous run) inside a nearby system segment for it to count as echo.
-#[cfg(target_os = "macos")]
-const CROSS_ECHO_CONTAINMENT: f32 = 0.8;
-
-/// CROSS-CHANNEL echo removal (complements the live echo duck + buffer zeroing).
-/// On speaker output the mic re-captures the remote party; the duck attenuates
-/// and the finalize buffer is zeroed while ducking, but residual leakage can
-/// survive around the duck's attack/release edges (and entirely when the output
-/// route is misdetected). This is a TEXT-level safety net: drop any `Mic`
-/// ("you") segment whose normalized tokens are largely contained, as a
-/// contiguous run, in a `System` ("others") segment occurring within
-/// `CROSS_ECHO_MAX_GAP_MS`. The system tap is the clean source, so the mic copy
-/// is the echo and is the one removed. Conservative by design (high containment
-/// threshold + minimum token count + time gate) so genuine local speech that
-/// merely echoes a phrase isn't erased.
-#[cfg(target_os = "macos")]
-fn drop_cross_channel_echo(segments: Vec<TranscriptSegment>) -> Vec<TranscriptSegment> {
-    // Pre-tokenize the system ("others") segments once.
-    let system: Vec<(u64, Vec<String>)> = segments
-        .iter()
-        .filter(|s| s.source == TranscriptSource::System)
-        .map(|s| {
-            (
-                s.timestamp_ms,
-                normalize_for_match(&s.text)
-                    .split_whitespace()
-                    .map(|w| w.to_string())
-                    .collect::<Vec<_>>(),
-            )
-        })
-        .collect();
-
-    segments
-        .into_iter()
-        .filter(|seg| {
-            if seg.source != TranscriptSource::Mic {
-                return true; // never drop system segments
-            }
-            let mic_tokens: Vec<String> = normalize_for_match(&seg.text)
-                .split_whitespace()
-                .map(|w| w.to_string())
-                .collect();
-            if mic_tokens.len() < CROSS_ECHO_MIN_TOKENS {
-                return true; // too short to confidently call echo
-            }
-            // Keep the mic segment unless some nearby system segment contains a
-            // long-enough contiguous run of its tokens.
-            let is_echo = system.iter().any(|(sys_ts, sys_tokens)| {
-                let gap = seg.timestamp_ms.abs_diff(*sys_ts);
-                gap <= CROSS_ECHO_MAX_GAP_MS
-                    && longest_contiguous_run(&mic_tokens, sys_tokens) as f32
-                        >= CROSS_ECHO_CONTAINMENT * mic_tokens.len() as f32
-            });
-            !is_echo
-        })
-        .collect()
-}
-
-/// Longest run of `needle` tokens that appears as a contiguous subsequence of
-/// `haystack`. Used to detect a near-verbatim echo copy regardless of where in
-/// the (longer) system segment it sits.
-#[cfg(target_os = "macos")]
-fn longest_contiguous_run(needle: &[String], haystack: &[String]) -> usize {
-    if needle.is_empty() || haystack.is_empty() {
-        return 0;
-    }
-    let mut best = 0usize;
-    // For each possible alignment of needle's start within haystack, count how
-    // far they match contiguously.
-    for start in 0..haystack.len() {
-        let mut run = 0usize;
-        while run < needle.len()
-            && start + run < haystack.len()
-            && needle[run] == haystack[start + run]
-        {
-            run += 1;
-        }
-        if run > best {
-            best = run;
-            if best == needle.len() {
-                break;
-            }
-        }
-    }
-    best
-}
-
-/// Downsample a window of mixed samples into a fixed-length oscilloscope trace
-/// (averaging strided chunks, values in -1..1) and the peak absolute amplitude
-/// (0..1). Returns a flat zero trace when there are no samples.
-fn downsample_wave(samples: &[f32], points: usize) -> (Vec<f32>, f32) {
-    if samples.is_empty() || points == 0 {
-        return (vec![0.0; points], 0.0);
-    }
-    let mut wave = Vec::with_capacity(points);
-    let mut peak = 0.0f32;
-    let len = samples.len();
-    for p in 0..points {
-        let start = p * len / points;
-        let end = ((p + 1) * len / points).max(start + 1).min(len);
-        let mut sum = 0.0f32;
-        let mut count = 0u32;
-        for &s in &samples[start..end] {
-            sum += s;
-            let a = s.abs();
-            if a > peak {
-                peak = a;
-            }
-            count += 1;
-        }
-        let avg = if count > 0 { sum / count as f32 } else { 0.0 };
-        wave.push(avg.clamp(-1.0, 1.0));
-    }
-    (wave, peak.min(1.0))
 }
 
 /// Join transcript segments into a single transcript string, ordered by their
-/// relative timestamp and separated by spaces (mirrors
-/// `MeetingManager::full_transcript`). Used by the recovery path.
-fn join_segments(segments: &[TranscriptSegment]) -> String {
+/// relative timestamp and separated by spaces (the same text `TranscriptBuf`
+/// maintains). Used by recovery, imports and re-transcription.
+pub(super) fn join_segments(segments: &[TranscriptSegment]) -> String {
     let mut ordered: Vec<&TranscriptSegment> = segments.iter().collect();
     ordered.sort_by_key(|s| s.timestamp_ms);
     ordered
@@ -4220,7 +1155,7 @@ fn join_segments(segments: &[TranscriptSegment]) -> String {
 }
 
 /// Current time as epoch milliseconds.
-fn now_epoch_ms() -> i64 {
+pub(super) fn now_epoch_ms() -> i64 {
     use std::time::{SystemTime, UNIX_EPOCH};
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -4228,49 +1163,49 @@ fn now_epoch_ms() -> i64 {
         .unwrap_or(0)
 }
 
-/// True when the time since the last observed speech frame has exceeded the
-/// configured prolonged-silence timeout. Extracted as a pure function so the
-/// threshold logic is unit-testable without a running capture loop.
-#[cfg(target_os = "macos")]
 /// What to do with a session that ended with an empty transcript.
 #[derive(Debug, PartialEq, Eq)]
 enum EmptySessionOutcome {
-    /// Nothing worth keeping — drop the row.
+    /// Nothing worth keeping — drop the row and its buffers.
     Discard,
-    /// Audio was captured but transcription failed wholesale. Keep the row (in
+    /// Audio was captured but transcription failed. Keep the row (in
     /// `recording` status) plus its buffers so the recovery flow can retry.
     PreserveForRecovery,
 }
 
-/// Decide the fate of an empty-transcript session. Preserving requires BOTH a
-/// transcription failure and captured audio: without a failure the meeting was
-/// simply silent, and without audio there is nothing a retry could read.
+/// Decide the fate of an empty-transcript session.
+///
+/// Nothing captured → nothing to preserve. A reported transcription failure
+/// → preserve. Tokens spent with no transcript is an anomaly worth keeping
+/// only when the VADs actually heard speech: a silent session on a cloud model
+/// (Gemini billed for listening to nothing) used to be kept as a "failed"
+/// meeting forever.
 fn empty_session_outcome(
     failure: Option<&str>,
     captured_samples: u64,
     spent_tokens: bool,
+    voiced: bool,
 ) -> EmptySessionOutcome {
     if captured_samples == 0 {
-        // Nothing was ever captured, so there is nothing to preserve.
         return EmptySessionOutcome::Discard;
     }
-    // A cloud model that ran and billed us, yet left no transcript, is an
-    // anomaly — not a silent meeting. Discarding it throws away audio the user
-    // has already paid to have processed, which is the worst possible reading
-    // of an ambiguous situation.
-    if failure.is_some() || spent_tokens {
+    if failure.is_some() || (spent_tokens && voiced) {
         return EmptySessionOutcome::PreserveForRecovery;
     }
     EmptySessionOutcome::Discard
 }
 
-fn silence_exceeded(anchor_elapsed: std::time::Duration, timeout_secs: u32) -> bool {
+/// True when the time since the last observed speech frame has exceeded the
+/// configured prolonged-silence timeout. Pure, so the threshold logic is
+/// unit-testable without a running capture loop.
+#[cfg(target_os = "macos")]
+pub(super) fn silence_exceeded(anchor_elapsed: std::time::Duration, timeout_secs: u32) -> bool {
     anchor_elapsed > std::time::Duration::from_secs(timeout_secs as u64)
 }
 
 /// Default human-readable title for a meeting, derived from its absolute start
-/// time. Uses `chrono` (already a dependency) to format the local datetime.
-fn default_meeting_title(started_at_ms: i64) -> String {
+/// time.
+pub(super) fn default_meeting_title(started_at_ms: i64) -> String {
     use chrono::{DateTime, Local};
     match DateTime::from_timestamp_millis(started_at_ms) {
         Some(utc) => {
@@ -4283,14 +1218,7 @@ fn default_meeting_title(started_at_ms: i64) -> String {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(target_os = "macos")]
-    use super::LiveSegmentBuilder;
-    use super::{
-        downsample_wave, empty_session_outcome, EmptySessionOutcome, TranscriptSegment,
-        TranscriptSource,
-    };
-    #[cfg(target_os = "macos")]
-    use super::{gemini_import_pieces, GEMINI_IMPORT_PIECE_SECS};
+    use super::{empty_session_outcome, EmptySessionOutcome, TranscriptSegment, TranscriptSource};
 
     #[test]
     fn transcript_source_serializes_as_you_and_others() {
@@ -4302,7 +1230,6 @@ mod tests {
             serde_json::to_string(&TranscriptSource::System).unwrap(),
             "\"others\""
         );
-        // Round-trip.
         let back: TranscriptSource = serde_json::from_str("\"others\"").unwrap();
         assert_eq!(back, TranscriptSource::System);
     }
@@ -4319,514 +1246,63 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
-    fn long_imports_go_to_gemini_in_pieces_that_cover_every_sample() {
-        let piece = GEMINI_IMPORT_PIECE_SECS * 16_000;
-        assert_eq!(gemini_import_pieces(10), vec![(0, 10)]);
-        assert_eq!(
-            gemini_import_pieces(piece * 2 + 5),
-            vec![(0, piece), (piece, piece * 2), (piece * 2, piece * 2 + 5)]
-        );
-        assert!(gemini_import_pieces(0).is_empty());
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn chunk_fixed_splits_into_overlapping_max_windows_covering_all_samples() {
-        use super::{FINALIZE_MAX_SAMPLES, FINALIZE_OVERLAP_SAMPLES};
-        // ~2.5 windows worth of audio.
-        let n = FINALIZE_MAX_SAMPLES * 2 + FINALIZE_MAX_SAMPLES / 2;
-        let audio = vec![0.1f32; n];
-        let windows = super::chunk_fixed(&audio);
-        // First window starts at 0; last window ends at n; fully covering.
-        assert_eq!(windows[0].0, 0);
-        assert_eq!(windows[0].1, FINALIZE_MAX_SAMPLES);
-        assert_eq!(windows.last().unwrap().1, n);
-        for w in &windows {
-            assert!(w.1 > w.0);
-            assert!(w.1 - w.0 <= FINALIZE_MAX_SAMPLES);
-        }
-        // Consecutive windows overlap by FINALIZE_OVERLAP_SAMPLES (except the
-        // final partial window which is clamped to n).
-        for pair in windows.windows(2) {
-            let (prev, next) = (pair[0], pair[1]);
-            // next starts before prev ends => overlap.
-            assert!(next.0 < prev.1, "windows should overlap: {prev:?} {next:?}");
-            if next.1 - next.0 == FINALIZE_MAX_SAMPLES {
-                assert_eq!(prev.1 - next.0, FINALIZE_OVERLAP_SAMPLES);
-            }
-        }
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn dedup_overlap_drops_repeated_leading_sentence() {
-        use super::dedup_overlap;
-        let prev = "Bugün hava çok güzel. Toplantıya başlayalım.";
-        // curr repeats the trailing sentence of prev (with casing drift), then
-        // adds new content.
-        let curr = "toplantıya başlayalım. Gündem maddesi bir.";
-        let out = dedup_overlap(prev, curr);
-        assert!(
-            !out.to_lowercase().contains("başlayalım"),
-            "repeated sentence should be dropped, got: {out}"
-        );
-        assert!(
-            out.contains("Gündem maddesi bir."),
-            "new content kept: {out}"
-        );
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn dedup_overlap_keeps_distinct_text() {
-        use super::dedup_overlap;
-        let prev = "Birinci konu tamamlandı.";
-        let curr = "İkinci konuya geçiyoruz.";
-        let out = dedup_overlap(prev, curr);
-        assert_eq!(out, curr, "distinct text must be preserved");
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn dedup_overlap_word_level_prefix_trim() {
-        use super::dedup_overlap;
-        // No sentence punctuation; word-level common run at boundary.
-        let prev = "alpha beta gamma delta epsilon zeta eta theta";
-        let curr = "epsilon zeta eta theta iota kappa lambda mu";
-        let out = dedup_overlap(prev, curr);
-        assert!(out.starts_with("iota"), "overlap words trimmed, got: {out}");
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn cross_channel_echo_drops_mic_copy_of_nearby_system_segment() {
-        use super::{drop_cross_channel_echo, TranscriptSegment, TranscriptSource};
-        let system_text =
-            "bu çeyrekte gelirimiz beklentilerin üzerinde gerçekleşti ve büyümeye devam ediyoruz";
-        let segs = vec![
-            TranscriptSegment {
-                text: system_text.to_string(),
-                timestamp_ms: 1_000,
-                source: TranscriptSource::System,
-                translation: None,
-                speaker: None,
-            },
-            // Mic picked up the same remote speech (slight ASR drift) ~2 s later.
-            TranscriptSegment {
-                text: "bu çeyrekte gelirimiz beklentilerin üzerinde gerçekleşti ve büyümeye devam ediyoruz".to_string(),
-                timestamp_ms: 3_000,
-                source: TranscriptSource::Mic,
-                translation: None,
-                speaker: None,
-            },
-        ];
-        let out = drop_cross_channel_echo(segs);
-        assert_eq!(out.len(), 1, "mic echo should be removed");
-        assert_eq!(out[0].source, TranscriptSource::System);
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn cross_channel_echo_keeps_genuine_local_speech() {
-        use super::{drop_cross_channel_echo, TranscriptSegment, TranscriptSource};
-        let segs = vec![
-            TranscriptSegment {
-                text: "satış rakamlarını üçüncü çeyrek için paylaşabilir misin lütfen".to_string(),
-                timestamp_ms: 1_000,
-                source: TranscriptSource::System,
-                translation: None,
-                speaker: None,
-            },
-            // Distinct local reply — not an echo, must be kept.
-            TranscriptSegment {
-                text: "tabii hemen ekranı paylaşıp grafikleri gösteriyorum".to_string(),
-                timestamp_ms: 4_000,
-                source: TranscriptSource::Mic,
-                translation: None,
-                speaker: None,
-            },
-        ];
-        let out = drop_cross_channel_echo(segs);
-        assert_eq!(out.len(), 2, "distinct local speech must be preserved");
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn cross_channel_echo_keeps_short_shared_phrases() {
-        use super::{drop_cross_channel_echo, TranscriptSegment, TranscriptSource};
-        let segs = vec![
-            TranscriptSegment {
-                text: "evet kesinlikle".to_string(),
-                timestamp_ms: 1_000,
-                source: TranscriptSource::System,
-                translation: None,
-                speaker: None,
-            },
-            // Short agreement on both sides is below the token floor → kept.
-            TranscriptSegment {
-                text: "evet kesinlikle".to_string(),
-                timestamp_ms: 2_000,
-                source: TranscriptSource::Mic,
-                translation: None,
-                speaker: None,
-            },
-        ];
-        let out = drop_cross_channel_echo(segs);
-        assert_eq!(out.len(), 2, "short shared phrases must not be dropped");
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn cross_channel_echo_keeps_distant_match() {
-        use super::{drop_cross_channel_echo, TranscriptSegment, TranscriptSource};
-        let text =
-            "bu çeyrekte gelirimiz beklentilerin üzerinde gerçekleşti ve büyümeye devam ediyoruz";
-        let segs = vec![
-            TranscriptSegment {
-                text: text.to_string(),
-                timestamp_ms: 1_000,
-                source: TranscriptSource::System,
-                translation: None,
-                speaker: None,
-            },
-            // Same words but far apart in time (>35 s) → treated as a real repeat,
-            // not acoustic echo, so kept.
-            TranscriptSegment {
-                text: text.to_string(),
-                timestamp_ms: 90_000,
-                source: TranscriptSource::Mic,
-                translation: None,
-                speaker: None,
-            },
-        ];
-        let out = drop_cross_channel_echo(segs);
-        assert_eq!(
-            out.len(),
-            2,
-            "matches outside the echo time window are kept"
-        );
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn an_utterance_that_never_finalized_is_still_saved_at_stop() {
-        // The regression this guards: the system side streamed a whole meeting
-        // as interim updates, never finalized before stop, and the saved
-        // transcript had nothing from it — while the user had been reading it
-        // in the subtitles the entire time.
-        let mut builder = LiveSegmentBuilder::default();
-        builder.absorb(&fragment_interim("duyduğum cümle"), 1_000);
-        assert!(
-            builder.take().is_none(),
-            "mid-session must not emit a guess"
-        );
-
-        let mut builder = LiveSegmentBuilder::default();
-        builder.absorb(&fragment_interim("duyduğum cümle"), 1_000);
-        let segment = builder.take_final().expect("stop must rescue it");
-        assert_eq!(segment.original, "duyduğum cümle");
-        assert_eq!(segment.timestamp_ms, 1_000);
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn a_finalized_utterance_is_never_stored_twice() {
-        let mut builder = LiveSegmentBuilder::default();
-        builder.absorb(&fragment_interim("duydu"), 1_000);
-        builder.absorb(&fragment(Some("duyduğum cümle"), None, true), 1_000);
-        let segment = builder.take().expect("finalized text");
-        assert_eq!(segment.original, "duyduğum cümle");
-        // The guess that preceded it must have been consumed, not left behind
-        // to reappear at stop.
-        assert!(builder.take_final().is_none());
-    }
-
-    #[cfg(target_os = "macos")]
-    fn fragment_interim(text: &str) -> crate::gemini_live::LiveTranscript {
-        crate::gemini_live::LiveTranscript {
-            original: None,
-            translation: None,
-            source_language: None,
-            interim: Some(text.to_string()),
-            turn_complete: false,
-        }
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn a_revised_hypothesis_replaces_the_pending_line_rather_than_appending() {
-        use super::SubtitleFeed;
-        let mut feed = SubtitleFeed::default();
-        // The API resends the whole in-progress utterance each time; appending
-        // would stutter the text back on itself ("bu bu bir bu bir test").
-        feed.set_pending("bu");
-        feed.set_pending("bu bir");
-        feed.set_pending("bu bir test");
-        let snapshot = feed.snapshot();
-        assert_eq!(snapshot.pending, "bu bir test");
-        assert_eq!(snapshot.settled, "");
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn settling_a_line_clears_the_guess_that_produced_it() {
-        use super::SubtitleFeed;
-        let mut feed = SubtitleFeed::default();
-        feed.set_pending("bu bir tes");
-        feed.settle("Bu bir test.");
-        let snapshot = feed.snapshot();
-        assert_eq!(snapshot.settled, "Bu bir test.");
-        // Leaving the guess up would show the sentence twice, once misspelled.
-        assert_eq!(snapshot.pending, "");
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn the_strip_keeps_only_the_most_recent_line() {
-        use super::SubtitleFeed;
-        let mut feed = SubtitleFeed::default();
-        for i in 1..=6 {
-            feed.settle(&format!("line{}", i));
-        }
-        let settled = feed.snapshot().settled;
-        assert_eq!(settled, "line6");
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn a_long_utterance_is_capped_keeping_the_words_being_spoken_now() {
-        use super::{SubtitleFeed, SUBTITLE_MAX_CHARS};
-        let mut feed = SubtitleFeed::default();
-        let long = (0..80)
-            .map(|i| format!("word{}", i))
-            .collect::<Vec<_>>()
-            .join(" ");
-        feed.set_pending(&long);
-        let pending = feed.snapshot().pending;
-        assert!(pending.chars().count() <= SUBTITLE_MAX_CHARS);
-        // The tail is what the speaker is saying right now, so it must survive.
-        assert!(pending.ends_with("word79"));
-        // ...and the head must not, or the strip would show stale words.
-        assert!(!pending.contains("word0 "));
-        // Never opens mid-word.
-        assert!(pending.starts_with("word"));
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn history_gives_way_before_the_line_being_spoken() {
-        use super::{SubtitleFeed, SUBTITLE_MAX_CHARS};
-        let mut feed = SubtitleFeed::default();
-        feed.settle(&"old ".repeat(60));
-        feed.set_pending(&"new ".repeat(60));
-        let snapshot = feed.snapshot();
-        // The in-progress line takes the whole budget, so history is dropped
-        // entirely rather than both being half-shown.
-        assert!(snapshot.pending.chars().count() <= SUBTITLE_MAX_CHARS);
-        assert!(snapshot.settled.is_empty());
-        assert!(
-            snapshot.settled.chars().count() + snapshot.pending.chars().count()
-                <= SUBTITLE_MAX_CHARS
-        );
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn short_text_is_left_exactly_as_it_is() {
-        use super::tail_chars;
-        assert_eq!(tail_chars("kısa bir cümle", 160), "kısa bir cümle");
-        assert_eq!(tail_chars("", 160), "");
-        assert_eq!(tail_chars("herhangi bir şey", 0), "");
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn empty_finalized_text_does_not_add_a_blank_line() {
-        use super::SubtitleFeed;
-        let mut feed = SubtitleFeed::default();
-        feed.set_pending("   ");
-        // A turn that produced no text must leave the strip empty, so the
-        // caller hides it rather than showing an empty plate.
-        feed.settle("   ");
-        assert!(feed.is_empty());
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn speakers_are_numbered_by_when_they_first_talk() {
-        use super::SpeakerLabels;
-        let mut labels = SpeakerLabels::default();
-        // The API's own numbering is ignored: these arrive zero-based and with
-        // a colon, and the first one to speak must still read "Speaker 1".
-        assert_eq!(labels.label("spk:0"), "Speaker 1");
-        assert_eq!(labels.label("spk:1"), "Speaker 2");
-        // A speaker returning later keeps the label they were given.
-        assert_eq!(labels.label("spk:0"), "Speaker 1");
-        assert_eq!(labels.label("spk:5"), "Speaker 3");
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn speaker_numbering_survives_an_unfamiliar_tag_format() {
-        use super::SpeakerLabels;
-        let mut labels = SpeakerLabels::default();
-        assert_eq!(labels.label("spk_1"), "Speaker 1");
-        assert_eq!(labels.label("SPEAKER_B"), "Speaker 2");
-        assert_eq!(labels.label("spk_1"), "Speaker 1");
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
     fn silence_exceeded_fires_only_past_the_timeout() {
         use super::silence_exceeded;
         use std::time::Duration;
-        // Below and exactly at the threshold: not yet exceeded.
         assert!(!silence_exceeded(Duration::from_secs(179), 180));
         assert!(!silence_exceeded(Duration::from_secs(180), 180));
-        // Just past the threshold: exceeded.
         assert!(silence_exceeded(Duration::from_millis(180_001), 180));
         assert!(silence_exceeded(Duration::from_secs(300), 180));
     }
 
-    #[cfg(target_os = "macos")]
-    fn fragment(
-        original: Option<&str>,
-        translation: Option<&str>,
-        turn_complete: bool,
-    ) -> crate::gemini_live::LiveTranscript {
-        crate::gemini_live::LiveTranscript {
-            original: original.map(str::to_string),
-            translation: translation.map(str::to_string),
-            source_language: None,
-            interim: None,
-            turn_complete,
-        }
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn live_fragments_accumulate_into_one_segment_per_turn() {
-        // The Live API streams a sentence as several partial fragments. Emitting
-        // each one would litter the meeting with word-sized segments.
-        let mut builder = LiveSegmentBuilder::default();
-        builder.absorb(&fragment(Some("Merhaba "), None, false), 1_000);
-        builder.absorb(&fragment(Some("dünya"), Some("Hello "), false), 1_500);
-        builder.absorb(&fragment(None, Some("world"), true), 2_000);
-
-        let segment = builder.take().expect("a turn with text yields a segment");
-        assert_eq!(segment.original, "Merhaba dünya");
-        assert_eq!(segment.translation.as_deref(), Some("Hello world"));
-        // The timestamp comes from the FIRST fragment, so segments order by when
-        // the speech started rather than when translation finished.
-        assert_eq!(segment.timestamp_ms, 1_000);
-
-        // The builder resets for the next turn.
-        assert!(builder.take().is_none());
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn live_turn_without_text_produces_nothing() {
-        // Audio-only turns arrive routinely; they must not create empty segments.
-        let mut builder = LiveSegmentBuilder::default();
-        builder.absorb(&fragment(None, None, true), 500);
-        assert!(builder.take().is_none());
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn live_translation_alone_becomes_the_transcript() {
-        // If only the translated side came through, using it as the transcript
-        // beats dropping the utterance.
-        let mut builder = LiveSegmentBuilder::default();
-        builder.absorb(&fragment(None, Some("Hello"), true), 250);
-        let segment = builder.take().expect("segment");
-        assert_eq!(segment.original, "Hello");
-        assert!(segment.translation.is_none());
-        assert_eq!(segment.timestamp_ms, 250);
-    }
-
     #[test]
     fn empty_session_with_failed_transcription_is_kept_for_recovery() {
-        // The regression this guards: a meeting whose every transcription call
-        // failed (e.g. no API balance) used to be deleted outright, throwing
-        // away audio the user could not recapture.
+        // A meeting whose every transcription call failed (e.g. no API
+        // balance) used to be deleted outright, throwing away its audio.
         assert_eq!(
-            empty_session_outcome(Some("402 Payment Required"), 5_968_320, false),
+            empty_session_outcome(Some("402 Payment Required"), 5_968_320, false, false),
             EmptySessionOutcome::PreserveForRecovery
         );
     }
 
     #[test]
     fn empty_session_without_audio_or_failure_is_discarded() {
-        // A genuinely silent meeting: nothing to keep, and no dangling row.
         assert_eq!(
-            empty_session_outcome(None, 5_968_320, false),
+            empty_session_outcome(None, 5_968_320, false, true),
             EmptySessionOutcome::Discard
         );
         // A failure with no captured audio: a retry would have nothing to read.
         assert_eq!(
-            empty_session_outcome(Some("model unavailable"), 0, false),
+            empty_session_outcome(Some("model unavailable"), 0, false, true),
             EmptySessionOutcome::Discard
         );
         assert_eq!(
-            empty_session_outcome(None, 0, false),
+            empty_session_outcome(None, 0, false, false),
             EmptySessionOutcome::Discard
         );
     }
 
     #[test]
-    fn a_session_that_spent_tokens_is_never_discarded_for_being_empty() {
-        // The regression this guards: live translation billed two minutes of
-        // audio, produced no stored segments, and the meeting was deleted —
-        // audio and all — because an empty transcript read as "silent".
+    fn a_session_that_spent_tokens_on_real_speech_is_never_discarded() {
+        // Live translation billed two minutes of speech, produced no stored
+        // segments, and the meeting was deleted — audio and all.
         assert_eq!(
-            empty_session_outcome(None, 5_968_320, true),
+            empty_session_outcome(None, 5_968_320, true, true),
             EmptySessionOutcome::PreserveForRecovery
         );
-        // Still nothing to keep when no audio was captured at all.
         assert_eq!(
-            empty_session_outcome(None, 0, true),
+            empty_session_outcome(None, 0, true, true),
             EmptySessionOutcome::Discard
         );
     }
 
     #[test]
-    fn downsample_wave_empty_is_flat() {
-        let (wave, peak) = downsample_wave(&[], 96);
-        assert_eq!(wave.len(), 96);
-        assert!(wave.iter().all(|&v| v == 0.0));
-        assert_eq!(peak, 0.0);
-    }
-
-    #[test]
-    fn downsample_wave_fixed_length_and_peak() {
-        // 480 samples -> 96 points, peak should be the max abs amplitude.
-        let samples: Vec<f32> = (0..480)
-            .map(|i| if i % 2 == 0 { 0.5 } else { -0.5 })
-            .collect();
-        let (wave, peak) = downsample_wave(&samples, 96);
-        assert_eq!(wave.len(), 96);
-        assert!((peak - 0.5).abs() < 1e-6);
-        // Averaging alternating +/-0.5 over each chunk -> near zero.
-        assert!(wave.iter().all(|&v| v.abs() <= 0.5));
-    }
-
-    #[test]
-    fn downsample_wave_clamps_and_bounds_peak() {
-        let samples = vec![5.0f32, -5.0, 2.0, -2.0];
-        let (wave, peak) = downsample_wave(&samples, 4);
-        assert_eq!(wave.len(), 4);
-        assert!(wave.iter().all(|&v| (-1.0..=1.0).contains(&v)));
-        assert_eq!(peak, 1.0); // clamped to 1.0
-    }
-
-    #[test]
-    fn downsample_wave_more_points_than_samples() {
-        // Should not panic when points > samples.
-        let samples = vec![0.1f32, 0.2, 0.3];
-        let (wave, peak) = downsample_wave(&samples, 96);
-        assert_eq!(wave.len(), 96);
-        assert!(peak > 0.0);
+    fn a_silent_cloud_session_is_not_kept_as_a_failure() {
+        // Gemini billed for listening to silence: no speech, no error — there
+        // is nothing a retry could recover.
+        assert_eq!(
+            empty_session_outcome(None, 5_968_320, true, false),
+            EmptySessionOutcome::Discard
+        );
     }
 }

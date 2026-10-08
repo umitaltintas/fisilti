@@ -105,7 +105,10 @@ pub struct StoredBuffers {
 /// as `HistoryManager` and opens a fresh connection per operation.
 #[derive(Clone)]
 pub struct MeetingStore {
-    db_path: PathBuf,
+    /// `Err` when the app data directory could not be resolved: every
+    /// operation then fails with that reason instead of quietly creating a
+    /// stray `history.db` in whatever the working directory happens to be.
+    db_path: std::result::Result<PathBuf, String>,
 }
 
 const PREVIEW_LEN: usize = 200;
@@ -128,17 +131,32 @@ impl MeetingStore {
     pub fn new(app_handle: &AppHandle) -> Result<Self> {
         let app_data_dir = crate::portable::app_data_dir(app_handle)?;
         let db_path = app_data_dir.join("history.db");
-        Ok(Self { db_path })
+        Ok(Self {
+            db_path: Ok(db_path),
+        })
     }
 
-    /// Construct a store from an explicit db path. Used as a fallback when the
-    /// app data dir cannot be resolved.
+    /// Construct a store from an explicit db path (tests).
+    #[cfg(test)]
     pub fn with_db_path(db_path: PathBuf) -> Self {
-        Self { db_path }
+        Self {
+            db_path: Ok(db_path),
+        }
+    }
+
+    /// A store that refuses every operation with `reason`. Used when the app
+    /// data dir cannot be resolved, so the failure surfaces on use.
+    pub fn unavailable(reason: String) -> Self {
+        Self {
+            db_path: Err(reason),
+        }
     }
 
     fn get_connection(&self) -> Result<Connection> {
-        Ok(Connection::open(&self.db_path)?)
+        match &self.db_path {
+            Ok(path) => Ok(Connection::open(path)?),
+            Err(reason) => Err(anyhow::anyhow!("meeting store unavailable: {}", reason)),
+        }
     }
 
     /// Insert a meeting record. Returns the new row id.
@@ -237,13 +255,23 @@ impl MeetingStore {
     ) -> Result<()> {
         let segments_json = serde_json::to_string(segments)?;
         let conn = self.get_connection()?;
-        conn.execute(
+        // Only while the row is still recording: a late incremental write
+        // landing after finalize must not replace the final transcript with
+        // the live preview.
+        let changed = conn.execute(
             "UPDATE meetings
              SET transcript = ?1, segments_json = ?2, ended_at = ?3, duration_ms = ?4
-             WHERE id = ?5",
-            params![transcript, &segments_json, ended_at, duration_ms, id],
+             WHERE id = ?5 AND status = ?6",
+            params![
+                transcript,
+                &segments_json,
+                ended_at,
+                duration_ms,
+                id,
+                STATUS_RECORDING
+            ],
         )?;
-        Ok(())
+        expect_one_row(changed, id)
     }
 
     /// Keep the live clock of an in-progress row current: bumps only
@@ -258,16 +286,13 @@ impl MeetingStore {
         duration_ms: i64,
     ) -> Result<()> {
         let conn = self.get_connection()?;
-        conn.execute(
-            "UPDATE meetings SET ended_at = ?1, duration_ms = ?2 WHERE id = ?3",
-            params![ended_at, duration_ms, id],
+        let changed = conn.execute(
+            "UPDATE meetings SET ended_at = ?1, duration_ms = ?2 WHERE id = ?3 AND status = ?4",
+            params![ended_at, duration_ms, id, STATUS_RECORDING],
         )?;
-        Ok(())
+        expect_one_row(changed, id)
     }
 
-    /// CRASH-RECOVERY: finalize an in-progress row to `completed`, writing the
-    /// final transcript/segments/timestamps and clearing the temp-buffer paths.
-    /// Used by both the normal stop() path and the recovery path.
     /// Record the token usage a meeting accumulated. Separate from
     /// `finalize_meeting` because the recovery path finalizes a row whose usage
     /// was spent in an earlier process, and overwriting it with the current
@@ -281,6 +306,12 @@ impl MeetingStore {
         Ok(())
     }
 
+    /// CRASH-RECOVERY: finalize a row to `completed`, writing the final
+    /// transcript/segments/timestamps and clearing the temp-buffer paths. Used
+    /// by the normal stop() path, recovery and re-transcription. Never touches
+    /// `notes`, `title` or `summary`: the user may have typed notes into the
+    /// row while it was recording. Fails when the row no longer exists (it
+    /// was deleted meanwhile) instead of reporting a save that never happened.
     pub fn finalize_meeting(
         &self,
         id: i64,
@@ -291,7 +322,7 @@ impl MeetingStore {
     ) -> Result<()> {
         let segments_json = serde_json::to_string(segments)?;
         let conn = self.get_connection()?;
-        conn.execute(
+        let changed = conn.execute(
             "UPDATE meetings
              SET transcript = ?1,
                  segments_json = ?2,
@@ -311,27 +342,27 @@ impl MeetingStore {
                 id
             ],
         )?;
-        Ok(())
+        expect_one_row(changed, id)
     }
 
     /// Update the title column of an existing meeting row.
     pub fn update_title(&self, id: i64, title: &str) -> Result<()> {
         let conn = self.get_connection()?;
-        conn.execute(
+        let changed = conn.execute(
             "UPDATE meetings SET title = ?1 WHERE id = ?2",
             params![title, id],
         )?;
-        Ok(())
+        expect_one_row(changed, id)
     }
 
     /// Update the user notes column of an existing meeting row.
     pub fn update_notes(&self, id: i64, notes: &str) -> Result<()> {
         let conn = self.get_connection()?;
-        conn.execute(
+        let changed = conn.execute(
             "UPDATE meetings SET notes = ?1 WHERE id = ?2",
             params![notes, id],
         )?;
-        Ok(())
+        expect_one_row(changed, id)
     }
 
     /// Update the summary column of an existing meeting row.
@@ -385,6 +416,31 @@ impl MeetingStore {
         Ok(rows)
     }
 
+    /// Every capture-buffer path any row still records (rows keep them only
+    /// while `recording`). Used to sweep buffers nothing refers to.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    pub fn referenced_buffer_paths(&self) -> Result<std::collections::HashSet<String>> {
+        let conn = self.get_connection()?;
+        let mut stmt = conn.prepare(
+            "SELECT buffer_mic_path, buffer_system_path, buffer_mixed_path FROM meetings
+             WHERE buffer_mic_path IS NOT NULL
+                OR buffer_system_path IS NOT NULL
+                OR buffer_mixed_path IS NOT NULL",
+        )?;
+        let mut paths = std::collections::HashSet::new();
+        let rows = stmt.query_map([], |row| {
+            Ok([
+                row.get::<_, Option<String>>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, Option<String>>(2)?,
+            ])
+        })?;
+        for row in rows {
+            paths.extend(row?.into_iter().flatten());
+        }
+        Ok(paths)
+    }
+
     pub fn get_buffers(&self, id: i64) -> Result<StoredBuffers> {
         let conn = self.get_connection()?;
         let buffers = conn
@@ -409,14 +465,13 @@ impl MeetingStore {
         Ok(buffers)
     }
 
-    /// List COMPLETED meetings, newest-first. When `query` is `Some`, filters by
-    /// a case-insensitive substring match against title, transcript, or summary
-    /// (SQLite `LIKE`). `None` → all completed meetings.
+    /// List meetings of EVERY status, newest-first. When `query` is `Some`,
+    /// filters by a case-insensitive substring match against title,
+    /// transcript, or summary (SQLite `LIKE`). `None` → all meetings.
     ///
-    /// Rows still in `recording` status are deliberately excluded: the live one
-    /// belongs to the session panel (where it would otherwise show up as a
-    /// duplicate 00:00 entry) and interrupted ones are surfaced by
-    /// `list_interrupted` as a recovery banner.
+    /// Rows still in `recording` status (live, finalizing, or interrupted) are
+    /// included with their `status`, so a session that takes minutes to
+    /// finalize never looks lost; the UI marks them by status.
     pub fn list_meetings(&self, query: Option<&str>) -> Result<Vec<MeetingListItem>> {
         let conn = self.get_connection()?;
         let map_row = |row: &rusqlite::Row<'_>| -> rusqlite::Result<MeetingListItem> {
@@ -476,16 +531,20 @@ impl MeetingStore {
 
     /// List meetings left in `recording` status (interrupted by a crash/kill),
     /// newest-first. Checks whether their temp audio buffers still exist on disk.
-    pub fn list_interrupted(&self) -> Result<Vec<InterruptedMeeting>> {
+    ///
+    /// `live` is the row of the session that is running or finalizing right
+    /// now: it is in `recording` status too, but it is not interrupted, and
+    /// offering to recover or discard it would destroy the meeting in progress.
+    pub fn list_interrupted(&self, live: Option<i64>) -> Result<Vec<InterruptedMeeting>> {
         let conn = self.get_connection()?;
         let mut stmt = conn.prepare(
             "SELECT id, started_at, title, transcript, buffer_mic_path, buffer_system_path
              FROM meetings
-             WHERE status = ?1
+             WHERE status = ?1 AND id != ?2
              ORDER BY started_at DESC, id DESC",
         )?;
         let items = stmt
-            .query_map(params![STATUS_RECORDING], |row| {
+            .query_map(params![STATUS_RECORDING, live.unwrap_or(-1)], |row| {
                 let mic: Option<String> = row.get("buffer_mic_path")?;
                 let system: Option<String> = row.get("buffer_system_path")?;
                 let has_buffers = [mic, system]
@@ -550,6 +609,20 @@ impl MeetingStore {
     pub fn delete_meeting(&self, id: i64) -> Result<()> {
         let conn = self.get_connection()?;
         conn.execute("DELETE FROM meetings WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+}
+
+/// An UPDATE that matched nothing means the row is gone (deleted while we
+/// worked) or no longer in the expected state. Reporting success there is how
+/// a meeting's final transcript used to vanish without a trace.
+fn expect_one_row(changed: usize, id: i64) -> Result<()> {
+    if changed == 0 {
+        Err(anyhow::anyhow!(
+            "Meeting {} not found (or no longer in the expected state)",
+            id
+        ))
+    } else {
         Ok(())
     }
 }
@@ -629,6 +702,102 @@ mod tests {
             "the clock update must not clobber the transcript"
         );
         assert_eq!(record.status, STATUS_RECORDING);
+    }
+
+    #[test]
+    fn the_live_meeting_is_never_offered_for_recovery() {
+        let store = temp_store("interrupted_excludes_live");
+        let crashed = store
+            .start_meeting(1_000, "Crashed earlier", &buffers())
+            .expect("insert crashed");
+        let live = store
+            .start_meeting(2_000, "Running now", &buffers())
+            .expect("insert live");
+
+        let ids = |live: Option<i64>| -> Vec<i64> {
+            store
+                .list_interrupted(live)
+                .expect("list")
+                .iter()
+                .map(|m| m.id)
+                .collect()
+        };
+        assert_eq!(ids(Some(live)), vec![crashed]);
+        // With nothing running, both are genuinely interrupted.
+        assert_eq!(ids(None), vec![live, crashed]);
+    }
+
+    #[test]
+    fn finalizing_a_deleted_meeting_is_an_error_not_a_silent_success() {
+        let store = temp_store("finalize_missing");
+        let id = store
+            .start_meeting(1_000, "Doomed", &buffers())
+            .expect("insert");
+        store.delete_meeting(id).expect("delete");
+        assert!(store
+            .finalize_meeting(id, "text", &[], 2_000, 1_000)
+            .is_err());
+        assert!(store
+            .update_in_progress(id, "text", &[], 2_000, 1_000)
+            .is_err());
+    }
+
+    #[test]
+    fn a_late_incremental_write_cannot_clobber_the_final_transcript() {
+        let store = temp_store("late_incremental");
+        let id = store
+            .start_meeting(1_000, "Meeting", &buffers())
+            .expect("insert");
+        store
+            .finalize_meeting(id, "final text", &[], 5_000, 4_000)
+            .expect("finalize");
+        assert!(store
+            .update_in_progress(id, "live preview", &[], 6_000, 5_000)
+            .is_err());
+        assert!(store.update_progress_timestamp(id, 9_000, 8_000).is_err());
+        let record = store.get_meeting(id).expect("get");
+        assert_eq!(record.transcript, "final text");
+        assert_eq!(record.duration_ms, 4_000);
+    }
+
+    #[test]
+    fn notes_typed_during_recording_survive_finalize() {
+        let store = temp_store("notes_survive");
+        let id = store
+            .start_meeting(1_000, "Meeting", &buffers())
+            .expect("insert");
+        store.update_notes(id, "my live notes").expect("notes");
+        store
+            .update_in_progress(id, "partial", &[], 2_000, 1_000)
+            .expect("incremental");
+        store
+            .finalize_meeting(id, "final", &[], 3_000, 2_000)
+            .expect("finalize");
+        let record = store.get_meeting(id).expect("get");
+        assert_eq!(record.notes.as_deref(), Some("my live notes"));
+        assert_eq!(record.transcript, "final");
+    }
+
+    #[test]
+    fn only_rows_still_holding_buffers_are_referenced() {
+        let store = temp_store("referenced_buffers");
+        let live = store
+            .start_meeting(1_000, "Live", &buffers())
+            .expect("insert");
+        let paths = store.referenced_buffer_paths().expect("paths");
+        assert!(paths.contains("/tmp/mic.f32"));
+        assert!(paths.contains("/tmp/mix.f32"));
+        store
+            .finalize_meeting(live, "done", &[], 2_000, 1_000)
+            .expect("finalize");
+        assert!(store.referenced_buffer_paths().expect("paths").is_empty());
+    }
+
+    #[test]
+    fn an_unavailable_store_fails_instead_of_creating_a_stray_database() {
+        let store = MeetingStore::unavailable("no app dir".to_string());
+        let err = store.list_meetings(None).unwrap_err().to_string();
+        assert!(err.contains("no app dir"), "{err}");
     }
 
     #[test]

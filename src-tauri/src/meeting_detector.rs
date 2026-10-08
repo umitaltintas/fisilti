@@ -223,6 +223,15 @@ impl DetectionSm {
             PollAction::None
         }
     }
+
+    /// The user answered "keep going" to an end prompt. Without this the
+    /// absence streak that triggered the prompt was still past the threshold,
+    /// so the very next poll (3 s later) asked again. App-closed auto-end now
+    /// re-arms only once the meeting app is seen using the mic again.
+    fn keep_going(&mut self) {
+        self.absent_streak = 0;
+        self.session_saw_signal = false;
+    }
 }
 
 /// Known meeting-app / browser bundle ids → human names. Matched by exact id OR
@@ -386,7 +395,9 @@ fn poll_loop(app: AppHandle) {
             Some(d) => (*d).clone(),
             None => continue,
         };
-        let running = manager.status() == MeetingState::Running;
+        // A finalizing session still counts: offering to start a new meeting
+        // while the last one is being saved would only fail.
+        let running = manager.status() != MeetingState::Idle;
 
         // Poll CoreAudio only when it can matter: auto-detect enabled, or a
         // session is running (so app-closed auto-end can track the signal).
@@ -567,6 +578,9 @@ pub fn respond_auto_end(app: &AppHandle, continue_meeting: bool) -> Result<(), S
             let was = st.end_pending;
             st.end_pending = false;
             st.end_generation = st.end_generation.wrapping_add(1);
+            if continue_meeting {
+                st.sm.keep_going();
+            }
             was
         }
         None => false,
@@ -807,6 +821,33 @@ mod tests {
         assert_eq!(
             sm.step_idle(Some("Zoom")),
             PollAction::ShowStartPrompt("Zoom".to_string())
+        );
+    }
+
+    #[test]
+    fn keep_going_stops_the_end_prompt_from_returning_every_poll() {
+        let mut sm = DetectionSm::default();
+        sm.step_running(Some("Zoom"), true, false);
+        for _ in 0..(AUTO_END_ABSENT_POLLS - 1) {
+            sm.step_running(None, true, false);
+        }
+        assert_eq!(
+            sm.step_running(None, true, false),
+            PollAction::RequestAutoEnd
+        );
+        // The user says "keep going" while the app is still off the mic.
+        sm.keep_going();
+        for _ in 0..(AUTO_END_ABSENT_POLLS * 3) {
+            assert_eq!(sm.step_running(None, true, false), PollAction::None);
+        }
+        // The app comes back and leaves again: auto-end re-arms normally.
+        sm.step_running(Some("Zoom"), true, false);
+        for _ in 0..(AUTO_END_ABSENT_POLLS - 1) {
+            assert_eq!(sm.step_running(None, true, false), PollAction::None);
+        }
+        assert_eq!(
+            sm.step_running(None, true, false),
+            PollAction::RequestAutoEnd
         );
     }
 

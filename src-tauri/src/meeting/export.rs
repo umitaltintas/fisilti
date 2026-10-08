@@ -100,8 +100,25 @@ pub fn render_meeting_markdown(record: &MeetingRecord) -> String {
 /// a stale copy next to it.
 const ID_KEY: &str = "fisilti_id: ";
 
+/// A double-quoted YAML scalar. Line breaks and other control characters are
+/// escaped too: a raw newline inside the quotes would end the front matter
+/// line and corrupt every key after it.
 fn yaml_string(s: &str) -> String {
-    format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('"');
+    for c in s.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if c.is_control() => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
 }
 
 /// Keep meeting `id`'s copy in the export folder current, when the user set
@@ -144,13 +161,54 @@ fn write_export(dir: &Path, record: &MeetingRecord) -> std::io::Result<PathBuf> 
     let target = dir.join(export_file_name(&prefix, &record.title));
     let previous = find_previous_export(dir, &prefix, record.id);
 
-    let tmp = dir.join(format!(".fisilti-{}.md.tmp", record.id));
-    std::fs::write(&tmp, render_meeting_markdown(record))?;
-    std::fs::rename(&tmp, &target)?;
+    // Unique per write: two exports of the same meeting can run at once (the
+    // auto-title and the auto-summary land on different threads), and a
+    // shared temp name let one rename the other's half-written file.
+    let tmp = dir.join(unique_tmp_name(record.id));
+    if let Err(e) = std::fs::write(&tmp, render_meeting_markdown(record))
+        .and_then(|()| std::fs::rename(&tmp, &target))
+    {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
+    }
     if let Some(previous) = previous.filter(|p| *p != target) {
         let _ = std::fs::remove_file(previous);
     }
     Ok(target)
+}
+
+/// A temp file name no concurrent writer shares.
+fn unique_tmp_name(id: i64) -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    format!(
+        ".fisilti-{}-{}-{}.md.tmp",
+        id,
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::Relaxed)
+    )
+}
+
+/// Remove meeting `record`'s file from the export folder, when one is
+/// configured and the file is there. Called when the meeting is deleted, so
+/// the vault does not keep a note for a meeting that no longer exists.
+pub fn remove_from_export_dir(app: &AppHandle, record: &MeetingRecord) {
+    let dir = crate::settings::get_settings(app).meeting_export_dir;
+    let dir = dir.trim();
+    if dir.is_empty() {
+        return;
+    }
+    remove_export(Path::new(dir), record);
+}
+
+fn remove_export(dir: &Path, record: &MeetingRecord) {
+    let prefix = file_prefix(record.started_at);
+    if let Some(path) = find_previous_export(dir, &prefix, record.id) {
+        match std::fs::remove_file(&path) {
+            Ok(()) => log::info!("meeting export: removed {:?}", path),
+            Err(e) => log::warn!("meeting export: could not remove {:?}: {}", path, e),
+        }
+    }
 }
 
 /// `2026-10-06 2153`: sorts chronologically and never changes for a meeting,
@@ -320,6 +378,43 @@ mod tests {
         assert!(second.exists());
         let files: Vec<_> = std::fs::read_dir(&dir).unwrap().collect();
         assert_eq!(files.len(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn front_matter_survives_a_title_with_line_breaks() {
+        let mut record = record_with(Vec::new(), "x");
+        record.title = "Line one\nkey: injected\r\tend".to_string();
+        let md = render_meeting_markdown(&record);
+        let fm = front_matter(&md);
+        assert!(fm.contains("title: \"Line one\\nkey: injected\\r\\tend\"\n"));
+        // The id line must still be found — it is how re-exports match.
+        assert!(fm.contains("\nfisilti_id: 7\n"));
+        assert!(!fm.contains("\nkey: injected"));
+    }
+
+    #[test]
+    fn concurrent_writers_never_share_a_temp_file() {
+        assert_ne!(unique_tmp_name(7), unique_tmp_name(7));
+    }
+
+    #[test]
+    fn deleting_a_meeting_removes_its_exported_note() {
+        let dir =
+            std::env::temp_dir().join(format!("fisilti-export-remove-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let record = record_with(Vec::new(), "body");
+        let mut other = record_with(Vec::new(), "body");
+        other.id = 8;
+        other.title = "Other".to_string();
+        let mine = write_export(&dir, &record).unwrap();
+        let theirs = write_export(&dir, &other).unwrap();
+
+        remove_export(&dir, &record);
+        assert!(!mine.exists());
+        assert!(theirs.exists(), "only the deleted meeting's note goes");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

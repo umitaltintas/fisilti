@@ -30,7 +30,8 @@
       "features": "Funzionalità",
       "system": "Sistema"
     },
-    "navigation": "Sezioni delle impostazioni"
+    "navigation": "Sezioni delle impostazioni",
+    "home": "Home"
   },
   "onboarding": {
     "subtitle": "Per cominciare, scegli un modello di riconoscimento vocale",
@@ -933,5 +934,37 @@
     "play": "Riproduci",
     "pause": "Pausa",
     "seek": "Posizione di riproduzione"
+  },
+  "home": {
+    "greeting": {
+      "morning": "Buongiorno",
+      "afternoon": "Buon pomeriggio",
+      "evening": "Buonasera"
+    },
+    "subtitle": "Parla per scrivere e prendi appunti durante le riunioni.",
+    "today": "Oggi",
+    "yesterday": "Ieri",
+    "showAll": "Mostra tutto",
+    "recentMeetings": "Riunioni recenti",
+    "recentDictations": "Dettature recenti",
+    "noMeetings": "Nessuna riunione. Avviane una qui sopra o importa una registrazione.",
+    "noDictations": "Nessuna dettatura. Tieni premuta la scorciatoia in qualsiasi app e parla.",
+    "dictation": {
+      "title": "Dettatura",
+      "description": "Tieni premuta la scorciatoia in qualsiasi app, parla e rilascia. Il testo appare dove si trova il cursore.",
+      "shortcut": "Scorciatoia di dettatura",
+      "change": "Cambia scorciatoia"
+    },
+    "meeting": {
+      "title": "Riunione",
+      "description": "Registra il microfono e l’audio della chiamata e tiene i tuoi appunti accanto alla trascrizione.",
+      "start": "Avvia riunione",
+      "import": "Importa una registrazione",
+      "recording": "In registrazione",
+      "finalizing": "Salvataggio della riunione…",
+      "open": "Apri riunione",
+      "untitled": "Riunione senza titolo",
+      "live": "Dal vivo"
+    }
   }
 }

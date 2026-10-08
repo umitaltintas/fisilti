@@ -55,7 +55,7 @@ function App() {
   // (vs a new user who needs full onboarding including model selection)
   const [isReturningUser, setIsReturningUser] = useState(false);
   const [currentSection, setCurrentSection] =
-    useState<SidebarSection>("general");
+    useState<SidebarSection>("home");
   // Narrow selectors: App re-renders for these values only, not for every
   // settings change anywhere in the app.
   const debugMode = useSettingsStore((s) => s.settings?.debug_mode ?? false);
@@ -286,7 +286,7 @@ function App() {
           {/* Scrollable content area */}
           <main className="flex-1 flex flex-col overflow-hidden">
             <div className="flex-1 overflow-y-auto">
-              <div className="flex flex-col items-center p-4 gap-4">
+              <div className="flex flex-col items-center gap-4 px-7 pt-5 pb-8">
                 <AccessibilityPermissions />
                 {renderSettingsContent(currentSection)}
               </div>

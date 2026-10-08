@@ -24,27 +24,24 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     ref,
   ) => {
     const baseClasses =
-      "font-medium rounded-lg border focus:outline-none focus-visible:ring-1 focus-visible:ring-logo-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer";
+      "inline-flex items-center justify-center gap-1.5 font-medium rounded-lg border focus:outline-none focus-visible:ring-2 focus-visible:ring-logo-primary/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer";
 
     const variantClasses = {
       primary:
-        "text-white bg-background-ui border-background-ui hover:bg-background-ui/80 hover:border-background-ui/80 focus:ring-1 focus:ring-background-ui",
+        "text-white bg-background-ui border-transparent hover:brightness-110",
       "primary-soft":
-        "text-text bg-logo-primary/20 border-transparent hover:bg-logo-primary/30 focus:ring-1 focus:ring-logo-primary",
-      secondary:
-        "bg-mid-gray/10 border-mid-gray/20 hover:bg-background-ui/30 hover:border-logo-primary",
-      danger:
-        "text-white bg-red-600 border-mid-gray/20 hover:bg-red-700 hover:border-red-700 focus:ring-1 focus:ring-red-500",
+        "text-brand-text bg-brand-soft border-transparent hover:bg-logo-primary/20",
+      secondary: "text-text bg-chip border-transparent hover:bg-mid-gray/20",
+      danger: "text-white bg-rec border-transparent hover:brightness-95",
       "danger-ghost":
-        "text-red-400 border-transparent hover:text-red-300 hover:bg-red-500/10 focus:bg-red-500/20",
-      ghost:
-        "text-current border-transparent hover:bg-mid-gray/10 hover:border-logo-primary focus:bg-mid-gray/20",
+        "text-rec border-transparent hover:bg-rec/10 focus:bg-rec/15",
+      ghost: "text-current border-transparent hover:bg-chip",
     };
 
     const sizeClasses = {
-      sm: "px-2 py-1 text-xs",
-      md: "px-4 py-[5px] text-sm",
-      lg: "px-4 py-2 text-base",
+      sm: "px-2.5 py-1 text-xs",
+      md: "px-3.5 py-[5px] text-[13px]",
+      lg: "px-4 py-2 text-sm",
     };
 
     return (

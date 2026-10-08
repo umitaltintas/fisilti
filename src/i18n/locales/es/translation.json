@@ -30,7 +30,8 @@
       "features": "Funciones",
       "system": "Sistema"
     },
-    "navigation": "Secciones de ajustes"
+    "navigation": "Secciones de ajustes",
+    "home": "Inicio"
   },
   "onboarding": {
     "subtitle": "Para comenzar, elige un modelo de transcripción",
@@ -933,5 +934,37 @@
     "play": "Reproducir",
     "pause": "Pausa",
     "seek": "Posición de reproducción"
+  },
+  "home": {
+    "greeting": {
+      "morning": "Buenos días",
+      "afternoon": "Buenas tardes",
+      "evening": "Buenas noches"
+    },
+    "subtitle": "Habla para escribir y toma notas de tus reuniones.",
+    "today": "Hoy",
+    "yesterday": "Ayer",
+    "showAll": "Ver todo",
+    "recentMeetings": "Reuniones recientes",
+    "recentDictations": "Dictados recientes",
+    "noMeetings": "Aún no hay reuniones. Empieza una arriba o importa una grabación.",
+    "noDictations": "Aún no hay dictados. Mantén pulsado el atajo en cualquier app y habla.",
+    "dictation": {
+      "title": "Dictado",
+      "description": "Mantén pulsado el atajo en cualquier app, habla y suelta. El texto aparece donde está el cursor.",
+      "shortcut": "Atajo de dictado",
+      "change": "Cambiar atajo"
+    },
+    "meeting": {
+      "title": "Reunión",
+      "description": "Graba tu micrófono y el audio de la llamada, y mantiene tus notas junto a la transcripción.",
+      "start": "Iniciar reunión",
+      "import": "Importar una grabación",
+      "recording": "Grabando",
+      "finalizing": "Guardando la reunión…",
+      "open": "Abrir reunión",
+      "untitled": "Reunión sin título",
+      "live": "En vivo"
+    }
   }
 }

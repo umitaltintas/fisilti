@@ -30,7 +30,8 @@
       "features": "Fonctionnalités",
       "system": "Système"
     },
-    "navigation": "Sections des réglages"
+    "navigation": "Sections des réglages",
+    "home": "Accueil"
   },
   "onboarding": {
     "subtitle": "Pour commencer, choisissez un modèle de transcription",
@@ -933,5 +934,37 @@
     "play": "Lire",
     "pause": "Pause",
     "seek": "Position de lecture"
+  },
+  "home": {
+    "greeting": {
+      "morning": "Bonjour",
+      "afternoon": "Bon après-midi",
+      "evening": "Bonsoir"
+    },
+    "subtitle": "Parlez pour écrire, et prenez des notes pendant vos réunions.",
+    "today": "Aujourd’hui",
+    "yesterday": "Hier",
+    "showAll": "Tout afficher",
+    "recentMeetings": "Réunions récentes",
+    "recentDictations": "Dictées récentes",
+    "noMeetings": "Aucune réunion pour l’instant. Lancez-en une ci-dessus ou importez un enregistrement.",
+    "noDictations": "Aucune dictée pour l’instant. Maintenez le raccourci dans n’importe quelle app et parlez.",
+    "dictation": {
+      "title": "Dictée",
+      "description": "Maintenez le raccourci dans n’importe quelle app, parlez, puis relâchez. Le texte s’écrit à l’emplacement du curseur.",
+      "shortcut": "Raccourci de dictée",
+      "change": "Modifier le raccourci"
+    },
+    "meeting": {
+      "title": "Réunion",
+      "description": "Enregistre votre micro et l’audio de l’appel, et garde vos notes à côté de la transcription.",
+      "start": "Démarrer une réunion",
+      "import": "Importer un enregistrement",
+      "recording": "Enregistrement",
+      "finalizing": "Enregistrement de la réunion…",
+      "open": "Ouvrir la réunion",
+      "untitled": "Réunion sans titre",
+      "live": "En direct"
+    }
   }
 }

@@ -56,7 +56,7 @@ export const ToggleSwitch: React.FC<ToggleSwitchProps> = ({
         />
         <div
           aria-hidden
-          className="relative w-11 h-6 bg-mid-gray/20 rounded-full peer-focus-visible:ring-2 peer-focus-visible:ring-logo-primary peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-background-ui peer-disabled:opacity-50"
+          className="relative h-5 w-[34px] rounded-full bg-mid-gray/35 transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-logo-primary/60 peer-focus-visible:ring-offset-1 peer-checked:bg-background-ui peer-checked:after:translate-x-[14px] rtl:peer-checked:after:-translate-x-[14px] after:absolute after:start-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-white after:shadow-[0_1px_2px_rgb(0_0_0/0.3)] after:transition-transform after:content-[''] peer-disabled:opacity-50"
         />
       </div>
       {isUpdating && (

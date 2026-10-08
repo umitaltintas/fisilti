@@ -1,20 +1,39 @@
 @import "tailwindcss";
 
 @theme {
-  /* Design tokens - Fisilti brand (purple/indigo) */
-  --color-text: #0f0f0f;
-  --color-background: #fbfbfb;
+  /* Design tokens. Warm neutral paper with the Fisilti purple used only for
+   * active state and emphasis. Dark values are set in the media query below. */
+  --color-text: #1d1b18;
+  --color-background: #f7f6f3; /* page */
+  --color-surface: #ffffff; /* cards, menus, the active sidebar row */
+  --color-sidebar: #efede8;
+  --color-line: #e6e3dc; /* hairlines and card outlines */
+  --color-chip: #efede8; /* select fields, key caps, quiet buttons */
+  --color-sub: #6f6a62; /* secondary text */
+  --color-faint: #9c968c; /* tertiary text, placeholders */
+  --color-mid-gray: #8a847a;
   --color-background-ui: #6d28d9;
   --color-logo-primary: #6d28d9;
   --color-logo-stroke: #4c1d95;
+  --color-brand-soft: #efe8fd;
+  --color-brand-text: #5b21b6;
+  --color-rec: #e5484d;
+  --color-ok: #2f9e6b;
   --color-text-stroke: #f6f6f6;
-  --color-mid-gray: #808080;
+
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI",
+    system-ui, sans-serif;
+  /* Meeting titles, notes and summaries read as a notebook, not a form. */
+  --font-serif:
+    "New York", "Iowan Old Style", "Charter", Georgia, "Times New Roman", serif;
 }
 
 :root {
-  /* Typography */
-  font-size: 15px;
-  line-height: 24px;
+  /* Typography: macOS-sized body text */
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.45;
   font-weight: 400;
 
   /* Colors - Light Theme */
@@ -55,11 +74,20 @@
 @media (prefers-color-scheme: dark) {
   :root {
     /* Colors - Dark Theme */
-    --color-text: #fbfbfb;
-    --color-background: #1c1b22;
+    --color-text: #f2f0ec;
+    --color-background: #1b1a1f;
+    --color-surface: #24232a;
+    --color-sidebar: #17161b;
+    --color-line: #302e36;
+    --color-chip: #2d2b33;
+    --color-sub: #a29ea8;
+    --color-faint: #77737d;
+    --color-mid-gray: #8f8a96;
     --color-background-ui: #8b5cf6;
     --color-logo-primary: #8b5cf6;
     --color-logo-stroke: #ddd6fe;
+    --color-brand-soft: #2c2440;
+    --color-brand-text: #c4b5fd;
   }
 }
 
@@ -106,4 +134,28 @@
   fill: var(--color-logo-stroke);
   stroke: var(--color-logo-stroke);
   stroke-width: 1;
+}
+
+/* A gently pulsing recording dot. */
+@keyframes rec-pulse {
+  50% {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-rec) 10%, transparent);
+  }
+}
+.rec-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  background: var(--color-rec);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-rec) 22%, transparent);
+  animation: rec-pulse 1.6s ease-in-out infinite;
+}
+
+/* Hairline card used across settings and meeting pages. */
+.card {
+  background: var(--color-surface);
+  border-radius: 10px;
+  box-shadow:
+    0 0 0 1px var(--color-line),
+    0 1px 2px rgb(0 0 0 / 0.03);
 }

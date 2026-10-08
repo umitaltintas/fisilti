@@ -30,7 +30,8 @@
       "features": "Funktionen",
       "system": "System"
     },
-    "navigation": "Einstellungsbereiche"
+    "navigation": "Einstellungsbereiche",
+    "home": "Start"
   },
   "onboarding": {
     "subtitle": "Wähle ein Transkriptionsmodell, um loszulegen",
@@ -933,5 +934,37 @@
     "play": "Wiedergabe",
     "pause": "Pause",
     "seek": "Wiedergabeposition"
+  },
+  "home": {
+    "greeting": {
+      "morning": "Guten Morgen",
+      "afternoon": "Guten Tag",
+      "evening": "Guten Abend"
+    },
+    "subtitle": "Sprechen statt tippen – und Notizen zu deinen Meetings.",
+    "today": "Heute",
+    "yesterday": "Gestern",
+    "showAll": "Alle anzeigen",
+    "recentMeetings": "Letzte Meetings",
+    "recentDictations": "Letzte Diktate",
+    "noMeetings": "Noch keine Meetings. Starte oben eins oder importiere eine Aufnahme.",
+    "noDictations": "Noch keine Diktate. Halte in einer beliebigen App das Tastenkürzel gedrückt und sprich.",
+    "dictation": {
+      "title": "Diktat",
+      "description": "Halte das Tastenkürzel in einer beliebigen App gedrückt, sprich und lass los. Der Text erscheint an der Cursorposition.",
+      "shortcut": "Diktat-Tastenkürzel",
+      "change": "Tastenkürzel ändern"
+    },
+    "meeting": {
+      "title": "Meeting",
+      "description": "Nimmt dein Mikrofon und den Anrufton auf und hält deine Notizen neben dem Transkript.",
+      "start": "Meeting starten",
+      "import": "Aufnahme importieren",
+      "recording": "Aufnahme läuft",
+      "finalizing": "Meeting wird gespeichert…",
+      "open": "Meeting öffnen",
+      "untitled": "Unbenanntes Meeting",
+      "live": "Live"
+    }
   }
 }

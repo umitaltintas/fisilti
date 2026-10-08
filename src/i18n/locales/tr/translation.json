@@ -30,7 +30,8 @@
       "features": "Özellikler",
       "system": "Sistem"
     },
-    "navigation": "Ayar bölümleri"
+    "navigation": "Ayar bölümleri",
+    "home": "Ana sayfa"
   },
   "onboarding": {
     "subtitle": "Başlamak için bir transkripsiyon modeli seçin",
@@ -933,5 +934,37 @@
     "play": "Oynat",
     "pause": "Duraklat",
     "seek": "Oynatma konumu"
+  },
+  "home": {
+    "greeting": {
+      "morning": "Günaydın",
+      "afternoon": "İyi günler",
+      "evening": "İyi akşamlar"
+    },
+    "subtitle": "Konuşarak yaz, toplantılarının notunu tut.",
+    "today": "Bugün",
+    "yesterday": "Dün",
+    "showAll": "Tümü",
+    "recentMeetings": "Son toplantılar",
+    "recentDictations": "Son dikteler",
+    "noMeetings": "Henüz toplantı yok. Yukarıdan başlat ya da bir kaydı içe aktar.",
+    "noDictations": "Henüz dikte yok. Herhangi bir uygulamada kısayolu basılı tutup konuş.",
+    "dictation": {
+      "title": "Dikte",
+      "description": "Herhangi bir uygulamada kısayolu basılı tut, konuş, bırak. Yazı imlecin olduğu yere gelir.",
+      "shortcut": "Dikte kısayolu",
+      "change": "Kısayolu değiştir"
+    },
+    "meeting": {
+      "title": "Toplantı",
+      "description": "Mikrofonunu ve görüşme sesini kaydeder, notlarını transkriptin yanında tutar.",
+      "start": "Toplantı başlat",
+      "import": "Kayıt içe aktar",
+      "recording": "Kayıtta",
+      "finalizing": "Toplantı kaydediliyor…",
+      "open": "Toplantıya git",
+      "untitled": "Adsız toplantı",
+      "live": "Canlı"
+    }
   }
 }

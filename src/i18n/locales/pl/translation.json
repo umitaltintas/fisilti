@@ -30,7 +30,8 @@
       "features": "Funkcje",
       "system": "System"
     },
-    "navigation": "Sekcje ustawień"
+    "navigation": "Sekcje ustawień",
+    "home": "Start"
   },
   "onboarding": {
     "subtitle": "Aby rozpocząć, wybierz model transkrypcji",
@@ -933,5 +934,37 @@
     "play": "Odtwórz",
     "pause": "Wstrzymaj",
     "seek": "Pozycja odtwarzania"
+  },
+  "home": {
+    "greeting": {
+      "morning": "Dzień dobry",
+      "afternoon": "Dzień dobry",
+      "evening": "Dobry wieczór"
+    },
+    "subtitle": "Mów, aby pisać, i rób notatki ze spotkań.",
+    "today": "Dzisiaj",
+    "yesterday": "Wczoraj",
+    "showAll": "Pokaż wszystko",
+    "recentMeetings": "Ostatnie spotkania",
+    "recentDictations": "Ostatnie dyktowania",
+    "noMeetings": "Brak spotkań. Rozpocznij spotkanie powyżej lub zaimportuj nagranie.",
+    "noDictations": "Brak dyktowań. Przytrzymaj skrót w dowolnej aplikacji i mów.",
+    "dictation": {
+      "title": "Dyktowanie",
+      "description": "Przytrzymaj skrót w dowolnej aplikacji, mów i puść. Tekst pojawi się w miejscu kursora.",
+      "shortcut": "Skrót dyktowania",
+      "change": "Zmień skrót"
+    },
+    "meeting": {
+      "title": "Spotkanie",
+      "description": "Nagrywa mikrofon i dźwięk rozmowy oraz trzyma Twoje notatki obok transkrypcji.",
+      "start": "Rozpocznij spotkanie",
+      "import": "Importuj nagranie",
+      "recording": "Nagrywanie",
+      "finalizing": "Zapisywanie spotkania…",
+      "open": "Otwórz spotkanie",
+      "untitled": "Spotkanie bez tytułu",
+      "live": "Na żywo"
+    }
   }
 }

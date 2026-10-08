@@ -30,7 +30,8 @@
       "features": "Features",
       "system": "System"
     },
-    "navigation": "Settings sections"
+    "navigation": "Settings sections",
+    "home": "Home"
   },
   "onboarding": {
     "subtitle": "To get started, choose a transcription model",
@@ -933,5 +934,37 @@
     "play": "Play",
     "pause": "Pause",
     "seek": "Playback position"
+  },
+  "home": {
+    "greeting": {
+      "morning": "Good morning",
+      "afternoon": "Good afternoon",
+      "evening": "Good evening"
+    },
+    "subtitle": "Speak to type, and keep notes on your meetings.",
+    "today": "Today",
+    "yesterday": "Yesterday",
+    "showAll": "Show all",
+    "recentMeetings": "Recent meetings",
+    "recentDictations": "Recent dictations",
+    "noMeetings": "No meetings yet. Start one above, or import a recording.",
+    "noDictations": "No dictations yet. Hold your shortcut in any app and speak.",
+    "dictation": {
+      "title": "Dictation",
+      "description": "Hold the shortcut in any app, speak, and release. The text is typed where your cursor is.",
+      "shortcut": "Dictation shortcut",
+      "change": "Change shortcut"
+    },
+    "meeting": {
+      "title": "Meeting",
+      "description": "Records your microphone and the call audio, and keeps your notes beside the transcript.",
+      "start": "Start meeting",
+      "import": "Import a recording",
+      "recording": "Recording",
+      "finalizing": "Saving the meeting…",
+      "open": "Open meeting",
+      "untitled": "Untitled meeting",
+      "live": "Live"
+    }
   }
 }

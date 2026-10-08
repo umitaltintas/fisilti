@@ -30,7 +30,8 @@
       "features": "功能",
       "system": "系統"
     },
-    "navigation": "設定區段"
+    "navigation": "設定區段",
+    "home": "首頁"
   },
   "onboarding": {
     "subtitle": "首先，請選擇一種模型",
@@ -933,5 +934,37 @@
     "play": "播放",
     "pause": "暫停",
     "seek": "播放位置"
+  },
+  "home": {
+    "greeting": {
+      "morning": "早安",
+      "afternoon": "午安",
+      "evening": "晚安"
+    },
+    "subtitle": "說話即可輸入，並為會議做筆記。",
+    "today": "今天",
+    "yesterday": "昨天",
+    "showAll": "顯示全部",
+    "recentMeetings": "最近的會議",
+    "recentDictations": "最近的聽寫",
+    "noMeetings": "還沒有會議。在上方開始一個，或匯入錄音。",
+    "noDictations": "還沒有聽寫。在任何 App 中按住快捷鍵並說話。",
+    "dictation": {
+      "title": "聽寫",
+      "description": "在任何 App 中按住快捷鍵，說話後放開。文字會輸入到游標所在位置。",
+      "shortcut": "聽寫快捷鍵",
+      "change": "變更快捷鍵"
+    },
+    "meeting": {
+      "title": "會議",
+      "description": "錄製你的麥克風和通話音訊，並把你的筆記放在逐字稿旁邊。",
+      "start": "開始會議",
+      "import": "匯入錄音",
+      "recording": "錄製中",
+      "finalizing": "正在儲存會議…",
+      "open": "開啟會議",
+      "untitled": "未命名會議",
+      "live": "直播"
+    }
   }
 }

@@ -30,7 +30,8 @@
       "features": "Funktioner",
       "system": "System"
     },
-    "navigation": "Inställningsavsnitt"
+    "navigation": "Inställningsavsnitt",
+    "home": "Hem"
   },
   "onboarding": {
     "subtitle": "För att komma igång, välj en transkriptionsmodell",
@@ -933,5 +934,37 @@
     "play": "Spela upp",
     "pause": "Pausa",
     "seek": "Uppspelningsposition"
+  },
+  "home": {
+    "greeting": {
+      "morning": "God morgon",
+      "afternoon": "God eftermiddag",
+      "evening": "God kväll"
+    },
+    "subtitle": "Tala för att skriva och anteckna under dina möten.",
+    "today": "Idag",
+    "yesterday": "Igår",
+    "showAll": "Visa alla",
+    "recentMeetings": "Senaste möten",
+    "recentDictations": "Senaste dikteringar",
+    "noMeetings": "Inga möten än. Starta ett ovan eller importera en inspelning.",
+    "noDictations": "Inga dikteringar än. Håll ned kortkommandot i valfri app och tala.",
+    "dictation": {
+      "title": "Diktering",
+      "description": "Håll ned kortkommandot i valfri app, tala och släpp. Texten skrivs där markören är.",
+      "shortcut": "Kortkommando för diktering",
+      "change": "Ändra kortkommando"
+    },
+    "meeting": {
+      "title": "Möte",
+      "description": "Spelar in din mikrofon och samtalsljudet och håller dina anteckningar bredvid transkriptionen.",
+      "start": "Starta möte",
+      "import": "Importera en inspelning",
+      "recording": "Spelar in",
+      "finalizing": "Sparar mötet…",
+      "open": "Öppna möte",
+      "untitled": "Namnlöst möte",
+      "live": "Live"
+    }
   }
 }

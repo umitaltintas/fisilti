@@ -60,10 +60,10 @@ const InfoTooltip: React.FC<{
         onKeyDown={(event) => {
           if (event.key === "Escape") setShowTooltip(false);
         }}
-        className="rounded-full text-mid-gray cursor-help hover:text-logo-primary focus:outline-none focus-visible:ring-1 focus-visible:ring-logo-primary transition-colors duration-200"
+        className="rounded-full text-faint cursor-help hover:text-logo-primary focus:outline-none focus-visible:ring-1 focus-visible:ring-logo-primary transition-colors duration-200"
       >
         <svg
-          className="w-4 h-4 select-none"
+          className="w-3.5 h-3.5 select-none"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
@@ -97,7 +97,7 @@ export const SettingContainer: React.FC<SettingContainerProps> = ({
   title,
   description,
   children,
-  descriptionMode = "tooltip",
+  descriptionMode = "inline",
   grouped = false,
   layout = "horizontal",
   disabled = false,
@@ -110,7 +110,7 @@ export const SettingContainer: React.FC<SettingContainerProps> = ({
   const dimmed = disabled ? "opacity-50" : "";
 
   const titleElement = (
-    <h3 id={titleId} className={`text-sm font-medium ${dimmed}`}>
+    <h3 id={titleId} className={`text-[13px] font-medium ${dimmed}`}>
       {title}
     </h3>
   );
@@ -128,16 +128,17 @@ export const SettingContainer: React.FC<SettingContainerProps> = ({
     ) : (
       <>
         {titleElement}
-        <p id={descriptionId} className={`text-sm text-text/60 ${dimmed}`}>
+        <p
+          id={descriptionId}
+          className={`mt-0.5 text-xs leading-snug text-sub ${dimmed}`}
+        >
           {description}
         </p>
       </>
     );
 
   if (layout === "stacked") {
-    const containerClasses = grouped
-      ? "px-4 p-2"
-      : "px-4 p-2 rounded-lg border border-mid-gray/20";
+    const containerClasses = grouped ? "px-3.5 py-2.5" : "card px-3.5 py-2.5";
     return (
       <div className={containerClasses}>
         <div className="mb-2">{header}</div>
@@ -147,8 +148,8 @@ export const SettingContainer: React.FC<SettingContainerProps> = ({
   }
 
   const horizontalContainerClasses = grouped
-    ? "flex items-center justify-between gap-4 px-4 p-2"
-    : "flex items-center justify-between gap-4 px-4 p-2 rounded-lg border border-mid-gray/20";
+    ? "flex min-h-[46px] items-center justify-between gap-4 px-3.5 py-2.5"
+    : "card flex min-h-[46px] items-center justify-between gap-4 px-3.5 py-2.5";
 
   return (
     <div className={horizontalContainerClasses}>

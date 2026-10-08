@@ -98,6 +98,12 @@ interface MeetingStore {
   discard: (id: number) => Promise<void>;
   /** Merge a renamed / re-summarized meeting into the list. */
   patchMeeting: (id: number, patch: Partial<MeetingListItem>) => void;
+
+  /** A meeting another page asked the Meetings page to open (Home's recent
+   * list); the Meetings page consumes and clears it on mount. */
+  openRequest: number | null;
+  requestOpen: (id: number) => void;
+  clearOpenRequest: () => void;
 }
 
 const t = (key: string, options?: Record<string, unknown>) =>
@@ -532,6 +538,10 @@ export const useMeetingStore = create<MeetingStore>()(
             m.id === id ? { ...m, ...patch } : m,
           ),
         })),
+
+      openRequest: null,
+      requestOpen: (id) => set({ openRequest: id }),
+      clearOpenRequest: () => set({ openRequest: null }),
     };
   }),
 );

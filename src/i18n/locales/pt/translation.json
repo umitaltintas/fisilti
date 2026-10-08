@@ -30,7 +30,8 @@
       "features": "Funcionalidades",
       "system": "Sistema"
     },
-    "navigation": "Seções de configurações"
+    "navigation": "Seções de configurações",
+    "home": "Início"
   },
   "onboarding": {
     "subtitle": "Para começar, escolha um modelo de transcrição",
@@ -933,5 +934,37 @@
     "play": "Reproduzir",
     "pause": "Pausar",
     "seek": "Posição da reprodução"
+  },
+  "home": {
+    "greeting": {
+      "morning": "Bom dia",
+      "afternoon": "Boa tarde",
+      "evening": "Boa noite"
+    },
+    "subtitle": "Fale para escrever e faça anotações das suas reuniões.",
+    "today": "Hoje",
+    "yesterday": "Ontem",
+    "showAll": "Ver tudo",
+    "recentMeetings": "Reuniões recentes",
+    "recentDictations": "Ditados recentes",
+    "noMeetings": "Ainda não há reuniões. Comece uma acima ou importe uma gravação.",
+    "noDictations": "Ainda não há ditados. Segure o atalho em qualquer app e fale.",
+    "dictation": {
+      "title": "Ditado",
+      "description": "Segure o atalho em qualquer app, fale e solte. O texto aparece onde está o cursor.",
+      "shortcut": "Atalho de ditado",
+      "change": "Alterar atalho"
+    },
+    "meeting": {
+      "title": "Reunião",
+      "description": "Grava seu microfone e o áudio da chamada e mantém suas anotações ao lado da transcrição.",
+      "start": "Iniciar reunião",
+      "import": "Importar uma gravação",
+      "recording": "Gravando",
+      "finalizing": "Salvando a reunião…",
+      "open": "Abrir reunião",
+      "untitled": "Reunião sem título",
+      "live": "Ao vivo"
+    }
   }
 }

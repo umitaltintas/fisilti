@@ -30,7 +30,8 @@
       "features": "Tính năng",
       "system": "Hệ thống"
     },
-    "navigation": "Các mục cài đặt"
+    "navigation": "Các mục cài đặt",
+    "home": "Trang chủ"
   },
   "onboarding": {
     "subtitle": "Để bắt đầu, hãy chọn một mô hình chuyển đổi giọng nói",
@@ -933,5 +934,37 @@
     "play": "Phát",
     "pause": "Tạm dừng",
     "seek": "Vị trí phát"
+  },
+  "home": {
+    "greeting": {
+      "morning": "Chào buổi sáng",
+      "afternoon": "Chào buổi chiều",
+      "evening": "Chào buổi tối"
+    },
+    "subtitle": "Nói để gõ chữ và ghi chú cho các cuộc họp.",
+    "today": "Hôm nay",
+    "yesterday": "Hôm qua",
+    "showAll": "Xem tất cả",
+    "recentMeetings": "Cuộc họp gần đây",
+    "recentDictations": "Đọc chính tả gần đây",
+    "noMeetings": "Chưa có cuộc họp nào. Bắt đầu ở trên hoặc nhập một bản ghi âm.",
+    "noDictations": "Chưa có lần đọc chính tả nào. Giữ phím tắt trong bất kỳ ứng dụng nào và nói.",
+    "dictation": {
+      "title": "Đọc chính tả",
+      "description": "Giữ phím tắt trong bất kỳ ứng dụng nào, nói rồi thả ra. Văn bản xuất hiện tại vị trí con trỏ.",
+      "shortcut": "Phím tắt đọc chính tả",
+      "change": "Đổi phím tắt"
+    },
+    "meeting": {
+      "title": "Cuộc họp",
+      "description": "Ghi âm micrô và âm thanh cuộc gọi, giữ ghi chú của bạn bên cạnh bản chép lời.",
+      "start": "Bắt đầu cuộc họp",
+      "import": "Nhập bản ghi âm",
+      "recording": "Đang ghi",
+      "finalizing": "Đang lưu cuộc họp…",
+      "open": "Mở cuộc họp",
+      "untitled": "Cuộc họp chưa đặt tên",
+      "live": "Trực tiếp"
+    }
   }
 }

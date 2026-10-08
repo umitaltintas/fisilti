@@ -30,7 +30,8 @@
       "features": "Funkce",
       "system": "Systém"
     },
-    "navigation": "Sekce nastavení"
+    "navigation": "Sekce nastavení",
+    "home": "Domů"
   },
   "onboarding": {
     "subtitle": "Pro začátek vyberte model pro přepis",
@@ -933,5 +934,37 @@
     "play": "Přehrát",
     "pause": "Pozastavit",
     "seek": "Pozice přehrávání"
+  },
+  "home": {
+    "greeting": {
+      "morning": "Dobré ráno",
+      "afternoon": "Dobré odpoledne",
+      "evening": "Dobrý večer"
+    },
+    "subtitle": "Mluvte místo psaní a dělejte si poznámky ze schůzek.",
+    "today": "Dnes",
+    "yesterday": "Včera",
+    "showAll": "Zobrazit vše",
+    "recentMeetings": "Nedávné schůzky",
+    "recentDictations": "Nedávné diktáty",
+    "noMeetings": "Zatím žádné schůzky. Začněte jednu výše nebo importujte nahrávku.",
+    "noDictations": "Zatím žádné diktáty. Podržte zkratku v libovolné aplikaci a mluvte.",
+    "dictation": {
+      "title": "Diktování",
+      "description": "Podržte zkratku v libovolné aplikaci, mluvte a pusťte. Text se objeví na místě kurzoru.",
+      "shortcut": "Zkratka diktování",
+      "change": "Změnit zkratku"
+    },
+    "meeting": {
+      "title": "Schůzka",
+      "description": "Nahrává váš mikrofon a zvuk hovoru a drží vaše poznámky vedle přepisu.",
+      "start": "Zahájit schůzku",
+      "import": "Importovat nahrávku",
+      "recording": "Nahrávání",
+      "finalizing": "Ukládání schůzky…",
+      "open": "Otevřít schůzku",
+      "untitled": "Schůzka bez názvu",
+      "live": "Živě"
+    }
   }
 }

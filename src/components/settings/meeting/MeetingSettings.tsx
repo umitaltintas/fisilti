@@ -1,4 +1,4 @@
-import React, { useId, useMemo, useRef, useState } from "react";
+import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { History, Mic, Settings2 } from "lucide-react";
 
@@ -64,6 +64,17 @@ export const MeetingSettings: React.FC = () => {
     setDetailId(id);
     setTab("history");
   };
+
+  // Home's "recent meetings" asks for one to be opened.
+  const openRequest = useMeetingStore((s) => s.openRequest);
+  const clearOpenRequest = useMeetingStore((s) => s.clearOpenRequest);
+  useEffect(() => {
+    if (openRequest === null) return;
+    clearOpenRequest();
+    openDetail(openRequest);
+    // openDetail only reads the current status; the request is the trigger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openRequest, clearOpenRequest]);
 
   const goToHistoryList = () => {
     setDetailId(null);

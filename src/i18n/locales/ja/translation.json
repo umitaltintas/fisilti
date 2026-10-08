@@ -30,7 +30,8 @@
       "features": "機能",
       "system": "システム"
     },
-    "navigation": "設定セクション"
+    "navigation": "設定セクション",
+    "home": "ホーム"
   },
   "onboarding": {
     "subtitle": "開始するには、文字起こしモデルを選択してください",
@@ -933,5 +934,37 @@
     "play": "再生",
     "pause": "一時停止",
     "seek": "再生位置"
+  },
+  "home": {
+    "greeting": {
+      "morning": "おはようございます",
+      "afternoon": "こんにちは",
+      "evening": "こんばんは"
+    },
+    "subtitle": "話して入力し、会議のメモを残しましょう。",
+    "today": "今日",
+    "yesterday": "昨日",
+    "showAll": "すべて表示",
+    "recentMeetings": "最近の会議",
+    "recentDictations": "最近の音声入力",
+    "noMeetings": "まだ会議はありません。上から開始するか、録音を読み込んでください。",
+    "noDictations": "まだ音声入力はありません。任意のアプリでショートカットを押したまま話してください。",
+    "dictation": {
+      "title": "音声入力",
+      "description": "任意のアプリでショートカットを押したまま話し、離します。カーソルの位置に入力されます。",
+      "shortcut": "音声入力のショートカット",
+      "change": "ショートカットを変更"
+    },
+    "meeting": {
+      "title": "会議",
+      "description": "マイクと通話音声を録音し、メモを文字起こしの隣に残します。",
+      "start": "会議を開始",
+      "import": "録音を読み込む",
+      "recording": "録音中",
+      "finalizing": "会議を保存しています…",
+      "open": "会議を開く",
+      "untitled": "無題の会議",
+      "live": "ライブ"
+    }
   }
 }

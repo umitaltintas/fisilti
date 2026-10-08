@@ -1,4 +1,5 @@
 // Settings section components
+export { HomePage } from "./home/HomePage";
 export { GeneralSettings } from "./general/GeneralSettings";
 export { AdvancedSettings } from "./advanced/AdvancedSettings";
 export { HistorySettings } from "./history/HistorySettings";

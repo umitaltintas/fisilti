@@ -72,7 +72,7 @@ impl DictationLive {
             },
             "dictation",
             move |transcript: LiveTranscript| {
-                let mut guard = cb_state.lock().unwrap();
+                let mut guard = cb_state.lock().unwrap_or_else(|e| e.into_inner());
                 // `interim` is a rolling guess at the current utterance and is
                 // deliberately ignored: pasting it would type text that the
                 // next message revises.
@@ -94,7 +94,10 @@ impl DictationLive {
     /// capture thread.
     pub fn push_audio(&self, frames: &[f32]) {
         if !frames.is_empty() {
-            self.state.lock().unwrap().turn_complete = false;
+            self.state
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .turn_complete = false;
         }
         self.session.push_audio(frames);
     }
@@ -109,7 +112,12 @@ impl DictationLive {
     pub fn finish(&self) -> String {
         let deadline = Instant::now() + TAIL_TIMEOUT;
         loop {
-            if self.state.lock().unwrap().turn_complete {
+            if self
+                .state
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .turn_complete
+            {
                 break;
             }
             if Instant::now() >= deadline {
@@ -124,7 +132,7 @@ impl DictationLive {
 
         self.session.stop();
 
-        let guard = self.state.lock().unwrap();
+        let guard = self.state.lock().unwrap_or_else(|e| e.into_inner());
         let text = guard
             .committed
             .iter()
@@ -149,13 +157,24 @@ impl DictationLive {
 
 static ACTIVE: Mutex<Option<Arc<DictationLive>>> = Mutex::new(None);
 
+fn active_slot() -> std::sync::MutexGuard<'static, Option<Arc<DictationLive>>> {
+    ACTIVE.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 /// Start streaming if the selected dictation model is the Live one.
 ///
 /// Returns whether a session was started. A missing API key is not an error
 /// here: it returns `false` and the recording proceeds down the normal buffered
-/// path, which surfaces the missing key with a real message.
+/// path, whose Gemini client fails with "No Gemini API key set", which the
+/// dictation pipeline reports to the user as a `dictation-error`.
+///
+/// Any session or frame sink left over from an earlier dictation is torn down
+/// first. Without that, a stale sink kept streaming a later *local* dictation
+/// to Google, and the stale session's text replaced the local transcript.
 pub fn begin_if_selected(app: &tauri::AppHandle) -> bool {
     use tauri::Manager;
+
+    abort_active(app);
 
     let settings = crate::settings::get_settings(app);
     let Some(model) = app
@@ -199,7 +218,7 @@ pub fn begin_if_selected(app: &tauri::AppHandle) -> bool {
         return false;
     }
 
-    *ACTIVE.lock().unwrap() = Some(session);
+    *active_slot() = Some(session);
     log::info!("dictation-live: streaming session started");
     true
 }
@@ -213,7 +232,7 @@ pub fn finish_active(app: &tauri::AppHandle) -> Option<String> {
     if let Some(rm) = app.try_state::<Arc<crate::managers::audio::AudioRecordingManager>>() {
         rm.clear_frame_sink();
     }
-    let session = ACTIVE.lock().unwrap().take()?;
+    let session = active_slot().take()?;
     let seconds = session.audio_seconds();
     let text = session.finish();
     log::info!(
@@ -232,7 +251,7 @@ pub fn abort_active(app: &tauri::AppHandle) {
     if let Some(rm) = app.try_state::<Arc<crate::managers::audio::AudioRecordingManager>>() {
         rm.clear_frame_sink();
     }
-    if let Some(session) = ACTIVE.lock().unwrap().take() {
+    if let Some(session) = active_slot().take() {
         session.session.stop();
         log::info!("dictation-live: session aborted");
     }

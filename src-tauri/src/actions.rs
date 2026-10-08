@@ -9,7 +9,8 @@ use crate::settings::{get_settings, AppSettings, APPLE_INTELLIGENCE_PROVIDER_ID}
 use crate::shortcut;
 use crate::tray::{change_tray_icon, TrayIconState};
 use crate::utils::{
-    self, show_processing_overlay, show_recording_overlay, show_transcribing_overlay,
+    self, emit_dictation_error, show_processing_overlay, show_recording_overlay,
+    show_transcribing_overlay, DictationStage,
 };
 use crate::TranscriptionCoordinator;
 use ferrous_opencc::{config::BuiltinConfig, OpenCC};
@@ -357,6 +358,45 @@ pub(crate) async fn process_transcription_output(
     }
 }
 
+/// File name for a dictation's saved audio. Millisecond time plus a random
+/// suffix: the old whole-second name let two dictations in the same second
+/// overwrite each other's audio (and history rows point at the wrong file).
+fn recording_file_name(unix_millis: i64, salt: u16) -> String {
+    format!("fisilti-{unix_millis}-{salt:04x}.wav")
+}
+
+/// A few random bits without a dependency: std's per-process random hasher
+/// keys, mixed with the time.
+fn random_salt() -> u16 {
+    use std::hash::{BuildHasher, Hasher};
+    let mut hasher = std::collections::hash_map::RandomState::new().build_hasher();
+    hasher.write_u128(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or_default(),
+    );
+    hasher.finish() as u16
+}
+
+/// Classify a transcription failure for the `dictation-error` event.
+fn transcription_error_stage(err: &anyhow::Error) -> DictationStage {
+    if err
+        .downcast_ref::<crate::managers::transcription::ModelNotLoadedError>()
+        .is_some()
+    {
+        DictationStage::ModelLoad
+    } else {
+        DictationStage::Transcription
+    }
+}
+
+/// Return the UI to idle after a dictation ends, however it ended.
+fn reset_dictation_ui(app: &AppHandle) {
+    utils::hide_recording_overlay(app);
+    change_tray_icon(app, TrayIconState::Idle);
+}
+
 impl ShortcutAction for TranscribeAction {
     fn start(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
         let start_time = Instant::now();
@@ -369,7 +409,7 @@ impl ShortcutAction for TranscribeAction {
         // Streaming models transcribe while the user speaks, so the session has
         // to exist before the first frame is captured. Returns false for every
         // other model, leaving the buffered path untouched.
-        crate::dictation_live::begin_if_selected(app);
+        let streaming = crate::dictation_live::begin_if_selected(app);
 
         let binding_id = binding_id.to_string();
         change_tray_icon(app, TrayIconState::Recording);
@@ -382,59 +422,43 @@ impl ShortcutAction for TranscribeAction {
         let is_always_on = settings.always_on_microphone;
         debug!("Microphone mode - always_on: {}", is_always_on);
 
-        let mut recording_error: Option<String> = None;
-        if is_always_on {
-            // Always-on mode: Play audio feedback immediately, then apply mute after sound finishes
-            debug!("Always-on mode: Playing audio feedback immediately");
-            let rm_clone = Arc::clone(&rm);
-            let app_clone = app.clone();
-            // The blocking helper exits immediately if audio feedback is disabled,
-            // so we can always reuse this thread to ensure mute happens right after playback.
-            std::thread::spawn(move || {
-                play_feedback_sound_blocking(&app_clone, SoundType::Start);
-                rm_clone.apply_mute();
-            });
+        let recording_start_time = Instant::now();
+        let recording_result = rm.try_start_recording(&binding_id);
 
-            if let Err(e) = rm.try_start_recording(&binding_id) {
-                debug!("Recording failed: {}", e);
-                recording_error = Some(e);
-            }
-        } else {
-            // On-demand mode: Start recording first, then play audio feedback, then apply mute
-            // This allows the microphone to be activated before playing the sound
-            debug!("On-demand mode: Starting recording first, then audio feedback");
-            let recording_start_time = Instant::now();
-            match rm.try_start_recording(&binding_id) {
-                Ok(()) => {
-                    debug!("Recording started in {:?}", recording_start_time.elapsed());
-                    // Small delay to ensure microphone stream is active
-                    let app_clone = app.clone();
-                    let rm_clone = Arc::clone(&rm);
-                    std::thread::spawn(move || {
+        match recording_result {
+            Ok(()) => {
+                debug!("Recording started in {:?}", recording_start_time.elapsed());
+                // Play the start sound, then mute. The mute is tied to this
+                // recording's session so a late one (the sound can take a
+                // while) is dropped if the recording already ended.
+                let session = rm.current_session();
+                let app_clone = app.clone();
+                let rm_clone = Arc::clone(&rm);
+                std::thread::spawn(move || {
+                    if !is_always_on {
+                        // Small delay to ensure the on-demand microphone stream is active
                         std::thread::sleep(std::time::Duration::from_millis(100));
-                        debug!("Handling delayed audio feedback/mute sequence");
-                        // Helper handles disabled audio feedback by returning early, so we reuse it
-                        // to keep mute sequencing consistent in every mode.
-                        play_feedback_sound_blocking(&app_clone, SoundType::Start);
-                        rm_clone.apply_mute();
-                    });
-                }
-                Err(e) => {
-                    debug!("Failed to start recording: {}", e);
-                    recording_error = Some(e);
-                }
-            }
-        }
+                    }
+                    debug!("Handling delayed audio feedback/mute sequence");
+                    // Helper handles disabled audio feedback by returning early, so we reuse it
+                    // to keep mute sequencing consistent in every mode.
+                    play_feedback_sound_blocking(&app_clone, SoundType::Start);
+                    rm_clone.apply_mute(session);
+                });
 
-        if recording_error.is_none() {
-            // Dynamically register the cancel shortcut in a separate task to avoid deadlock
-            shortcut::register_cancel_shortcut(app);
-        } else {
-            // Starting failed (for example due to blocked microphone permissions).
-            // Revert UI state so we don't stay stuck in the recording overlay.
-            utils::hide_recording_overlay(app);
-            change_tray_icon(app, TrayIconState::Idle);
-            if let Some(err) = recording_error {
+                // Dynamically register the cancel shortcut in a separate task to avoid deadlock
+                shortcut::register_cancel_shortcut(app);
+            }
+            Err(err) => {
+                debug!("Failed to start recording: {}", err);
+                // The streaming session would otherwise stay attached and
+                // pick up the NEXT dictation's audio.
+                if streaming {
+                    crate::dictation_live::abort_active(app);
+                }
+                // Starting failed (for example due to blocked microphone permissions).
+                // Revert UI state so we don't stay stuck in the recording overlay.
+                reset_dictation_ui(app);
                 let error_type = if is_microphone_access_denied(&err) {
                     "microphone_permission_denied"
                 } else {
@@ -487,142 +511,184 @@ impl ShortcutAction for TranscribeAction {
                 binding_id
             );
 
+            // Everything below that blocks (stopping the recorder, draining
+            // the streaming tail, running the model, pasting) runs on the
+            // blocking pool, not on an async worker thread.
             let stop_recording_time = Instant::now();
-            if let Some(samples) = rm.stop_recording(&binding_id) {
-                debug!(
-                    "Recording stopped and samples retrieved in {:?}, sample count: {}",
-                    stop_recording_time.elapsed(),
-                    samples.len()
+            let stopped = {
+                let rm = Arc::clone(&rm);
+                let binding_id = binding_id.clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    rm.stop_recording_with_diagnostics(&binding_id)
+                })
+                .await
+                .unwrap_or_else(|e| {
+                    error!("Stopping the recording panicked: {}", e);
+                    None
+                })
+            };
+
+            let Some((samples, diagnostics)) = stopped else {
+                debug!("No samples retrieved from recording stop");
+                crate::dictation_live::abort_active(&ah);
+                reset_dictation_ui(&ah);
+                return;
+            };
+            debug!(
+                "Recording stopped and samples retrieved in {:?}, sample count: {}",
+                stop_recording_time.elapsed(),
+                samples.len()
+            );
+
+            if diagnostics.device_failed {
+                emit_dictation_error(
+                    &ah,
+                    DictationStage::Recording,
+                    "The microphone stopped delivering audio (was it disconnected or switched?). The recording may be incomplete.",
                 );
+            }
 
-                if samples.is_empty() {
-                    debug!("Recording produced no audio samples; skipping persistence");
-                    utils::hide_recording_overlay(&ah);
-                    change_tray_icon(&ah, TrayIconState::Idle);
-                } else {
-                    // Save WAV concurrently with transcription
-                    let sample_count = samples.len();
-                    let file_name = format!("fisilti-{}.wav", chrono::Utc::now().timestamp());
-                    let wav_path = hm.recordings_dir().join(&file_name);
-                    let wav_path_for_verify = wav_path.clone();
-                    let samples_for_wav = samples.clone();
-                    let wav_handle = tauri::async_runtime::spawn_blocking(move || {
-                        crate::audio_toolkit::save_wav_file(&wav_path, &samples_for_wav)
-                    });
+            if samples.is_empty() {
+                debug!("Recording produced no audio samples; skipping persistence");
+                // The streaming session has nothing to wait for either.
+                crate::dictation_live::abort_active(&ah);
+                if !diagnostics.device_failed {
+                    emit_dictation_error(
+                        &ah,
+                        DictationStage::NoSpeech,
+                        "No speech was detected in the recording.",
+                    );
+                }
+                reset_dictation_ui(&ah);
+                return;
+            }
 
-                    // Transcribe concurrently with WAV save. A streaming
-                    // session has already done the work while the user spoke,
-                    // so prefer its text; an empty result means the socket
-                    // never delivered anything, and the buffered path still has
-                    // the audio to fall back on.
-                    let transcription_time = Instant::now();
+            // Save WAV concurrently with transcription
+            let sample_count = samples.len();
+            let file_name =
+                recording_file_name(chrono::Utc::now().timestamp_millis(), random_salt());
+            let wav_path = hm.recordings_dir().join(&file_name);
+            let wav_path_for_verify = wav_path.clone();
+            let samples_for_wav = samples.clone();
+            let wav_handle = tauri::async_runtime::spawn_blocking(move || {
+                crate::audio_toolkit::save_wav_file(&wav_path, &samples_for_wav)
+            });
+
+            // Transcribe concurrently with WAV save. A streaming
+            // session has already done the work while the user spoke,
+            // so prefer its text; an empty result means the socket
+            // never delivered anything, and the buffered path still has
+            // the audio to fall back on.
+            let transcription_time = Instant::now();
+            let transcription_result = {
+                let ah = ah.clone();
+                let tm = Arc::clone(&tm);
+                tauri::async_runtime::spawn_blocking(move || {
                     let streamed = crate::dictation_live::finish_active(&ah)
                         .filter(|text| !text.trim().is_empty());
-                    let transcription_result = match streamed {
+                    match streamed {
                         Some(text) => Ok(text),
                         None => tm.transcribe(samples),
-                    };
+                    }
+                })
+                .await
+                .unwrap_or_else(|e| Err(anyhow::anyhow!("Transcription task panicked: {}", e)))
+            };
 
-                    // Await WAV save and verify
-                    let wav_saved = match wav_handle.await {
-                        Ok(Ok(())) => {
-                            match crate::audio_toolkit::verify_wav_file(
-                                &wav_path_for_verify,
-                                sample_count,
-                            ) {
-                                Ok(()) => true,
-                                Err(e) => {
-                                    error!("WAV verification failed: {}", e);
-                                    false
-                                }
-                            }
-                        }
-                        Ok(Err(e)) => {
-                            error!("Failed to save WAV file: {}", e);
-                            false
-                        }
+            // Await WAV save and verify
+            let wav_saved = match wav_handle.await {
+                Ok(Ok(())) => {
+                    match crate::audio_toolkit::verify_wav_file(&wav_path_for_verify, sample_count)
+                    {
+                        Ok(()) => true,
                         Err(e) => {
-                            error!("WAV save task panicked: {}", e);
+                            error!("WAV verification failed: {}", e);
                             false
-                        }
-                    };
-
-                    match transcription_result {
-                        Ok(transcription) => {
-                            debug!(
-                                "Transcription completed in {:?}: '{}'",
-                                transcription_time.elapsed(),
-                                transcription
-                            );
-
-                            if post_process {
-                                show_processing_overlay(&ah);
-                            }
-                            let processed =
-                                process_transcription_output(&ah, &transcription, post_process)
-                                    .await;
-
-                            // Save to history if WAV was saved
-                            if wav_saved {
-                                if let Err(err) = hm.save_entry(
-                                    file_name,
-                                    transcription,
-                                    post_process,
-                                    processed.post_processed_text.clone(),
-                                    processed.post_process_prompt.clone(),
-                                ) {
-                                    error!("Failed to save history entry: {}", err);
-                                }
-                            }
-
-                            if processed.final_text.is_empty() {
-                                utils::hide_recording_overlay(&ah);
-                                change_tray_icon(&ah, TrayIconState::Idle);
-                            } else {
-                                let ah_clone = ah.clone();
-                                let paste_time = Instant::now();
-                                let final_text = processed.final_text;
-                                ah.run_on_main_thread(move || {
-                                    match utils::paste(final_text, ah_clone.clone()) {
-                                        Ok(()) => debug!(
-                                            "Text pasted successfully in {:?}",
-                                            paste_time.elapsed()
-                                        ),
-                                        Err(e) => error!("Failed to paste transcription: {}", e),
-                                    }
-                                    utils::hide_recording_overlay(&ah_clone);
-                                    change_tray_icon(&ah_clone, TrayIconState::Idle);
-                                })
-                                .unwrap_or_else(|e| {
-                                    error!("Failed to run paste on main thread: {:?}", e);
-                                    utils::hide_recording_overlay(&ah);
-                                    change_tray_icon(&ah, TrayIconState::Idle);
-                                });
-                            }
-                        }
-                        Err(err) => {
-                            debug!("Global Shortcut Transcription error: {}", err);
-                            // Save entry with empty text so user can retry
-                            if wav_saved {
-                                if let Err(save_err) = hm.save_entry(
-                                    file_name,
-                                    String::new(),
-                                    post_process,
-                                    None,
-                                    None,
-                                ) {
-                                    error!("Failed to save failed history entry: {}", save_err);
-                                }
-                            }
-                            utils::hide_recording_overlay(&ah);
-                            change_tray_icon(&ah, TrayIconState::Idle);
                         }
                     }
                 }
-            } else {
-                debug!("No samples retrieved from recording stop");
-                utils::hide_recording_overlay(&ah);
-                change_tray_icon(&ah, TrayIconState::Idle);
+                Ok(Err(e)) => {
+                    error!("Failed to save WAV file: {}", e);
+                    false
+                }
+                Err(e) => {
+                    error!("WAV save task panicked: {}", e);
+                    false
+                }
+            };
+
+            match transcription_result {
+                Ok(transcription) => {
+                    debug!(
+                        "Transcription completed in {:?}: '{}'",
+                        transcription_time.elapsed(),
+                        transcription
+                    );
+
+                    if post_process {
+                        show_processing_overlay(&ah);
+                    }
+                    let processed =
+                        process_transcription_output(&ah, &transcription, post_process).await;
+
+                    // Save to history if WAV was saved
+                    if wav_saved {
+                        if let Err(err) = hm.save_entry(
+                            file_name,
+                            transcription,
+                            post_process,
+                            processed.post_processed_text.clone(),
+                            processed.post_process_prompt.clone(),
+                        ) {
+                            error!("Failed to save history entry: {}", err);
+                        }
+                    }
+
+                    if processed.final_text.trim().is_empty() {
+                        emit_dictation_error(
+                            &ah,
+                            DictationStage::NoSpeech,
+                            "No speech was recognized in the recording.",
+                        );
+                        reset_dictation_ui(&ah);
+                    } else {
+                        let paste_time = Instant::now();
+                        let final_text = processed.final_text;
+                        let ah_paste = ah.clone();
+                        let paste_result = tauri::async_runtime::spawn_blocking(move || {
+                            utils::paste(final_text, ah_paste)
+                        })
+                        .await
+                        .unwrap_or_else(|e| Err(format!("Paste task panicked: {}", e)));
+                        match paste_result {
+                            Ok(()) => {
+                                debug!("Text pasted successfully in {:?}", paste_time.elapsed())
+                            }
+                            Err(e) => {
+                                error!("Failed to paste transcription: {}", e);
+                                emit_dictation_error(
+                                    &ah,
+                                    DictationStage::Paste,
+                                    format!("The text could not be inserted: {e}"),
+                                );
+                            }
+                        }
+                        reset_dictation_ui(&ah);
+                    }
+                }
+                Err(err) => {
+                    error!("Dictation transcription failed: {:#}", err);
+                    emit_dictation_error(&ah, transcription_error_stage(&err), err.to_string());
+                    // Save entry with empty text so user can retry
+                    if wav_saved {
+                        if let Err(save_err) =
+                            hm.save_entry(file_name, String::new(), post_process, None, None)
+                        {
+                            error!("Failed to save failed history entry: {}", save_err);
+                        }
+                    }
+                    reset_dictation_ui(&ah);
+                }
             }
         });
 
@@ -632,7 +698,6 @@ impl ShortcutAction for TranscribeAction {
         );
     }
 }
-
 // Cancel Action
 struct CancelAction;
 
@@ -718,3 +783,34 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
     );
     map
 });
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recording_names_are_millisecond_precise_and_salted() {
+        assert_eq!(
+            recording_file_name(1_700_000_000_123, 0x0a1b),
+            "fisilti-1700000000123-0a1b.wav"
+        );
+        // Same millisecond, different salt: distinct files.
+        assert_ne!(
+            recording_file_name(1_700_000_000_123, 1),
+            recording_file_name(1_700_000_000_123, 2)
+        );
+    }
+
+    #[test]
+    fn a_missing_model_is_reported_as_a_load_failure() {
+        let err = anyhow::Error::new(crate::managers::transcription::ModelNotLoadedError(
+            "nope".to_string(),
+        ));
+        assert_eq!(transcription_error_stage(&err), DictationStage::ModelLoad);
+        let err = anyhow::anyhow!("Whisper transcription failed");
+        assert_eq!(
+            transcription_error_stage(&err),
+            DictationStage::Transcription
+        );
+    }
+}

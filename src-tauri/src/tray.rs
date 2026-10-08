@@ -187,8 +187,11 @@ pub fn update_tray_menu(app: &AppHandle, state: &TrayIconState, locale: Option<&
     // item present but disabled so the menu layout stays cross-platform and the
     // user gets a visible hint rather than a silent no-op.
     let meeting_active = meeting_is_active(app);
+    // While the last meeting is being saved there is nothing to start or stop.
     #[cfg(target_os = "macos")]
-    let meeting_enabled = true;
+    let meeting_enabled = app
+        .try_state::<Arc<MeetingManager>>()
+        .is_none_or(|m| m.status() != MeetingState::Finalizing);
     #[cfg(not(target_os = "macos"))]
     let meeting_enabled = false;
     let meeting_label = if meeting_active {

@@ -502,6 +502,7 @@ pub fn run(cli_args: CliArgs) {
             commands::meeting::stop_meeting,
             commands::meeting::get_meeting_transcript,
             commands::meeting::get_meeting_status,
+            commands::meeting::get_meeting_session,
             commands::meeting::get_meeting_started_at,
             commands::meeting::summarize_meeting,
             commands::meeting::summarize_meeting_with,
@@ -711,6 +712,12 @@ pub fn run(cli_args: CliArgs) {
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Reopen { .. } = &event {
                 show_main_window(app);
+            }
+            // Quitting mid-meeting: flush capture and leave it recoverable.
+            if let tauri::RunEvent::Exit = &event {
+                if let Some(meetings) = app.try_state::<Arc<meeting::MeetingManager>>() {
+                    meetings.shutdown();
+                }
             }
             let _ = (app, event); // suppress unused warnings on non-macOS
         });

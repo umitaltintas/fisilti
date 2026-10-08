@@ -155,9 +155,6 @@ async changeMeetingLiveModeSetting(mode: string) : Promise<Result<null, string>>
 }
 },
 /**
- * Meeting mode: store the custom vocabulary Gemini should prefer. Kept as the
- * raw text the user typed so the settings field round-trips exactly; parsing
- * into terms happens where it is used.
  * Meeting mode: set the BCP-47 language live translation translates INTO.
  */
 async changeMeetingLiveTranslateTargetSetting(language: string) : Promise<Result<null, string>> {
@@ -242,6 +239,18 @@ async changeMeetingAutoEndSetting(enabled: boolean) : Promise<Result<null, strin
 async changeMeetingCalendarNamesSetting(enabled: boolean) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_meeting_calendar_names_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Set (or clear, with an empty string) the folder completed meetings are
+ * copied to as Markdown. Existing meetings are not back-filled.
+ */
+async changeMeetingExportDirSetting(dir: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_meeting_export_dir_setting", { dir }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -910,9 +919,12 @@ async startMeeting() : Promise<Result<null, string>> {
 }
 },
 /**
- * Stop the meeting session and return the final accumulated transcript text.
+ * Stop the meeting session. Resolves once the meeting is fully saved, with
+ * the id of the row that was persisted (`None` when the empty session was
+ * discarded) and the final transcript. Errors when a stop is already in
+ * progress.
  */
-async stopMeeting() : Promise<Result<string, string>> {
+async stopMeeting() : Promise<Result<StopMeetingResult, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("stop_meeting") };
 } catch (e) {
@@ -932,7 +944,7 @@ async getMeetingTranscript() : Promise<Result<string, string>> {
 }
 },
 /**
- * Return the meeting session status: "idle" or "running".
+ * Return the meeting slot status: `"idle"`, `"running"` or `"finalizing"`.
  */
 async getMeetingStatus() : Promise<Result<string, string>> {
     try {
@@ -943,7 +955,19 @@ async getMeetingStatus() : Promise<Result<string, string>> {
 }
 },
 /**
- * Return the running session's start time as epoch milliseconds, or `null`
+ * State, live row id and start time of the meeting slot — the same payload
+ * as the `meeting-session-changed` event.
+ */
+async getMeetingSession() : Promise<Result<MeetingSessionInfo, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_meeting_session") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Return the live session's start time as epoch milliseconds, or `null`
  * when no session is running. The UI uses it to render a truthful elapsed
  * timer when it attaches to a session that was started elsewhere (tray, global
  * shortcut, or the meeting auto-detect prompt).
@@ -957,14 +981,10 @@ async getMeetingStartedAt() : Promise<Result<number | null, string>> {
 }
 },
 /**
- * Summarize the accumulated meeting transcript into meeting notes using the
- * SAME LLM provider/model/api-key the user already configured for dictation
- * post-processing (reads `settings::get_settings`). Does NOT modify or depend
- * on dictation's post-processing behavior; it only reuses `llm_client`
- * read-only.
- * 
- * Returns the LLM-generated meeting notes, or a clear, actionable error if
- * there is no transcript or no LLM provider/model configured.
+ * Summarize the most recent meeting's transcript into meeting notes using the
+ * SAME LLM provider/model/api-key the user configured for dictation
+ * post-processing. The summary is saved onto that meeting's row (and
+ * announced on `meeting-summary-update`) when it has been saved.
  */
 async summarizeMeeting() : Promise<Result<string, string>> {
     try {
@@ -976,10 +996,9 @@ async summarizeMeeting() : Promise<Result<string, string>> {
 },
 /**
  * Like `summarize_meeting`, but with an optional template selector + custom
- * prompt override (Phase 2 item 4). `template` is matched first against a
- * configured `meeting_summary_templates` id; if no template matches it is
- * treated as a raw custom prompt. `None`/empty → the default prompt. The
- * resulting summary is persisted onto the last-saved meeting row.
+ * prompt override. `template` is matched first against a configured
+ * `meeting_summary_templates` id; if no template matches it is treated as a
+ * raw custom prompt. `None`/empty → the default prompt.
  */
 async summarizeMeetingWith(template: string | null) : Promise<Result<string, string>> {
     try {
@@ -1042,7 +1061,9 @@ async getMeetingAudioPath(id: number) : Promise<Result<string, string>> {
 }
 },
 /**
- * Delete a persisted meeting by id.
+ * Delete a persisted meeting by id, with everything it owns on disk (capture
+ * buffers, playback audio, exported note). Errors for the meeting that is
+ * in progress (running or still being saved).
  */
 async deleteMeeting(id: number) : Promise<Result<null, string>> {
     try {
@@ -1054,15 +1075,9 @@ async deleteMeeting(id: number) : Promise<Result<null, string>> {
 },
 /**
  * Discard an interrupted meeting: delete the row AND the files only it
- * referenced.
- * 
- * Distinct from [`delete_meeting`] because an interrupted row still owns its
- * raw capture buffers, which exist purely so the row can be re-finalized.
- * Dropping the row without them would strand hundreds of megabytes per
- * meeting with nothing left in the database pointing at the files.
- * 
- * File removal is best-effort: a missing or unreadable file must not stop the
- * user from clearing a card they have decided they do not want.
+ * referenced (its raw capture buffers, which exist purely so the row can be
+ * re-finalized, plus any playback audio). Errors for the meeting that is in
+ * progress — it is in `recording` status too, but it is not interrupted.
  */
 async discardInterruptedMeeting(id: number) : Promise<Result<null, string>> {
     try {
@@ -1092,8 +1107,10 @@ async updateMeetingTitle(id: number, title: string) : Promise<Result<null, strin
 }
 },
 /**
- * Save the user's own editable notes for a meeting (Phase 2 item 3). Distinct
- * from the AI `summary`; stored in the `notes` column.
+ * Save the user's own editable notes for a meeting. Distinct from the AI
+ * `summary`; stored in the `notes` column. Works on the in-progress
+ * (`recording`) row too, so notes can be autosaved live — finalize never
+ * writes the notes column, so nothing typed here is overwritten.
  */
 async updateMeetingNotes(id: number, notes: string) : Promise<Result<null, string>> {
     try {
@@ -1118,8 +1135,9 @@ async exportMeetingMarkdown(id: number) : Promise<Result<string, string>> {
 },
 /**
  * List meetings interrupted by a crash/OS-kill (still in `recording` status),
- * newest-first. Each item reports whether its temp audio buffers still exist so
- * the UI can offer a high-quality re-finalize vs. salvaging the partial text.
+ * newest-first, excluding the meeting that is running or being saved right
+ * now. Each item reports whether its capture buffers still exist so the UI
+ * can offer a high-quality re-finalize vs. salvaging the partial text.
  */
 async listInterruptedMeetings() : Promise<Result<InterruptedMeeting[], string>> {
     try {
@@ -1144,6 +1162,52 @@ async recoverMeeting(id: number) : Promise<Result<string, string>> {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * Import a recording made elsewhere (a phone voice memo, a conference
+ * recording) as a meeting: decode, transcribe with the meeting model, title
+ * and summarize, save to History. Returns the new meeting id. Progress arrives
+ * as `"meeting-import-progress"`, the outcome also as
+ * `"meeting-import-finished"`.
+ */
+async importMeetingRecording(path: string) : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("import_meeting_recording", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Cancel the running import at its next checkpoint.
+ */
+async cancelMeetingImport() : Promise<void> {
+    await TAURI_INVOKE("cancel_meeting_import");
+},
+/**
+ * Transcribe a saved meeting again from its stored audio, replacing its
+ * transcript (and summary, when it had one). For meetings that came back
+ * empty or garbled. Shares the import's progress/finished events and cancel.
+ */
+async retranscribeMeeting(id: number) : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("retranscribe_meeting", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Where the running import is, or `None` when nothing is importing.
+ */
+async getMeetingImportProgress() : Promise<MeetingImportProgress | null> {
+    return await TAURI_INVOKE("get_meeting_import_progress");
+},
+/**
+ * File extensions the import accepts, for the file picker and drag-and-drop.
+ */
+async getSupportedImportExtensions() : Promise<string[]> {
+    return await TAURI_INVOKE("get_supported_import_extensions");
 },
 /**
  * User accepted the auto-detection "start transcription?" prompt: hides the
@@ -1398,6 +1462,12 @@ meeting_silence_timeout_secs?: number;
  */
 meeting_calendar_names?: boolean; 
 /**
+ * Meeting mode: folder every completed meeting is also written to as a
+ * Markdown file (an Obsidian vault, a notes repo). Empty = off. The file is
+ * rewritten when the meeting's title, summary or notes change.
+ */
+meeting_export_dir?: string; 
+/**
  * Seconds the "end meeting?" prompt waits for a response before the
  * session is ended automatically.
  */
@@ -1556,6 +1626,16 @@ detected: boolean;
  */
 app_name: string | null }
 /**
+ * Event payload emitted on `"meeting-import-progress"` while a recording file
+ * is imported. `progress` is 0..1 within the current stage, `None` when the
+ * stage cannot measure itself (a single cloud request).
+ */
+export type MeetingImportProgress = { file_name: string; stage: MeetingImportStage; progress: number | null }
+/**
+ * Which step of an import is running, for `"meeting-import-progress"`.
+ */
+export type MeetingImportStage = "decoding" | "transcribing" | "summarizing"
+/**
  * Lightweight row for the meetings list view (newest-first).
  */
 export type MeetingListItem = { id: number; started_at: number; ended_at: number; duration_ms: number; title: string; has_summary: boolean; 
@@ -1590,6 +1670,26 @@ status: string;
  * the UI must say "no data" rather than "$0.00".
  */
 usage: MeetingUsage | null }
+/**
+ * Snapshot of the meeting slot for the UI (`get_meeting_session` and the
+ * `meeting-session-changed` event).
+ */
+export type MeetingSessionInfo = { 
+/**
+ * `"idle"` | `"running"` | `"finalizing"`.
+ */
+state: string; 
+/**
+ * Row id of the live meeting (status `recording` until it completes).
+ * `None` when idle, and briefly after start until the capture sources are
+ * up and the row is inserted — a second `meeting-session-changed` event
+ * follows the moment it is known.
+ */
+meeting_id: number | null; 
+/**
+ * Absolute epoch-ms start of the live meeting; `None` when idle.
+ */
+started_at_ms: number | null }
 /**
  * A preset summary prompt template for meeting mode. `id` is a stable key the
  * frontend passes to `summarize_meeting_with`; `name` is the display label;
@@ -1644,6 +1744,19 @@ export type PostProcessProvider = { id: string; label: string; base_url: string;
 export type RecordingRetentionPeriod = "never" | "preserve_limit" | "days_3" | "weeks_2" | "months_3"
 export type ShortcutBinding = { id: string; name: string; description: string; default_binding: string; current_binding: string }
 export type SoundTheme = "marimba" | "pop" | "custom"
+/**
+ * What `stop_meeting` returns.
+ */
+export type StopMeetingResult = { 
+/**
+ * Row id of the meeting that was just saved; `None` when the session was
+ * empty and discarded (or kept only for recovery, still `recording`).
+ */
+meeting_id: number | null; 
+/**
+ * Final transcript text.
+ */
+transcript: string }
 /**
  * A single transcribed speech segment with its (relative) start timestamp.
  */

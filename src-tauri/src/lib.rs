@@ -436,16 +436,9 @@ fn show_main_window_command(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run(cli_args: CliArgs) {
-    // Detect portable mode before anything else
-    portable::init();
-
-    // Parse console logging directives from RUST_LOG, falling back to info-level logging
-    // when the variable is unset
-    let console_filter = build_console_filter();
-
-    let specta_builder = Builder::<tauri::Wry>::new()
+/// Every command and event exposed to the frontend.
+fn specta_builder() -> Builder<tauri::Wry> {
+    Builder::<tauri::Wry>::new()
         .commands(collect_commands![
             shortcut::change_binding,
             shortcut::reset_binding,
@@ -595,15 +588,43 @@ pub fn run(cli_args: CliArgs) {
             commands::history::update_recording_retention_period,
             helpers::clamshell::is_laptop,
         ])
-        .events(collect_events![managers::history::HistoryUpdatePayload,]);
+        .events(collect_events![managers::history::HistoryUpdatePayload,])
+}
 
-    #[cfg(debug_assertions)] // <- Only export on non-release builds
-    specta_builder
+/// Write the TypeScript bindings for every command and event to `src/bindings.ts`.
+fn export_bindings(builder: &Builder<tauri::Wry>) {
+    builder
         .export(
             Typescript::default().bigint(BigIntExportBehavior::Number),
-            "../src/bindings.ts",
+            concat!(env!("CARGO_MANIFEST_DIR"), "/../src/bindings.ts"),
         )
         .expect("Failed to export typescript bindings");
+}
+
+#[cfg(test)]
+mod bindings_tests {
+    /// Regenerates `src/bindings.ts` without launching the app:
+    /// `cargo test --lib export_typescript_bindings -- --ignored`.
+    #[test]
+    #[ignore = "writes src/bindings.ts; run explicitly"]
+    fn export_typescript_bindings() {
+        super::export_bindings(&super::specta_builder());
+    }
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run(cli_args: CliArgs) {
+    // Detect portable mode before anything else
+    portable::init();
+
+    // Parse console logging directives from RUST_LOG, falling back to info-level logging
+    // when the variable is unset
+    let console_filter = build_console_filter();
+
+    let specta_builder = specta_builder();
+
+    #[cfg(debug_assertions)] // <- Only export on non-release builds
+    export_bindings(&specta_builder);
 
     let invoke_handler = specta_builder.invoke_handler();
 

@@ -1,7 +1,7 @@
-import React, { useMemo } from "react";
+import React from "react";
 import { useTranslation } from "react-i18next";
-import { useSettings } from "../../hooks/useSettings";
-import { commands, type ModelUnloadTimeout } from "@/bindings";
+import { useSettingsStore } from "@/stores/settingsStore";
+import type { ModelUnloadTimeout } from "@/bindings";
 import { Dropdown } from "../ui/Dropdown";
 import { SettingContainer } from "../ui/SettingContainer";
 
@@ -10,68 +10,40 @@ interface ModelUnloadTimeoutProps {
   grouped?: boolean;
 }
 
+// Values are what serde sends (`rename_all = "snake_case"` turns `Min2` into
+// `min2`); the generated binding type spells them `min_2`, so they are cast.
+const OPTIONS: { value: string; labelKey: string }[] = [
+  { value: "never", labelKey: "never" },
+  { value: "immediately", labelKey: "immediately" },
+  { value: "min2", labelKey: "min2" },
+  { value: "min5", labelKey: "min5" },
+  { value: "min10", labelKey: "min10" },
+  { value: "min15", labelKey: "min15" },
+  { value: "hour1", labelKey: "hour1" },
+];
+const DEBUG_OPTIONS: typeof OPTIONS = [
+  ...OPTIONS,
+  { value: "sec15", labelKey: "sec15" },
+];
+
 export const ModelUnloadTimeoutSetting: React.FC<ModelUnloadTimeoutProps> = ({
   descriptionMode = "inline",
   grouped = false,
 }) => {
   const { t } = useTranslation();
-  const { settings, getSetting, updateSetting } = useSettings();
+  const debugMode = useSettingsStore((s) => s.settings?.debug_mode === true);
+  const currentValue = useSettingsStore(
+    (s) => s.settings?.model_unload_timeout ?? "never",
+  );
+  const updateSetting = useSettingsStore((s) => s.updateSetting);
+  const updating = useSettingsStore(
+    (s) => s.isUpdating["model_unload_timeout"] === true,
+  );
 
-  const timeoutOptions = [
-    {
-      value: "never" as ModelUnloadTimeout,
-      label: t("settings.advanced.modelUnload.options.never"),
-    },
-    {
-      value: "immediately" as ModelUnloadTimeout,
-      label: t("settings.advanced.modelUnload.options.immediately"),
-    },
-    {
-      value: "min2" as ModelUnloadTimeout,
-      label: t("settings.advanced.modelUnload.options.min2"),
-    },
-    {
-      value: "min5" as ModelUnloadTimeout,
-      label: t("settings.advanced.modelUnload.options.min5"),
-    },
-    {
-      value: "min10" as ModelUnloadTimeout,
-      label: t("settings.advanced.modelUnload.options.min10"),
-    },
-    {
-      value: "min15" as ModelUnloadTimeout,
-      label: t("settings.advanced.modelUnload.options.min15"),
-    },
-    {
-      value: "hour1" as ModelUnloadTimeout,
-      label: t("settings.advanced.modelUnload.options.hour1"),
-    },
-  ];
-
-  const debugTimeoutOptions = [
-    ...timeoutOptions,
-    {
-      value: "sec15" as ModelUnloadTimeout,
-      label: t("settings.advanced.modelUnload.options.sec15"),
-    },
-  ];
-
-  const handleChange = async (event: React.ChangeEvent<HTMLSelectElement>) => {
-    const newTimeout = event.target.value as ModelUnloadTimeout;
-
-    try {
-      await commands.setModelUnloadTimeout(newTimeout);
-      updateSetting("model_unload_timeout", newTimeout);
-    } catch (error) {
-      console.error("Failed to update model unload timeout:", error);
-    }
-  };
-
-  const currentValue = getSetting("model_unload_timeout") ?? "never";
-
-  const options = useMemo(() => {
-    return settings?.debug_mode === true ? debugTimeoutOptions : timeoutOptions;
-  }, [settings]);
+  const options = (debugMode ? DEBUG_OPTIONS : OPTIONS).map((option) => ({
+    value: option.value,
+    label: t(`settings.advanced.modelUnload.options.${option.labelKey}`),
+  }));
 
   return (
     <SettingContainer
@@ -84,11 +56,12 @@ export const ModelUnloadTimeoutSetting: React.FC<ModelUnloadTimeoutProps> = ({
         options={options}
         selectedValue={currentValue}
         onSelect={(value) =>
-          handleChange({
-            target: { value },
-          } as React.ChangeEvent<HTMLSelectElement>)
+          void updateSetting(
+            "model_unload_timeout",
+            value as ModelUnloadTimeout,
+          )
         }
-        disabled={false}
+        disabled={updating}
       />
     </SettingContainer>
   );

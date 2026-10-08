@@ -1,18 +1,37 @@
 import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
 import { listen } from "@tauri-apps/api/event";
+import { toast } from "sonner";
 import type {
-  AppSettings as Settings,
+  AppSettings,
   AudioDevice,
+  LogLevel,
+  ModelUnloadTimeout,
   WhisperAcceleratorSetting,
   OrtAcceleratorSetting,
 } from "@/bindings";
 import { commands } from "@/bindings";
+import i18n from "@/i18n";
+import { changeMeetingExportDir } from "@/lib/meeting";
+import { errorMessage } from "@/lib/utils/errors";
+
+/**
+ * App settings as the frontend sees them.
+ *
+ * `meeting_export_dir` exists in the Rust `AppSettings` but is missing from
+ * the generated bindings until they are regenerated; it is declared here so it
+ * can flow through the same store as every other setting.
+ */
+export type Settings = AppSettings & { meeting_export_dir?: string };
+
+type PostProcessSettingType = "base_url" | "api_key" | "model";
 
 interface SettingsStore {
   settings: Settings | null;
   defaultSettings: Settings | null;
   isLoading: boolean;
+  /** Set when the initial settings load failed (the page shows a retry). */
+  loadError: string | null;
   isUpdating: Record<string, boolean>;
   audioDevices: AudioDevice[];
   outputDevices: AudioDevice[];
@@ -22,35 +41,40 @@ interface SettingsStore {
   // Actions
   initialize: () => Promise<void>;
   loadDefaultSettings: () => Promise<void>;
+  /** Persist one setting optimistically. Resolves `false` (after rolling the
+   * value back and showing an error toast) when the backend rejected it. */
   updateSetting: <K extends keyof Settings>(
     key: K,
     value: Settings[K],
-  ) => Promise<void>;
-  resetSetting: (key: keyof Settings) => Promise<void>;
+  ) => Promise<boolean>;
+  resetSetting: (key: keyof Settings) => Promise<boolean>;
   refreshSettings: () => Promise<void>;
   refreshAudioDevices: () => Promise<void>;
   refreshOutputDevices: () => Promise<void>;
   updateBinding: (id: string, binding: string) => Promise<void>;
-  resetBinding: (id: string) => Promise<void>;
+  resetBinding: (id: string) => Promise<boolean>;
   getSetting: <K extends keyof Settings>(key: K) => Settings[K] | undefined;
   isUpdatingKey: (key: string) => boolean;
   playTestSound: (soundType: "start" | "stop") => Promise<void>;
   checkCustomSounds: () => Promise<void>;
-  setPostProcessProvider: (providerId: string) => Promise<void>;
+  setPostProcessProvider: (providerId: string) => Promise<boolean>;
   updatePostProcessSetting: (
-    settingType: "base_url" | "api_key" | "model",
+    settingType: PostProcessSettingType,
     providerId: string,
     value: string,
-  ) => Promise<void>;
+  ) => Promise<boolean>;
   updatePostProcessBaseUrl: (
     providerId: string,
     baseUrl: string,
-  ) => Promise<void>;
+  ) => Promise<boolean>;
   updatePostProcessApiKey: (
     providerId: string,
     apiKey: string,
-  ) => Promise<void>;
-  updatePostProcessModel: (providerId: string, model: string) => Promise<void>;
+  ) => Promise<boolean>;
+  updatePostProcessModel: (
+    providerId: string,
+    model: string,
+  ) => Promise<boolean>;
   fetchPostProcessModels: (providerId: string) => Promise<string[]>;
   setPostProcessModelOptions: (providerId: string, models: string[]) => void;
 
@@ -73,6 +97,23 @@ const DEFAULT_AUDIO_DEVICE: AudioDevice = {
   is_default: true,
 };
 
+/**
+ * specta commands do not throw on a backend error: they resolve
+ * `{ status: "error", error }`. Treating that as success is how a rejected
+ * change used to stay on screen as if it had been saved. This turns it back
+ * into a throw so one catch handles both failure shapes.
+ */
+const assertOk = (result: unknown): void => {
+  if (
+    result !== null &&
+    typeof result === "object" &&
+    "status" in result &&
+    (result as { status: unknown }).status === "error"
+  ) {
+    throw (result as { error?: unknown }).error ?? "error";
+  }
+};
+
 const settingUpdaters: {
   [K in keyof Settings]?: (value: Settings[K]) => Promise<unknown>;
 } = {
@@ -91,19 +132,21 @@ const settingUpdaters: {
   push_to_talk: (value) => commands.changePttSetting(value as boolean),
   selected_microphone: (value) =>
     commands.setSelectedMicrophone(
-      (value as string) === "Default" || value === null
+      value === "Default" || value === null || value === undefined
         ? "default"
-        : (value as string),
+        : value,
     ),
   clamshell_microphone: (value) =>
     commands.setClamshellMicrophone(
-      (value as string) === "Default" ? "default" : (value as string),
+      value === "Default" || value === null || value === undefined
+        ? "default"
+        : value,
     ),
   selected_output_device: (value) =>
     commands.setSelectedOutputDevice(
-      (value as string) === "Default" || value === null
+      value === "Default" || value === null || value === undefined
         ? "default"
-        : (value as string),
+        : value,
     ),
   recording_retention_period: (value) =>
     commands.updateRecordingRetentionPeriod(value as string),
@@ -124,7 +167,7 @@ const settingUpdaters: {
   paste_method: (value) => commands.changePasteMethodSetting(value as string),
   typing_tool: (value) => commands.changeTypingToolSetting(value as string),
   external_script_path: (value) =>
-    commands.changeExternalScriptPathSetting(value as string | null),
+    commands.changeExternalScriptPathSetting(value),
   clipboard_handling: (value) =>
     commands.changeClipboardHandlingSetting(value as string),
   auto_submit: (value) => commands.changeAutoSubmitSetting(value as boolean),
@@ -134,12 +177,12 @@ const settingUpdaters: {
   post_process_enabled: (value) =>
     commands.changePostProcessEnabledSetting(value as boolean),
   post_process_selected_prompt_id: (value) =>
-    commands.setPostProcessSelectedPrompt(value as string),
+    commands.setPostProcessSelectedPrompt(value ?? ""),
   mute_while_recording: (value) =>
     commands.changeMuteWhileRecordingSetting(value as boolean),
   append_trailing_space: (value) =>
     commands.changeAppendTrailingSpaceSetting(value as boolean),
-  log_level: (value) => commands.setLogLevel(value as any),
+  log_level: (value) => commands.setLogLevel(value as LogLevel),
   app_language: (value) => commands.changeAppLanguageSetting(value as string),
   experimental_enabled: (value) =>
     commands.changeExperimentalEnabledSetting(value as boolean),
@@ -155,13 +198,55 @@ const settingUpdaters: {
     commands.changeOrtAcceleratorSetting(value as OrtAcceleratorSetting),
   extra_recording_buffer_ms: (value) =>
     commands.changeExtraRecordingBufferSetting(value as number),
+  model_unload_timeout: (value) =>
+    commands.setModelUnloadTimeout(value as ModelUnloadTimeout),
+
+  // Meeting settings. They used to be read and written by the meeting page on
+  // its own, outside this store, so a failure there had no rollback and the
+  // rest of the app never saw the new value.
+  meeting_selected_model: (value) =>
+    commands.changeMeetingSelectedModelSetting(value ?? ""),
+  meeting_auto_summarize: (value) =>
+    commands.changeMeetingAutoSummarizeSetting(value as boolean),
+  meeting_calendar_names: (value) =>
+    commands.changeMeetingCalendarNamesSetting(value as boolean),
+  meeting_auto_detect: (value) =>
+    commands.changeMeetingAutoDetectSetting(value as boolean),
+  meeting_auto_end: (value) =>
+    commands.changeMeetingAutoEndSetting(value as boolean),
+  meeting_silence_timeout_secs: (value) =>
+    commands.changeMeetingSilenceTimeoutSetting(value as number),
+  meeting_auto_end_grace_secs: (value) =>
+    commands.changeMeetingAutoEndGraceSetting(value as number),
+  meeting_live_mode: (value) =>
+    commands.changeMeetingLiveModeSetting(value as string),
+  meeting_live_translate_target: (value) =>
+    commands.changeMeetingLiveTranslateTargetSetting(value as string),
+  meeting_gemini_diarize: (value) =>
+    commands.changeMeetingGeminiDiarizeSetting(value as boolean),
+  meeting_gemini_smart: (value) =>
+    commands.changeMeetingGeminiSmartSetting(value as boolean),
+  meeting_subtitles: (value) =>
+    commands.changeMeetingSubtitlesSetting(value as boolean),
+  meeting_export_dir: (value) => changeMeetingExportDir(value ?? ""),
 };
+
+const showSaveError = (error: unknown) => {
+  toast.error(i18n.t("errors.settingSaveFailed"), {
+    description: errorMessage(error),
+  });
+};
+
+// Initialization runs once per window, however many components ask for it.
+// The promise is stored before the first await so concurrent callers share it.
+let initPromise: Promise<void> | null = null;
 
 export const useSettingsStore = create<SettingsStore>()(
   subscribeWithSelector((set, get) => ({
     settings: null,
     defaultSettings: null,
     isLoading: true,
+    loadError: null,
     isUpdating: {},
     audioDevices: [],
     outputDevices: [],
@@ -189,7 +274,7 @@ export const useSettingsStore = create<SettingsStore>()(
       try {
         const result = await commands.getAppSettings();
         if (result.status === "ok") {
-          const settings = result.data;
+          const settings: Settings = result.data;
           const normalizedSettings: Settings = {
             ...settings,
             always_on_microphone: settings.always_on_microphone ?? false,
@@ -198,14 +283,18 @@ export const useSettingsStore = create<SettingsStore>()(
             selected_output_device:
               settings.selected_output_device ?? "Default",
           };
-          set({ settings: normalizedSettings, isLoading: false });
+          set({
+            settings: normalizedSettings,
+            isLoading: false,
+            loadError: null,
+          });
         } else {
           console.error("Failed to load settings:", result.error);
-          set({ isLoading: false });
+          set({ isLoading: false, loadError: errorMessage(result.error) });
         }
       } catch (error) {
         console.error("Failed to load settings:", error);
-        set({ isLoading: false });
+        set({ isLoading: false, loadError: errorMessage(error) });
       }
     },
 
@@ -274,28 +363,35 @@ export const useSettingsStore = create<SettingsStore>()(
       key: K,
       value: Settings[K],
     ) => {
-      const { settings, setUpdating } = get();
+      const { setUpdating } = get();
       const updateKey = String(key);
-      const originalValue = settings?.[key];
+      const previousValue = get().settings?.[key];
 
       setUpdating(updateKey, true);
+      set((state) => ({
+        settings: state.settings ? { ...state.settings, [key]: value } : null,
+      }));
 
       try {
-        set((state) => ({
-          settings: state.settings ? { ...state.settings, [key]: value } : null,
-        }));
-
         const updater = settingUpdaters[key];
         if (updater) {
-          await updater(value);
+          assertOk(await updater(value));
         } else if (key !== "bindings" && key !== "selected_model") {
           console.warn(`No handler for setting: ${String(key)}`);
         }
+        return true;
       } catch (error) {
         console.error(`Failed to update setting ${String(key)}:`, error);
-        if (settings) {
-          set({ settings: { ...settings, [key]: originalValue } });
-        }
+        // Undo only this key, and only if it still holds the value we wrote:
+        // restoring a whole earlier snapshot would also revert any other
+        // setting changed while this request was in flight.
+        set((state) =>
+          state.settings && Object.is(state.settings[key], value)
+            ? { settings: { ...state.settings, [key]: previousValue } }
+            : {},
+        );
+        showSaveError(error);
+        return false;
       } finally {
         setUpdating(updateKey, false);
       }
@@ -304,12 +400,9 @@ export const useSettingsStore = create<SettingsStore>()(
     // Reset a setting to its default value
     resetSetting: async (key) => {
       const { defaultSettings } = get();
-      if (defaultSettings) {
-        const defaultValue = defaultSettings[key];
-        if (defaultValue !== undefined) {
-          await get().updateSetting(key, defaultValue as any);
-        }
-      }
+      const defaultValue = defaultSettings?.[key];
+      if (defaultValue === undefined) return false;
+      return get().updateSetting(key, defaultValue);
     },
 
     // Update a specific binding
@@ -322,20 +415,19 @@ export const useSettingsStore = create<SettingsStore>()(
 
       try {
         // Optimistic update
-        set((state) => ({
-          settings: state.settings
-            ? {
-                ...state.settings,
-                bindings: {
-                  ...state.settings.bindings,
-                  [id]: {
-                    ...state.settings.bindings[id]!,
-                    current_binding: binding,
-                  },
-                },
-              }
-            : null,
-        }));
+        set((state) => {
+          const existing = state.settings?.bindings[id];
+          if (!state.settings || !existing) return {};
+          return {
+            settings: {
+              ...state.settings,
+              bindings: {
+                ...state.settings.bindings,
+                [id]: { ...existing, current_binding: binding },
+              },
+            },
+          };
+        });
 
         const result = await commands.changeBinding(id, binding);
 
@@ -346,27 +438,32 @@ export const useSettingsStore = create<SettingsStore>()(
 
         // Check if the binding change was successful
         if (!result.data.success) {
-          throw new Error(result.data.error || "Failed to update binding");
+          throw new Error(result.data.error || "binding rejected");
         }
       } catch (error) {
         console.error(`Failed to update binding ${id}:`, error);
 
-        // Rollback on error
-        if (originalBinding && get().settings) {
-          set((state) => ({
-            settings: state.settings
-              ? {
-                  ...state.settings,
-                  bindings: {
-                    ...state.settings.bindings,
-                    [id]: {
-                      ...state.settings.bindings[id]!,
-                      current_binding: originalBinding,
-                    },
-                  },
-                }
-              : null,
-          }));
+        // Roll back this binding only, and only if it is still ours.
+        if (originalBinding) {
+          set((state) => {
+            const existing = state.settings?.bindings[id];
+            if (
+              !state.settings ||
+              !existing ||
+              existing.current_binding !== binding
+            ) {
+              return {};
+            }
+            return {
+              settings: {
+                ...state.settings,
+                bindings: {
+                  ...state.settings.bindings,
+                  [id]: { ...existing, current_binding: originalBinding },
+                },
+              },
+            };
+          });
         }
 
         // Re-throw to let the caller know it failed
@@ -384,62 +481,62 @@ export const useSettingsStore = create<SettingsStore>()(
       setUpdating(updateKey, true);
 
       try {
-        await commands.resetBinding(id);
+        assertOk(await commands.resetBinding(id));
         await refreshSettings();
+        return true;
       } catch (error) {
         console.error(`Failed to reset binding ${id}:`, error);
+        showSaveError(error);
+        return false;
       } finally {
         setUpdating(updateKey, false);
       }
     },
 
     setPostProcessProvider: async (providerId) => {
-      const {
-        settings,
-        setUpdating,
-        refreshSettings,
-        setPostProcessModelOptions,
-      } = get();
+      const { settings, setUpdating, refreshSettings } = get();
       const updateKey = "post_process_provider_id";
       const previousId = settings?.post_process_provider_id ?? null;
 
       setUpdating(updateKey, true);
 
-      if (settings) {
-        set((state) => ({
-          settings: state.settings
-            ? { ...state.settings, post_process_provider_id: providerId }
-            : null,
-        }));
-      }
+      set((state) => ({
+        settings: state.settings
+          ? { ...state.settings, post_process_provider_id: providerId }
+          : null,
+      }));
 
       // Clear cached model options for the new provider so the dropdown
       // doesn't show stale models from a previous fetch or base_url.
-      setPostProcessModelOptions(providerId, []);
+      get().setPostProcessModelOptions(providerId, []);
 
       try {
-        await commands.setPostProcessProvider(providerId);
+        assertOk(await commands.setPostProcessProvider(providerId));
         await refreshSettings();
+        return true;
       } catch (error) {
         console.error("Failed to set post-process provider:", error);
         if (previousId !== null) {
-          set((state) => ({
-            settings: state.settings
-              ? { ...state.settings, post_process_provider_id: previousId }
-              : null,
-          }));
+          set((state) =>
+            state.settings?.post_process_provider_id === providerId
+              ? {
+                  settings: {
+                    ...state.settings,
+                    post_process_provider_id: previousId,
+                  },
+                }
+              : {},
+          );
         }
+        showSaveError(error);
+        return false;
       } finally {
         setUpdating(updateKey, false);
       }
     },
 
     // Generic updater for post-processing provider settings
-    updatePostProcessSetting: async (
-      settingType: "base_url" | "api_key" | "model",
-      providerId: string,
-      value: string,
-    ) => {
+    updatePostProcessSetting: async (settingType, providerId, value) => {
       const { setUpdating, refreshSettings } = get();
       const updateKey = `post_process_${settingType}:${providerId}`;
 
@@ -447,18 +544,24 @@ export const useSettingsStore = create<SettingsStore>()(
 
       try {
         if (settingType === "base_url") {
-          await commands.changePostProcessBaseUrlSetting(providerId, value);
+          assertOk(
+            await commands.changePostProcessBaseUrlSetting(providerId, value),
+          );
         } else if (settingType === "api_key") {
-          await commands.changePostProcessApiKeySetting(providerId, value);
-        } else if (settingType === "model") {
-          await commands.changePostProcessModelSetting(providerId, value);
+          assertOk(
+            await commands.changePostProcessApiKeySetting(providerId, value),
+          );
+        } else {
+          assertOk(
+            await commands.changePostProcessModelSetting(providerId, value),
+          );
         }
         await refreshSettings();
+        return true;
       } catch (error) {
-        console.error(
-          `Failed to update post-process ${settingType.replace("_", " ")}:`,
-          error,
-        );
+        console.error(`Failed to update post-process ${settingType}:`, error);
+        showSaveError(error);
+        return false;
       } finally {
         setUpdating(updateKey, false);
       }
@@ -472,53 +575,40 @@ export const useSettingsStore = create<SettingsStore>()(
 
       try {
         // Persist the new base URL first.
-        const urlResult = await commands.changePostProcessBaseUrlSetting(
-          providerId,
-          baseUrl,
+        assertOk(
+          await commands.changePostProcessBaseUrlSetting(providerId, baseUrl),
         );
-        if (urlResult.status === "error") {
-          console.error("Failed to persist base URL:", urlResult.error);
-          return;
-        }
 
         // Reset the stored model since the previous value is almost certainly
         // invalid for the new endpoint (e.g. switching Custom from Groq to
         // Cerebras). Only proceed if the reset succeeds.
-        const modelResult = await commands.changePostProcessModelSetting(
-          providerId,
-          "",
-        );
-        if (modelResult.status === "error") {
-          console.error("Failed to reset model setting:", modelResult.error);
-          return;
-        }
+        assertOk(await commands.changePostProcessModelSetting(providerId, ""));
 
         // Clear cached model options only after both backend writes succeed.
-        set((state) => ({
-          postProcessModelOptions: {
-            ...state.postProcessModelOptions,
-            [providerId]: [],
-          },
-        }));
+        get().setPostProcessModelOptions(providerId, []);
 
         // Single refresh after both backend writes.
         await refreshSettings();
+        return true;
       } catch (error) {
         console.error("Failed to update post-process base URL:", error);
+        showSaveError(error);
+        return false;
       } finally {
         setUpdating(updateKey, false);
       }
     },
 
     updatePostProcessApiKey: async (providerId, apiKey) => {
-      // Clear cached models when API key changes - user should click refresh after
-      set((state) => ({
-        postProcessModelOptions: {
-          ...state.postProcessModelOptions,
-          [providerId]: [],
-        },
-      }));
-      return get().updatePostProcessSetting("api_key", providerId, apiKey);
+      const saved = await get().updatePostProcessSetting(
+        "api_key",
+        providerId,
+        apiKey,
+      );
+      // A new key may unlock a different model list; drop the cached one so
+      // the user refreshes against the new credential. Only once it saved.
+      if (saved) get().setPostProcessModelOptions(providerId, []);
+      return saved;
     },
 
     updatePostProcessModel: async (providerId, model) => {
@@ -532,18 +622,18 @@ export const useSettingsStore = create<SettingsStore>()(
       setUpdating(updateKey, true);
 
       try {
-        // Call Tauri backend command instead of fetch
         const result = await commands.fetchPostProcessModels(providerId);
         if (result.status === "ok") {
           setPostProcessModelOptions(providerId, result.data);
           return result.data;
-        } else {
-          console.error("Failed to fetch models:", result.error);
-          return [];
         }
+        throw result.error;
       } catch (error) {
+        // Don't cache an empty list on error - let the user retry.
         console.error("Failed to fetch models:", error);
-        // Don't cache empty array on error - let user retry
+        toast.error(i18n.t("errors.fetchModelsFailed"), {
+          description: errorMessage(error),
+        });
         return [];
       } finally {
         setUpdating(updateKey, false);
@@ -572,25 +662,30 @@ export const useSettingsStore = create<SettingsStore>()(
       }
     },
 
-    // Initialize everything
-    initialize: async () => {
-      const { refreshSettings, checkCustomSounds, loadDefaultSettings } = get();
+    // Initialize everything (idempotent).
+    initialize: () => {
+      if (initPromise) return initPromise;
+      initPromise = (async () => {
+        // Re-fetch settings when the backend changes them (e.g. language
+        // reset during model switch). The backend is the source of truth.
+        // Registered once for the window's lifetime.
+        void listen("model-state-changed", () => {
+          void get().refreshSettings();
+        });
 
-      // Note: Audio devices are NOT refreshed here. The frontend (App.tsx)
-      // is responsible for calling refreshAudioDevices/refreshOutputDevices
-      // after onboarding completes. This avoids triggering permission dialogs
-      // on macOS before the user is ready.
-      await Promise.all([
-        loadDefaultSettings(),
-        refreshSettings(),
-        checkCustomSounds(),
-      ]);
-
-      // Re-fetch settings when the backend changes them (e.g. language
-      // reset during model switch). The backend is the source of truth.
-      listen("model-state-changed", () => {
-        get().refreshSettings();
-      });
+        // Note: Audio devices are NOT refreshed here. The frontend (App.tsx)
+        // is responsible for calling refreshAudioDevices/refreshOutputDevices
+        // after onboarding completes. This avoids triggering permission dialogs
+        // on macOS before the user is ready.
+        const { refreshSettings, checkCustomSounds, loadDefaultSettings } =
+          get();
+        await Promise.all([
+          loadDefaultSettings(),
+          refreshSettings(),
+          checkCustomSounds(),
+        ]);
+      })();
+      return initPromise;
     },
   })),
 );

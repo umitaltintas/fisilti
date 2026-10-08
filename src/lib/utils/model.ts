@@ -1,4 +1,22 @@
-import type { EngineType, ModelInfo } from "@/bindings";
+import type { AppSettings, EngineType, ModelInfo } from "@/bindings";
+
+/**
+ * The model that transcribes meetings. Mirrors Rust
+ * `AppSettings::meeting_model_id()`: an empty (or blank)
+ * `meeting_selected_model` means "follow the dictation model".
+ *
+ * Never read `selected_model` from a meeting code path directly — the two
+ * settings then silently diverge.
+ */
+export const meetingModelId = (
+  settings:
+    | Pick<AppSettings, "selected_model" | "meeting_selected_model">
+    | null
+    | undefined,
+): string => {
+  const explicit = settings?.meeting_selected_model?.trim() ?? "";
+  return explicit.length > 0 ? explicit : (settings?.selected_model ?? "");
+};
 
 /**
  * Which cloud provider a model talks to, or `null` when it runs on this device.

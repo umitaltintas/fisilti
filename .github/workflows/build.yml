@@ -354,6 +354,16 @@ jobs:
             '.bundle.linux.deb.files["/usr/lib/libonnxruntime.so"] = $so | .bundle.linux.deb.files["/usr/lib/libonnxruntime.so.1"] = $so1 | .bundle.linux.deb.files["/usr/lib/libonnxruntime.so.1.24.2"] = $sov' \
             src-tauri/tauri.conf.json > tmp.json && mv tmp.json src-tauri/tauri.conf.json
 
+      # Updater bundles (.app.tar.gz + .sig, merged into latest.json) need the
+      # Fısıltı updater key, which only signed release builds receive. Every
+      # other build keeps createUpdaterArtifacts off so it needs no key.
+      - name: Enable updater artifacts for signed builds
+        if: inputs.sign-binaries
+        shell: bash
+        run: |
+          jq '.bundle.createUpdaterArtifacts = true' src-tauri/tauri.conf.json > tmp.json
+          mv tmp.json src-tauri/tauri.conf.json
+
       - name: Build with Tauri
         uses: tauri-apps/tauri-action@v0
         env:

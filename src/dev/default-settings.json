@@ -7,19 +7,19 @@
       "default_binding": "",
       "current_binding": ""
     },
-    "transcribe_with_post_process": {
-      "id": "transcribe_with_post_process",
-      "name": "Transcribe with Post-Processing",
-      "description": "Converts your speech into text and applies AI post-processing.",
-      "default_binding": "option+shift+space",
-      "current_binding": "option+shift+space"
-    },
     "transcribe": {
       "id": "transcribe",
       "name": "Transcribe",
       "description": "Converts your speech into text.",
       "default_binding": "option+space",
       "current_binding": "option+space"
+    },
+    "transcribe_with_post_process": {
+      "id": "transcribe_with_post_process",
+      "name": "Transcribe with Post-Processing",
+      "description": "Converts your speech into text and applies AI post-processing.",
+      "default_binding": "option+shift+space",
+      "current_binding": "option+shift+space"
     },
     "cancel": {
       "id": "cancel",
@@ -35,7 +35,7 @@
   "sound_theme": "marimba",
   "start_hidden": false,
   "autostart_enabled": false,
-  "update_checks_enabled": false,
+  "update_checks_enabled": true,
   "selected_model": "",
   "always_on_microphone": false,
   "selected_microphone": null,
@@ -132,25 +132,25 @@
     }
   ],
   "post_process_api_keys": {
-    "anthropic": "",
-    "custom": "",
-    "zai": "",
-    "apple_intelligence": "",
     "groq": "",
-    "openai": "",
     "cerebras": "",
-    "openrouter": ""
+    "zai": "",
+    "openrouter": "",
+    "openai": "",
+    "anthropic": "",
+    "apple_intelligence": "",
+    "custom": ""
   },
   "post_process_models": {
     "openrouter": "",
-    "google": "",
-    "anthropic": "",
     "cerebras": "",
-    "openai": "",
     "zai": "",
-    "groq": "",
     "apple_intelligence": "Apple Intelligence",
-    "custom": ""
+    "custom": "",
+    "groq": "",
+    "openai": "",
+    "google": "",
+    "anthropic": ""
   },
   "post_process_prompts": [
     {

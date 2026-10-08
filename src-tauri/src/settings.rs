@@ -691,11 +691,11 @@ fn default_autostart_enabled() -> bool {
 }
 
 fn default_update_checks_enabled() -> bool {
-    // Fısıltı has no update server yet. Default OFF so the app doesn't check
-    // (the inherited updater endpoint pointed at the upstream project's releases, which
-    // produced a false "update available"). Enable once our own release feed +
-    // signing key exist.
-    false
+    // Releases publish a signed latest.json (Fısıltı's own updater key, see
+    // the "Enable updater artifacts" step in build.yml), so new installs check
+    // for updates. Installs that stored `false` while there was no feed keep
+    // their stored value.
+    true
 }
 
 fn default_selected_language() -> String {

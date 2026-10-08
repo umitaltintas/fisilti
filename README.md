@@ -216,9 +216,10 @@ tip applies).
 ## Install (macOS)
 
 Download the latest **signed and notarized** DMG from
-[Releases](https://github.com/umitaltintas/fisilti/releases/latest) —
-`aarch64` for Apple Silicon, `x64` for Intel Macs — open it and drag Fısıltı
-into Applications. Gatekeeper opens it without warnings.
+[Releases](https://github.com/umitaltintas/fisilti/releases/latest) (Apple
+Silicon; Intel Macs are not released), open it and drag Fısıltı into
+Applications. Gatekeeper opens it without warnings, and later versions arrive
+through the in-app updater.
 
 **Building it yourself instead?** A successful build produces the app bundle
 at `src-tauri/target/release/bundle/macos/Fısıltı.app`; install it with

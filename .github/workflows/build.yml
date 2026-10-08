@@ -385,6 +385,29 @@ jobs:
           assetNamePattern: ${{ steps.patch-release-name.outputs.platform }}
           args: ${{ inputs.build-args }}
 
+      # tauri-action skips latest.json when the asset names are rewritten
+      # ("Fısıltı.app.tar.gz.sig" vs the uploaded "Fisilti_….sig"), so build it
+      # from the uploaded signature. Without it installed apps never update.
+      - name: Upload updater manifest (latest.json)
+        if: inputs.sign-binaries && inputs.release-id != '' && inputs.target == 'aarch64-apple-darwin'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: v${{ steps.get-version.outputs.version }}
+          VERSION: ${{ steps.get-version.outputs.version }}
+        run: |
+          set -euo pipefail
+          sig_name=$(gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json assets \
+            --jq '[.assets[].name | select(endswith(".app.tar.gz.sig"))][0]')
+          [ -n "$sig_name" ] || { echo "no updater signature in $TAG"; exit 1; }
+          gh release download "$TAG" -R "$GITHUB_REPOSITORY" -p "$sig_name" -O updater.sig
+          jq -n --arg v "$VERSION" --arg sig "$(cat updater.sig)" \
+            --arg url "https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/${sig_name%.sig}" \
+            --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '{version: $v, pub_date: $date, platforms: {"darwin-aarch64": {signature: $sig, url: $url}}}' \
+            > latest.json
+          gh release upload "$TAG" latest.json -R "$GITHUB_REPOSITORY" --clobber
+
       - name: Verify macOS dylib bundling
         if: inputs.target == 'x86_64-apple-darwin'
         shell: bash

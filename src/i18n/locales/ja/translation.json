@@ -29,7 +29,8 @@
     "groups": {
       "features": "機能",
       "system": "システム"
-    }
+    },
+    "navigation": "設定セクション"
   },
   "onboarding": {
     "subtitle": "開始するには、文字起こしモデルを選択してください",
@@ -106,7 +107,8 @@
     },
     "errors": {
       "loadModels": "利用可能なモデルの読み込みに失敗しました",
-      "downloadModel": "モデルのダウンロードに失敗しました: {{error}}"
+      "downloadModel": "モデルのダウンロードに失敗しました: {{error}}",
+      "selectModel": "このモデルに切り替えられませんでした。もう一度お試しください。"
     },
     "permissions": {
       "title": "権限が必要です",
@@ -159,7 +161,12 @@
     },
     "cancel": "キャンセル",
     "cancelDownload": "ダウンロードをキャンセル",
-    "cloud": "クラウド"
+    "cloud": "クラウド",
+    "errors": {
+      "statusFailed": "モデルの状態を確認できませんでした",
+      "loadFailed": "モデルの読み込みに失敗しました",
+      "switchFailed": "モデルの切り替えに失敗しました"
+    }
   },
   "settings": {
     "modelSettings": {
@@ -227,7 +234,9 @@
         "multilingualShort": "多言語",
         "english": "英語のみ",
         "regional": "特定の言語"
-      }
+      },
+      "downloadNamed": "{{modelName}} をダウンロード",
+      "useNamed": "{{modelName}} を使用"
     },
     "general": {
       "title": "一般",
@@ -260,7 +269,8 @@
           "restore": "元のショートカットを復元できませんでした",
           "set": "ショートカットを設定できませんでした: {{error}}",
           "reset": "ショートカットを元の値にリセットできませんでした"
-        }
+        },
+        "change": "ショートカットを変更: {{shortcut}}"
       },
       "language": {
         "title": "言語",
@@ -300,6 +310,20 @@
       "volume": {
         "title": "音量",
         "description": "音声フィードバックの音量を調整"
+      },
+      "soundTheme": {
+        "label": "サウンドテーマ",
+        "description": "録音開始・停止フィードバックのサウンドテーマを選択",
+        "custom": "カスタム",
+        "preview": "サウンドテーマをプレビュー(開始音、続いて停止音を再生)"
+      },
+      "alwaysOnMicrophone": {
+        "label": "マイク常時オン",
+        "description": "より速い応答のためにマイクをアクティブに保つ"
+      },
+      "clamshellMicrophone": {
+        "title": "クラムシェルマイク",
+        "description": "ノートパソコンの蓋を閉じたときに使用するマイク"
       }
     },
     "advanced": {
@@ -478,7 +502,18 @@
         "createPrompt": "プロンプトを作成",
         "cancel": "キャンセル",
         "selectToEdit": "上からプロンプトを選択して、詳細を表示・編集します。",
-        "createFirst": "上の「新しいプロンプトを作成」をクリックして、最初の後処理プロンプトを作成してください。"
+        "createFirst": "上の「新しいプロンプトを作成」をクリックして、最初の後処理プロンプトを作成してください。",
+        "unsavedTitle": "保存されていない変更を破棄しますか?",
+        "unsavedText": "このプロンプトへの編集はまだ保存されていません。",
+        "discardChanges": "変更を破棄",
+        "saved": "プロンプトを保存しました",
+        "deleteConfirmTitle": "このプロンプトを削除しますか?",
+        "deleteConfirmText": "「{{name}}」を削除します。この操作は取り消せません。",
+        "errors": {
+          "create": "プロンプトを作成できませんでした",
+          "update": "プロンプトを保存できませんでした",
+          "delete": "プロンプトを削除できませんでした"
+        }
       },
       "description": "貼り付ける前に、AI モデルで文字起こしを整形・書き換え・翻訳します。"
     },
@@ -496,7 +531,13 @@
       "retranscribeError": "再文字起こしに失敗しました。もう一度お試しください。",
       "transcribing": "文字起こし中...",
       "transcriptionFailed": "文字起こしに失敗しました。リトライアイコンを使用して再文字起こしできます。",
-      "retentionSettings": "履歴の設定"
+      "retentionSettings": "履歴の設定",
+      "loadError": "履歴を読み込めませんでした",
+      "loadMoreError": "さらに履歴を読み込めませんでした",
+      "saveError": "この項目を更新できませんでした",
+      "deleteConfirmTitle": "この文字起こしを削除しますか?",
+      "deleteConfirmText": "文字起こしとその録音が削除されます。この操作は取り消せません。",
+      "openFolderError": "録音フォルダを開けませんでした"
     },
     "debug": {
       "title": "デバッグ",
@@ -511,10 +552,6 @@
       "updateChecks": {
         "label": "アップデートを確認",
         "description": "Fısıltıの新しいバージョンを自動的にチェック"
-      },
-      "soundTheme": {
-        "label": "サウンドテーマ",
-        "description": "録音開始・停止フィードバックのサウンドテーマを選択"
       },
       "wordCorrectionThreshold": {
         "title": "単語修正しきい値",
@@ -534,14 +571,6 @@
         "weeks2": "2週間後",
         "months3": "3ヶ月後",
         "placeholder": "保持期間を選択..."
-      },
-      "alwaysOnMicrophone": {
-        "label": "マイク常時オン",
-        "description": "より速い応答のためにマイクをアクティブに保つ"
-      },
-      "clamshellMicrophone": {
-        "title": "クラムシェルマイク",
-        "description": "ノートパソコンの蓋を閉じたときに使用するマイク"
       },
       "postProcessingToggle": {
         "label": "後処理",
@@ -602,6 +631,11 @@
           "details": "Fısıltıは高速でローカルな音声からテキストへの変換にWhisper.cppを使用しています。Georgi Gerganov氏と貢献者の皆様の素晴らしい仕事に感謝します。"
         }
       }
+    },
+    "apiKey": {
+      "saving": "キーを保存中…",
+      "saved": "キーを保存しました",
+      "failed": "キーは保存されていません"
     }
   },
   "footer": {
@@ -639,7 +673,11 @@
     "yes": "はい",
     "no": "いいえ",
     "noOptionsFound": "オプションが見つかりません",
-    "clear": "クリア"
+    "clear": "クリア",
+    "confirm": "確認",
+    "moreInfo": "詳細情報",
+    "copyFailed": "クリップボードにコピーできませんでした",
+    "retry": "再試行"
   },
   "accessibility": {
     "permissionsRequired": "アクセシビリティ権限が必要です",
@@ -658,7 +696,27 @@
     },
     "recordingFailed": "録音の開始に失敗しました: {{error}}",
     "modelLoadFailed": "モデルの読み込みに失敗しました: {{model}}",
-    "modelLoadFailedUnknown": "不明なモデル"
+    "modelLoadFailedUnknown": "不明なモデル",
+    "settingSaveFailed": "設定を保存できませんでした",
+    "fetchModelsFailed": "モデル一覧を取得できませんでした",
+    "unknown": "不明なエラー",
+    "openFolderFailed": "フォルダを開けませんでした",
+    "models": {
+      "loadFailed": "モデル一覧を読み込めませんでした",
+      "selectFailed": "このモデルに切り替えられませんでした",
+      "downloadFailed": "モデルのダウンロードに失敗しました",
+      "cancelFailed": "ダウンロードをキャンセルできませんでした",
+      "deleteFailed": "モデルを削除できませんでした",
+      "extractFailed": "ダウンロードしたモデルを展開できませんでした"
+    },
+    "dictation": {
+      "transcription": "文字起こしに失敗しました",
+      "paste": "テキストを貼り付けられませんでした",
+      "model_load": "文字起こしモデルを読み込めませんでした",
+      "no_speech": "音声が検出されませんでした",
+      "recording": "録音に失敗しました",
+      "generic": "音声入力に失敗しました"
+    }
   },
   "appLanguage": {
     "title": "アプリケーション言語",
@@ -666,7 +724,8 @@
   },
   "overlay": {
     "transcribing": "文字起こし中...",
-    "processing": "処理中..."
+    "processing": "処理中...",
+    "cancel": "録音をキャンセル"
   },
   "meeting": {
     "title": "Meeting",
@@ -784,7 +843,8 @@
         "decoding": "Reading audio",
         "transcribing": "Transcribing",
         "summarizing": "Writing title and summary"
-      }
+      },
+      "failed": "録音を文字起こしできませんでした: {{error}}"
     },
     "exportDir": {
       "title": "Save as Markdown to a folder",
@@ -797,8 +857,63 @@
       "button": "Transcribe again",
       "hint": "Transcribe this meeting again from its saved audio with the current meeting model.",
       "failedHint": "This transcript looks incomplete. Transcribe it again from the saved audio?",
-      "confirmText": "The current transcript will be replaced (notes and title stay). Continue?"
-    }
+      "confirmText": "The current transcript will be replaced (notes and title stay). Continue?",
+      "confirmTitle": "この会議をもう一度文字起こししますか?",
+      "cancelling": "キャンセル中…"
+    },
+    "transcriptionFailed": "文字起こしに失敗したため、この会議にはテキストがありません。音声は保存され、録音も残っています。理由: {{error}}",
+    "liveTranslateTargetLabel": "翻訳先",
+    "geminiDiarizeToggle": "話者を個別に識別",
+    "geminiDiarizeDescription": "各行に発言者を表示します。下のクリーンアップより優先され、API が話者を特定できない 30 分を超える録音では自動的にスキップされます。",
+    "geminiSmartToggle": "文字起こしを整える",
+    "geminiSmartDescription": "すべての音をそのまま書き起こすのではなく、つなぎ言葉や言い直しを除いて書式を整えます。話者識別がオンの場合は無視されます — Gemini は両方を同時に行えません。",
+    "liveModeLabel": "会議中",
+    "liveModeOff": "終了時に文字起こし",
+    "liveModeTranscribe": "リアルタイムで文字起こし",
+    "liveModeTranslate": "リアルタイムで翻訳",
+    "liveModeNote": {
+      "off": "上のオプションがオンの場合、音声は会議を停止した後にのみ Google に送信されます。",
+      "transcribe": "発言と同時にテキストが表示されます。リアルタイム翻訳の約 4 分の 1 のコストです。会議終了後に話者名を付けるには、上のオプションをオンのままにしてください。",
+      "translate": "発言と同時にテキストが表示され、各行の下に翻訳が付きます。最も高価なオプションで、話者名を付けられない唯一のモードです — 2 回目の処理を行うと翻訳が失われるためです。"
+    },
+    "transcriptSpeakerUnknown": "話者",
+    "subtitlesToggle": "画面にライブ字幕を表示",
+    "subtitlesDescription": "会議中、他の参加者の発言を画面下部に表示し、通話から離れずに読めるようにします。クリックは透過し、画面共有や録画には表示されません。上でライブモードを選択する必要があります。",
+    "stillProcessing": "文字起こし中",
+    "costEstimate": "~${{amount}}",
+    "costTooltip": "API が報告したトークン数をもとに、公開料金のスナップショットで算出した見積もりです。プレビュー版の料金は変わることがあり、無料枠や請求割引は考慮されていないため、請求額とは完全には一致しません。末尾の + は、料金が公開されていないモデルがあり、実際のコストはこれより高いことを示します。",
+    "cloudBadge": "音声の送信先: {{providers}}",
+    "notesNotSavedYet": "未保存",
+    "notesSaveFailed": "保存されていません",
+    "durationHoursMinutes": "{{hours}} 時間 {{minutes}} 分",
+    "recovered": "会議を復元しました",
+    "discardConfirmTitle": "この会議を破棄しますか?",
+    "discardConfirmWithAudio": "保存された音声と途中までの文字起こしが削除されます。この操作は取り消せません。",
+    "discardConfirmText": "途中までの文字起こしが削除されます。この操作は取り消せません。",
+    "recoverTitleUnfinished": "この会議の処理は完了していません",
+    "recoverTitleInterrupted": "この会議は中断されました",
+    "recoverDescriptionWithAudio": "音声は保持されています。復元すると音声を再度文字起こしし、通常の会議として保存します。",
+    "recoverDescriptionPartial": "音声はもう利用できません。復元すると、実行中に保存された途中までの文字起こしが保持されます。",
+    "confirmDeleteText": "「{{title}}」とその文字起こし、メモ、要約、音声が削除されます。この操作は取り消せません。",
+    "deleteNamed": "「{{title}}」を削除",
+    "markdownFilter": "Markdown",
+    "exported": "会議をエクスポートしました",
+    "errors": {
+      "startFailed": "会議を開始できませんでした: {{error}}",
+      "stopFailed": "会議を正常に停止できませんでした: {{error}}",
+      "summaryFailed": "要約を生成できませんでした: {{error}}",
+      "notesSaveFailed": "メモを保存できませんでした: {{error}}",
+      "recoverFailed": "この会議を復元できませんでした: {{error}}",
+      "discardFailed": "この会議を破棄できませんでした: {{error}}",
+      "renameFailed": "会議の名前を変更できませんでした: {{error}}",
+      "retranscribeFailed": "会議をもう一度文字起こしできませんでした: {{error}}",
+      "audioFailed": "録音を読み込めませんでした",
+      "cancelFailed": "キャンセルできませんでした",
+      "calendarFailed": "カレンダーへのアクセスを取得できませんでした: {{error}}",
+      "folderPickerFailed": "フォルダ選択画面を開けませんでした: {{error}}",
+      "filePickerFailed": "ファイル選択画面を開けませんでした: {{error}}"
+    },
+    "settingsLoadError": "会議の設定を読み込めませんでした"
   },
   "meetingPrompt": {
     "startTitle": "会議を検出しました",
@@ -813,5 +928,10 @@
     "end": "会議を終了",
     "continue": "録音を続ける",
     "autoEndIn": "{{seconds}} 秒後に自動終了します"
+  },
+  "audioPlayer": {
+    "play": "再生",
+    "pause": "一時停止",
+    "seek": "再生位置"
   }
 }

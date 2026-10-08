@@ -8,6 +8,7 @@ import { useSettings } from "../../hooks/useSettings";
 import { useOsType } from "../../hooks/useOsType";
 import { commands } from "@/bindings";
 import { toast } from "sonner";
+import { errorMessage } from "@/lib/utils/errors";
 
 interface HandyKeysShortcutInputProps {
   descriptionMode?: "inline" | "tooltip";
@@ -82,63 +83,70 @@ export const HandyKeysShortcutInput: React.FC<HandyKeysShortcutInputProps> = ({
       // Listen for key events from backend
       const unlisten = await listen<HandyKeysEvent>(
         "handy-keys-event",
-        async (event) => {
-          if (cleanup) return;
+        (event) =>
+          void (async () => {
+            if (cleanup) return;
 
-          const { hotkey_string, is_key_down } = event.payload;
+            const { hotkey_string, is_key_down } = event.payload;
 
-          if (is_key_down && hotkey_string) {
-            // Update both state (for display) and ref (for release handler)
-            currentKeysRef.current = hotkey_string;
-            setCurrentKeys(hotkey_string);
-          } else if (!is_key_down && currentKeysRef.current) {
-            // Key released - commit the shortcut using the ref value
-            const keysToCommit = currentKeysRef.current;
-            try {
-              await updateBinding(shortcutId, keysToCommit);
-            } catch (error) {
-              console.error("Failed to change binding:", error);
-              toast.error(
-                t("settings.general.shortcut.errors.set", {
-                  error: String(error),
-                }),
-              );
+            if (is_key_down && hotkey_string) {
+              // Update both state (for display) and ref (for release handler)
+              currentKeysRef.current = hotkey_string;
+              setCurrentKeys(hotkey_string);
+            } else if (!is_key_down && currentKeysRef.current) {
+              // Key released - commit the shortcut using the ref value
+              const keysToCommit = currentKeysRef.current;
+              try {
+                await updateBinding(shortcutId, keysToCommit);
+              } catch (error) {
+                console.error("Failed to change binding:", error);
+                toast.error(
+                  t("settings.general.shortcut.errors.set", {
+                    error: errorMessage(error),
+                  }),
+                );
 
-              // Reset to original binding on error
-              if (originalBinding) {
-                try {
-                  await updateBinding(shortcutId, originalBinding);
-                } catch (resetError) {
-                  console.error("Failed to reset binding:", resetError);
-                  toast.error(t("settings.general.shortcut.errors.reset"));
+                // Reset to original binding on error
+                if (originalBinding) {
+                  try {
+                    await updateBinding(shortcutId, originalBinding);
+                  } catch (resetError) {
+                    console.error("Failed to reset binding:", resetError);
+                    toast.error(t("settings.general.shortcut.errors.reset"));
+                  }
                 }
               }
-            }
 
-            // Stop recording
-            if (unlistenRef.current) {
-              unlistenRef.current();
-              unlistenRef.current = null;
+              // Stop recording
+              if (unlistenRef.current) {
+                unlistenRef.current();
+                unlistenRef.current = null;
+              }
+              await commands.stopHandyKeysRecording().catch(console.error);
+              setIsRecording(false);
+              setCurrentKeys("");
+              currentKeysRef.current = "";
+              setOriginalBinding("");
             }
-            await commands.stopHandyKeysRecording().catch(console.error);
-            setIsRecording(false);
-            setCurrentKeys("");
-            currentKeysRef.current = "";
-            setOriginalBinding("");
-          }
-        },
+          })(),
       );
 
+      // The effect may have been cleaned up while `listen` was resolving;
+      // then nobody else will ever call this unlisten.
+      if (cleanup) {
+        unlisten();
+        return;
+      }
       unlistenRef.current = unlisten;
     };
 
-    setupListener();
+    void setupListener();
 
     // Handle escape key to cancel
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
-        cancelRecording();
+        void cancelRecording();
       }
     };
 
@@ -172,7 +180,7 @@ export const HandyKeysShortcutInput: React.FC<HandyKeysShortcutInputProps> = ({
         shortcutRef.current &&
         !shortcutRef.current.contains(e.target as Node)
       ) {
-        cancelRecording();
+        void cancelRecording();
       }
     };
 
@@ -196,7 +204,9 @@ export const HandyKeysShortcutInput: React.FC<HandyKeysShortcutInputProps> = ({
     } catch (error) {
       console.error("Failed to start recording:", error);
       toast.error(
-        t("settings.general.shortcut.errors.set", { error: String(error) }),
+        t("settings.general.shortcut.errors.set", {
+          error: errorMessage(error),
+        }),
       );
     }
   };
@@ -283,12 +293,16 @@ export const HandyKeysShortcutInput: React.FC<HandyKeysShortcutInputProps> = ({
             {formatCurrentKeys()}
           </div>
         ) : (
-          <div
-            className="px-2 py-1 text-sm font-semibold bg-mid-gray/10 border border-mid-gray/80 hover:bg-logo-primary/10 rounded-md cursor-pointer hover:border-logo-primary"
-            onClick={startRecording}
+          <button
+            type="button"
+            aria-label={t("settings.general.shortcut.change", {
+              shortcut: translatedName,
+            })}
+            className="px-2 py-1 text-sm font-semibold bg-mid-gray/10 border border-mid-gray/80 hover:bg-logo-primary/10 rounded-md cursor-pointer hover:border-logo-primary focus:outline-none focus-visible:ring-1 focus-visible:ring-logo-primary"
+            onClick={() => void startRecording()}
           >
             {formatKeyCombination(binding.current_binding, osType)}
-          </div>
+          </button>
         )}
         <ResetButton
           onClick={() => resetBinding(shortcutId)}

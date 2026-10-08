@@ -16,7 +16,7 @@ export const RecordingBuffer: React.FC<RecordingBufferProps> = ({
   const { settings, updateSetting } = useSettings();
 
   const handleBufferChange = (value: number) => {
-    updateSetting("extra_recording_buffer_ms", value);
+    void updateSetting("extra_recording_buffer_ms", value);
   };
 
   return (

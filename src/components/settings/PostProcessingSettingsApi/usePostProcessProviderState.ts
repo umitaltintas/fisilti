@@ -16,7 +16,7 @@ type PostProcessProviderState = {
   handleBaseUrlChange: (value: string) => void;
   isBaseUrlUpdating: boolean;
   apiKey: string;
-  handleApiKeyChange: (value: string) => void;
+  handleApiKeyChange: (value: string) => Promise<boolean> | boolean;
   isApiKeyUpdating: boolean;
   /** Set when this provider's key is owned by the Models page, not this tab. */
   keyHome: CloudProvider | null;
@@ -27,7 +27,7 @@ type PostProcessProviderState = {
   modelOptions: ModelOption[];
   isModelUpdating: boolean;
   isFetchingModels: boolean;
-  handleProviderSelect: (providerId: string) => void;
+  handleProviderSelect: (providerId: string) => Promise<void>;
   handleModelSelect: (value: string) => void;
   handleModelCreate: (value: string) => void;
   handleRefreshModels: () => void;
@@ -48,7 +48,10 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
   } = useSettings();
 
   // Settings are guaranteed to have providers after migration
-  const providers = settings?.post_process_providers || [];
+  const providers = useMemo(
+    () => settings?.post_process_providers ?? [],
+    [settings?.post_process_providers],
+  );
 
   const selectedProviderId = useMemo(() => {
     return settings?.post_process_provider_id || providers[0]?.id || "openai";
@@ -153,9 +156,8 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
   const handleApiKeyChange = useCallback(
     (value: string) => {
       const trimmed = value.trim();
-      if (trimmed !== apiKey) {
-        void updatePostProcessApiKey(selectedProviderId, trimmed);
-      }
+      if (trimmed === apiKey) return true;
+      return updatePostProcessApiKey(selectedProviderId, trimmed);
     },
     [apiKey, selectedProviderId, updatePostProcessApiKey],
   );
@@ -189,7 +191,10 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
     void fetchPostProcessModels(selectedProviderId);
   }, [fetchPostProcessModels, isAppleProvider, selectedProviderId]);
 
-  const availableModelsRaw = postProcessModelOptions[selectedProviderId] || [];
+  const availableModelsRaw = useMemo(
+    () => postProcessModelOptions[selectedProviderId] ?? [],
+    [postProcessModelOptions, selectedProviderId],
+  );
 
   const modelOptions = useMemo<ModelOption[]>(() => {
     const seen = new Set<string>();

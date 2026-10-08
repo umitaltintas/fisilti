@@ -44,6 +44,14 @@ const AccessibilityOnboarding: React.FC<AccessibilityOnboardingProps> = ({
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const errorCountRef = useRef<number>(0);
+  // The initial permission check (and its side effects: initializing input
+  // handling, completing onboarding) must run once, however often the parent
+  // re-renders or hands us a new callback.
+  const initialCheckStartedRef = useRef(false);
+  const accessibilityInitializedRef = useRef(false);
+  const completedRef = useRef(false);
+  const onCompleteRef = useRef(onComplete);
+  onCompleteRef.current = onComplete;
   const MAX_POLLING_ERRORS = 3;
 
   const isMacOS = permissionPlatform === "macos";
@@ -59,9 +67,19 @@ const AccessibilityOnboarding: React.FC<AccessibilityOnboardingProps> = ({
       : true;
 
   const completeOnboarding = useCallback(async () => {
+    if (completedRef.current) return;
+    completedRef.current = true;
     await Promise.all([refreshAudioDevices(), refreshOutputDevices()]);
-    timeoutRef.current = setTimeout(() => onComplete(), 300);
-  }, [onComplete, refreshAudioDevices, refreshOutputDevices]);
+    timeoutRef.current = setTimeout(() => onCompleteRef.current(), 300);
+  }, [refreshAudioDevices, refreshOutputDevices]);
+
+  const initializeInput = useCallback(() => {
+    Promise.all([commands.initializeEnigo(), commands.initializeShortcuts()])
+      .then(() => undefined)
+      .catch((e: unknown) => {
+        console.warn("Failed to initialize after permission grant:", e);
+      });
+  }, []);
 
   const hasWindowsMicrophoneAccess = useCallback(async (): Promise<boolean> => {
     const microphoneStatus =
@@ -74,8 +92,10 @@ const AccessibilityOnboarding: React.FC<AccessibilityOnboardingProps> = ({
     return microphoneStatus.overall_access !== "denied";
   }, []);
 
-  // Check platform and permission status on mount
+  // Check platform and permission status on mount (once)
   useEffect(() => {
+    if (initialCheckStartedRef.current) return;
+    initialCheckStartedRef.current = true;
     const currentPlatform = platform();
     const nextPlatform: PermissionPlatform =
       currentPlatform === "macos"
@@ -88,7 +108,8 @@ const AccessibilityOnboarding: React.FC<AccessibilityOnboardingProps> = ({
 
     // Skip immediately on unsupported platforms
     if (nextPlatform === "other") {
-      onComplete();
+      completedRef.current = true;
+      onCompleteRef.current();
       return;
     }
 
@@ -102,14 +123,8 @@ const AccessibilityOnboarding: React.FC<AccessibilityOnboardingProps> = ({
 
           // If accessibility is granted, initialize Enigo and shortcuts
           if (accessibilityGranted) {
-            try {
-              await Promise.all([
-                commands.initializeEnigo(),
-                commands.initializeShortcuts(),
-              ]);
-            } catch (e) {
-              console.warn("Failed to initialize after permission grant:", e);
-            }
+            accessibilityInitializedRef.current = true;
+            initializeInput();
           }
 
           const newState: PermissionsState = {
@@ -155,14 +170,14 @@ const AccessibilityOnboarding: React.FC<AccessibilityOnboardingProps> = ({
       }
     };
 
-    checkInitial();
-  }, [completeOnboarding, hasWindowsMicrophoneAccess, onComplete, t]);
+    void checkInitial();
+  }, [completeOnboarding, hasWindowsMicrophoneAccess, initializeInput, t]);
 
   // Polling for permissions after user clicks a button
   const startPolling = useCallback(() => {
     if (pollingRef.current || permissionPlatform === null) return;
 
-    pollingRef.current = setInterval(async () => {
+    const poll = async () => {
       try {
         if (permissionPlatform === "windows") {
           const microphoneGranted = await hasWindowsMicrophoneAccess();
@@ -187,26 +202,16 @@ const AccessibilityOnboarding: React.FC<AccessibilityOnboardingProps> = ({
           checkMicrophonePermission(),
         ]);
 
-        setPermissions((prev) => {
-          const newState = { ...prev };
-
-          if (accessibilityGranted && prev.accessibility !== "granted") {
-            newState.accessibility = "granted";
-            // Initialize Enigo and shortcuts when accessibility is granted
-            Promise.all([
-              commands.initializeEnigo(),
-              commands.initializeShortcuts(),
-            ]).catch((e) => {
-              console.warn("Failed to initialize after permission grant:", e);
-            });
-          }
-
-          if (microphoneGranted && prev.microphone !== "granted") {
-            newState.microphone = "granted";
-          }
-
-          return newState;
-        });
+        // Side effects stay out of the state updater (React may call an
+        // updater twice): initialize input handling on the transition only.
+        if (accessibilityGranted && !accessibilityInitializedRef.current) {
+          accessibilityInitializedRef.current = true;
+          initializeInput();
+        }
+        setPermissions((prev) => ({
+          accessibility: accessibilityGranted ? "granted" : prev.accessibility,
+          microphone: microphoneGranted ? "granted" : prev.microphone,
+        }));
 
         // If both granted, stop polling, refresh audio devices, and proceed
         if (accessibilityGranted && microphoneGranted) {
@@ -232,8 +237,15 @@ const AccessibilityOnboarding: React.FC<AccessibilityOnboardingProps> = ({
           toast.error(t("onboarding.permissions.errors.checkFailed"));
         }
       }
-    }, 1000);
-  }, [completeOnboarding, hasWindowsMicrophoneAccess, permissionPlatform, t]);
+    };
+    pollingRef.current = setInterval(() => void poll(), 1000);
+  }, [
+    completeOnboarding,
+    hasWindowsMicrophoneAccess,
+    initializeInput,
+    permissionPlatform,
+    t,
+  ]);
 
   // Cleanup polling and timeouts on unmount
   useEffect(() => {

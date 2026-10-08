@@ -29,7 +29,8 @@
     "groups": {
       "features": "기능",
       "system": "시스템"
-    }
+    },
+    "navigation": "설정 섹션"
   },
   "onboarding": {
     "subtitle": "시작하려면 음성 인식 모델을 선택하세요",
@@ -106,7 +107,8 @@
     },
     "errors": {
       "loadModels": "사용 가능한 모델을 불러오는데 실패했습니다",
-      "downloadModel": "모델 다운로드 실패: {{error}}"
+      "downloadModel": "모델 다운로드 실패: {{error}}",
+      "selectModel": "이 모델로 전환할 수 없습니다. 다시 시도해 주세요."
     },
     "permissions": {
       "title": "권한 필요",
@@ -159,7 +161,12 @@
       "translation": "영어로 번역 가능",
       "translate": "영어로 번역"
     },
-    "cloud": "클라우드"
+    "cloud": "클라우드",
+    "errors": {
+      "statusFailed": "모델 상태를 확인할 수 없습니다",
+      "loadFailed": "모델을 불러오지 못했습니다",
+      "switchFailed": "모델을 전환하지 못했습니다"
+    }
   },
   "settings": {
     "modelSettings": {
@@ -197,7 +204,8 @@
           "restore": "원래 단축키 복원에 실패했습니다",
           "set": "단축키 설정 실패: {{error}}",
           "reset": "단축키를 원래 값으로 재설정하는데 실패했습니다"
-        }
+        },
+        "change": "단축키 변경: {{shortcut}}"
       },
       "language": {
         "title": "언어",
@@ -237,6 +245,20 @@
       "volume": {
         "title": "볼륨",
         "description": "오디오 피드백 사운드의 볼륨 조절"
+      },
+      "soundTheme": {
+        "label": "사운드 테마",
+        "description": "녹음 시작 및 정지 피드백을 위한 사운드 테마를 선택하세요",
+        "custom": "사용자 지정",
+        "preview": "사운드 테마 미리 듣기(시작음 후 정지음 재생)"
+      },
+      "alwaysOnMicrophone": {
+        "label": "항상 켜진 마이크",
+        "description": "더 빠른 응답을 위해 마이크를 활성 상태로 유지"
+      },
+      "clamshellMicrophone": {
+        "title": "클램셸 마이크",
+        "description": "노트북 덮개가 닫혀 있을 때 사용할 마이크"
       }
     },
     "models": {
@@ -300,7 +322,9 @@
         "multilingualShort": "다국어",
         "english": "영어 전용",
         "regional": "특정 언어"
-      }
+      },
+      "downloadNamed": "{{modelName}} 다운로드",
+      "useNamed": "{{modelName}} 사용"
     },
     "advanced": {
       "title": "고급",
@@ -478,7 +502,18 @@
         "createPrompt": "프롬프트 만들기",
         "cancel": "취소",
         "selectToEdit": "세부 정보를 보고 편집하려면 위에서 프롬프트를 선택하세요.",
-        "createFirst": "첫 번째 후처리 프롬프트를 만들려면 위의 '새 프롬프트 만들기'를 클릭하세요."
+        "createFirst": "첫 번째 후처리 프롬프트를 만들려면 위의 '새 프롬프트 만들기'를 클릭하세요.",
+        "unsavedTitle": "저장하지 않은 변경 사항을 버리시겠습니까?",
+        "unsavedText": "이 프롬프트의 편집 내용이 저장되지 않았습니다.",
+        "discardChanges": "변경 사항 버리기",
+        "saved": "프롬프트를 저장했습니다",
+        "deleteConfirmTitle": "이 프롬프트를 삭제하시겠습니까?",
+        "deleteConfirmText": "'{{name}}'이(가) 삭제됩니다. 이 작업은 되돌릴 수 없습니다.",
+        "errors": {
+          "create": "프롬프트를 만들 수 없습니다",
+          "update": "프롬프트를 저장할 수 없습니다",
+          "delete": "프롬프트를 삭제할 수 없습니다"
+        }
       },
       "description": "붙여넣기 전에 AI 모델이 각 전사 결과를 다듬거나 형식을 바꾸거나 번역하도록 합니다."
     },
@@ -496,7 +531,13 @@
       "retranscribeError": "다시 전사에 실패했습니다. 다시 시도해주세요.",
       "transcribing": "전사 중...",
       "transcriptionFailed": "전사에 실패했습니다. 재시도 아이콘을 사용하여 다시 전사할 수 있습니다.",
-      "retentionSettings": "기록 설정"
+      "retentionSettings": "기록 설정",
+      "loadError": "기록을 불러올 수 없습니다",
+      "loadMoreError": "기록을 더 불러올 수 없습니다",
+      "saveError": "이 항목을 업데이트할 수 없습니다",
+      "deleteConfirmTitle": "이 받아쓰기를 삭제하시겠습니까?",
+      "deleteConfirmText": "받아쓰기와 해당 녹음이 삭제됩니다. 이 작업은 되돌릴 수 없습니다.",
+      "openFolderError": "녹음 폴더를 열 수 없습니다"
     },
     "debug": {
       "title": "디버그",
@@ -511,10 +552,6 @@
       "updateChecks": {
         "label": "업데이트 확인",
         "description": "Fısıltı의 새 버전을 자동으로 확인합니다"
-      },
-      "soundTheme": {
-        "label": "사운드 테마",
-        "description": "녹음 시작 및 정지 피드백을 위한 사운드 테마를 선택하세요"
       },
       "wordCorrectionThreshold": {
         "title": "단어 수정 임계값",
@@ -534,14 +571,6 @@
         "weeks2": "2주 후",
         "months3": "3개월 후",
         "placeholder": "보관 기간 선택..."
-      },
-      "alwaysOnMicrophone": {
-        "label": "항상 켜진 마이크",
-        "description": "더 빠른 응답을 위해 마이크를 활성 상태로 유지"
-      },
-      "clamshellMicrophone": {
-        "title": "클램셸 마이크",
-        "description": "노트북 덮개가 닫혀 있을 때 사용할 마이크"
       },
       "postProcessingToggle": {
         "label": "후처리",
@@ -602,6 +631,11 @@
           "details": "Fısıltı는 빠르고 로컬 음성-텍스트 처리를 위해 Whisper.cpp를 사용합니다. Georgi Gerganov와 기여자들의 놀라운 작업에 감사드립니다."
         }
       }
+    },
+    "apiKey": {
+      "saving": "키 저장 중…",
+      "saved": "키를 저장했습니다",
+      "failed": "키가 저장되지 않았습니다"
     }
   },
   "footer": {
@@ -639,7 +673,11 @@
     "yes": "예",
     "no": "아니오",
     "noOptionsFound": "옵션을 찾을 수 없습니다",
-    "clear": "지우기"
+    "clear": "지우기",
+    "confirm": "확인",
+    "moreInfo": "자세한 정보",
+    "copyFailed": "클립보드에 복사할 수 없습니다",
+    "retry": "다시 시도"
   },
   "accessibility": {
     "permissionsRequired": "접근성 권한 필요",
@@ -658,7 +696,27 @@
     },
     "recordingFailed": "녹음을 시작하지 못했습니다: {{error}}",
     "modelLoadFailed": "모델을 불러오지 못했습니다: {{model}}",
-    "modelLoadFailedUnknown": "알 수 없는 모델"
+    "modelLoadFailedUnknown": "알 수 없는 모델",
+    "settingSaveFailed": "설정을 저장할 수 없습니다",
+    "fetchModelsFailed": "모델 목록을 가져올 수 없습니다",
+    "unknown": "알 수 없는 오류",
+    "openFolderFailed": "폴더를 열 수 없습니다",
+    "models": {
+      "loadFailed": "모델 목록을 불러올 수 없습니다",
+      "selectFailed": "이 모델로 전환할 수 없습니다",
+      "downloadFailed": "모델 다운로드에 실패했습니다",
+      "cancelFailed": "다운로드를 취소할 수 없습니다",
+      "deleteFailed": "모델을 삭제할 수 없습니다",
+      "extractFailed": "다운로드한 모델의 압축을 풀 수 없습니다"
+    },
+    "dictation": {
+      "transcription": "받아쓰기에 실패했습니다",
+      "paste": "텍스트를 붙여넣을 수 없습니다",
+      "model_load": "받아쓰기 모델을 불러올 수 없습니다",
+      "no_speech": "음성이 감지되지 않았습니다",
+      "recording": "녹음에 실패했습니다",
+      "generic": "음성 입력에 실패했습니다"
+    }
   },
   "appLanguage": {
     "title": "애플리케이션 언어",
@@ -666,7 +724,8 @@
   },
   "overlay": {
     "transcribing": "텍스트로 변환 중...",
-    "processing": "처리 중..."
+    "processing": "처리 중...",
+    "cancel": "녹음 취소"
   },
   "meeting": {
     "title": "Meeting",
@@ -784,7 +843,8 @@
         "decoding": "Reading audio",
         "transcribing": "Transcribing",
         "summarizing": "Writing title and summary"
-      }
+      },
+      "failed": "녹음을 받아쓸 수 없습니다: {{error}}"
     },
     "exportDir": {
       "title": "Save as Markdown to a folder",
@@ -797,8 +857,63 @@
       "button": "Transcribe again",
       "hint": "Transcribe this meeting again from its saved audio with the current meeting model.",
       "failedHint": "This transcript looks incomplete. Transcribe it again from the saved audio?",
-      "confirmText": "The current transcript will be replaced (notes and title stay). Continue?"
-    }
+      "confirmText": "The current transcript will be replaced (notes and title stay). Continue?",
+      "confirmTitle": "이 회의를 다시 받아쓰시겠습니까?",
+      "cancelling": "취소 중…"
+    },
+    "transcriptionFailed": "받아쓰기에 실패하여 이 회의에는 텍스트가 없습니다. 오디오는 저장되었고 녹음도 보존되었습니다. 원인: {{error}}",
+    "liveTranslateTargetLabel": "번역할 언어",
+    "geminiDiarizeToggle": "개별 화자 식별",
+    "geminiDiarizeDescription": "각 줄에 발화자를 표시합니다. 아래 정리 옵션보다 우선하며, API가 화자를 구분할 수 없는 30분 이상의 녹음에서는 자동으로 건너뜁니다.",
+    "geminiSmartToggle": "받아쓰기 정리",
+    "geminiSmartDescription": "모든 소리를 그대로 받아쓰는 대신 군말과 말 더듬기를 제거하고 서식을 적용합니다. 화자 식별이 켜져 있으면 무시됩니다 — Gemini는 두 가지를 동시에 할 수 없습니다.",
+    "liveModeLabel": "회의 진행 중",
+    "liveModeOff": "종료 후 받아쓰기",
+    "liveModeTranscribe": "실시간 받아쓰기",
+    "liveModeTranslate": "실시간 번역",
+    "liveModeNote": {
+      "off": "위 옵션이 켜져 있으면 회의를 중지한 후에만 오디오가 Google로 전송됩니다.",
+      "transcribe": "말하는 대로 텍스트가 표시됩니다. 실시간 번역보다 약 4배 저렴합니다. 회의가 끝난 후 화자 이름을 받으려면 위 옵션을 켜 두세요.",
+      "translate": "말하는 대로 텍스트가 표시되고 각 줄 아래에 번역이 붙습니다. 가장 비싼 옵션이며 화자 이름을 붙일 수 없는 유일한 모드입니다 — 두 번째 처리를 하면 번역이 사라지기 때문입니다."
+    },
+    "transcriptSpeakerUnknown": "화자",
+    "subtitlesToggle": "화면에 실시간 자막 표시",
+    "subtitlesDescription": "회의 중 다른 참가자의 말을 화면 하단에 띄워 통화를 벗어나지 않고 읽을 수 있습니다. 클릭이 통과되며 화면 공유와 녹화에는 표시되지 않습니다. 위에서 실시간 모드를 선택해야 합니다.",
+    "stillProcessing": "받아쓰는 중",
+    "costEstimate": "~${{amount}}",
+    "costTooltip": "API가 보고한 토큰 수를 바탕으로 공개 요금 스냅샷을 적용해 추정한 값입니다. 프리뷰 요금은 변경될 수 있고 무료 할당량과 청구 할인은 반영되지 않으므로 청구서와 정확히 일치하지 않습니다. 끝에 붙은 +는 요금이 공개되지 않은 모델이 있어 실제 비용이 더 높다는 뜻입니다.",
+    "cloudBadge": "오디오 전송 대상: {{providers}}",
+    "notesNotSavedYet": "아직 저장되지 않음",
+    "notesSaveFailed": "저장되지 않음",
+    "durationHoursMinutes": "{{hours}}시간 {{minutes}}분",
+    "recovered": "회의를 복구했습니다",
+    "discardConfirmTitle": "이 회의를 버리시겠습니까?",
+    "discardConfirmWithAudio": "저장된 오디오와 일부 받아쓰기가 삭제됩니다. 이 작업은 되돌릴 수 없습니다.",
+    "discardConfirmText": "일부 받아쓰기가 삭제됩니다. 이 작업은 되돌릴 수 없습니다.",
+    "recoverTitleUnfinished": "이 회의는 처리가 완료되지 않았습니다",
+    "recoverTitleInterrupted": "이 회의는 중단되었습니다",
+    "recoverDescriptionWithAudio": "오디오가 보존되어 있습니다. 복구하면 오디오를 다시 받아써서 일반 회의로 저장합니다.",
+    "recoverDescriptionPartial": "오디오를 더 이상 사용할 수 없습니다. 복구하면 진행 중에 저장된 일부 받아쓰기가 유지됩니다.",
+    "confirmDeleteText": "'{{title}}'과(와) 해당 받아쓰기, 메모, 요약, 오디오가 삭제됩니다. 이 작업은 되돌릴 수 없습니다.",
+    "deleteNamed": "'{{title}}' 삭제",
+    "markdownFilter": "Markdown",
+    "exported": "회의를 내보냈습니다",
+    "errors": {
+      "startFailed": "회의를 시작할 수 없습니다: {{error}}",
+      "stopFailed": "회의를 정상적으로 중지할 수 없습니다: {{error}}",
+      "summaryFailed": "요약을 생성할 수 없습니다: {{error}}",
+      "notesSaveFailed": "메모를 저장할 수 없습니다: {{error}}",
+      "recoverFailed": "이 회의를 복구할 수 없습니다: {{error}}",
+      "discardFailed": "이 회의를 버릴 수 없습니다: {{error}}",
+      "renameFailed": "회의 이름을 변경할 수 없습니다: {{error}}",
+      "retranscribeFailed": "회의를 다시 받아쓸 수 없습니다: {{error}}",
+      "audioFailed": "녹음을 불러올 수 없습니다",
+      "cancelFailed": "취소할 수 없습니다",
+      "calendarFailed": "캘린더 접근 권한을 얻을 수 없습니다: {{error}}",
+      "folderPickerFailed": "폴더 선택 창을 열 수 없습니다: {{error}}",
+      "filePickerFailed": "파일 선택 창을 열 수 없습니다: {{error}}"
+    },
+    "settingsLoadError": "회의 설정을 불러올 수 없습니다"
   },
   "meetingPrompt": {
     "startTitle": "회의 감지됨",
@@ -813,5 +928,10 @@
     "end": "회의 종료",
     "continue": "계속 녹음",
     "autoEndIn": "{{seconds}}초 후 자동 종료"
+  },
+  "audioPlayer": {
+    "play": "재생",
+    "pause": "일시정지",
+    "seek": "재생 위치"
   }
 }

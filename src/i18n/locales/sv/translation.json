@@ -29,7 +29,8 @@
     "groups": {
       "features": "Funktioner",
       "system": "System"
-    }
+    },
+    "navigation": "Inställningsavsnitt"
   },
   "onboarding": {
     "subtitle": "För att komma igång, välj en transkriptionsmodell",
@@ -106,7 +107,8 @@
     },
     "errors": {
       "loadModels": "Misslyckades med att ladda tillgängliga modeller",
-      "downloadModel": "Misslyckades med att ladda ner modell: {{error}}"
+      "downloadModel": "Misslyckades med att ladda ner modell: {{error}}",
+      "selectModel": "Det gick inte att byta till den här modellen. Försök igen."
     },
     "permissions": {
       "title": "Behörigheter krävs",
@@ -159,7 +161,12 @@
       "translation": "Kan översätta till engelska",
       "translate": "Översätt till engelska"
     },
-    "cloud": "Moln"
+    "cloud": "Moln",
+    "errors": {
+      "statusFailed": "Det gick inte att kontrollera modellens status",
+      "loadFailed": "Det gick inte att läsa in modellen",
+      "switchFailed": "Det gick inte att byta modell"
+    }
   },
   "settings": {
     "modelSettings": {
@@ -197,7 +204,8 @@
           "restore": "Misslyckades med att återställa ursprungligt kortkommando",
           "set": "Misslyckades med att ställa in kortkommando: {{error}}",
           "reset": "Misslyckades med att återställa kortkommando till ursprungsvärdet"
-        }
+        },
+        "change": "Ändra kortkommando: {{shortcut}}"
       },
       "language": {
         "title": "Språk",
@@ -277,7 +285,9 @@
         "multilingualShort": "Flerspråkig",
         "english": "Endast engelska",
         "regional": "Specifika språk"
-      }
+      },
+      "downloadNamed": "Hämta {{modelName}}",
+      "useNamed": "Använd {{modelName}}"
     },
     "sound": {
       "title": "Ljud",
@@ -300,6 +310,20 @@
       "volume": {
         "title": "Volym",
         "description": "Justera volymen för ljudåterkopplingsljud"
+      },
+      "soundTheme": {
+        "label": "Ljudtema",
+        "description": "Välj ett ljudtema för återkoppling vid start och stopp av inspelning",
+        "custom": "Anpassat",
+        "preview": "Förhandslyssna på ljudtemat (spelar start, sedan stopp)"
+      },
+      "alwaysOnMicrophone": {
+        "label": "Alltid påslagen mikrofon",
+        "description": "Håll mikrofonen aktiv för snabbare svar"
+      },
+      "clamshellMicrophone": {
+        "title": "Clamshell-mikrofon",
+        "description": "Mikrofon som ska användas när bärbara datorns lock är stängt"
       }
     },
     "advanced": {
@@ -478,7 +502,18 @@
         "createPrompt": "Skapa prompt",
         "cancel": "Avbryt",
         "selectToEdit": "Välj en prompt ovan för att visa och redigera dess detaljer.",
-        "createFirst": "Klicka på 'Skapa ny prompt' ovan för att skapa din första prompt för efterbearbetning."
+        "createFirst": "Klicka på 'Skapa ny prompt' ovan för att skapa din första prompt för efterbearbetning.",
+        "unsavedTitle": "Ignorera osparade ändringar?",
+        "unsavedText": "Dina ändringar i den här prompten har inte sparats.",
+        "discardChanges": "Ignorera ändringar",
+        "saved": "Prompten har sparats",
+        "deleteConfirmTitle": "Radera den här prompten?",
+        "deleteConfirmText": "”{{name}}” raderas. Detta kan inte ångras.",
+        "errors": {
+          "create": "Det gick inte att skapa prompten",
+          "update": "Det gick inte att spara prompten",
+          "delete": "Det gick inte att radera prompten"
+        }
       },
       "description": "Låt en AI-modell städa upp, formatera om eller översätta varje transkription innan den klistras in."
     },
@@ -496,7 +531,13 @@
       "retranscribeError": "Misslyckades med att transkribera igen. Försök igen.",
       "transcribing": "Transkriberar...",
       "transcriptionFailed": "Transkribering misslyckades. Du kan transkribera igen med hjälp av ikonen för nytt försök.",
-      "retentionSettings": "Historikinställningar"
+      "retentionSettings": "Historikinställningar",
+      "loadError": "Det gick inte att läsa in historiken",
+      "loadMoreError": "Det gick inte att läsa in mer historik",
+      "saveError": "Det gick inte att uppdatera posten",
+      "deleteConfirmTitle": "Radera den här transkriptionen?",
+      "deleteConfirmText": "Transkriptionen och dess inspelning raderas. Detta kan inte ångras.",
+      "openFolderError": "Det gick inte att öppna mappen med inspelningar"
     },
     "debug": {
       "title": "Felsökning",
@@ -511,10 +552,6 @@
       "updateChecks": {
         "label": "Sök efter uppdateringar",
         "description": "Sök automatiskt efter nya versioner av Fısıltı"
-      },
-      "soundTheme": {
-        "label": "Ljudtema",
-        "description": "Välj ett ljudtema för återkoppling vid start och stopp av inspelning"
       },
       "wordCorrectionThreshold": {
         "title": "Tröskelvärde för ordkorrigering",
@@ -534,14 +571,6 @@
         "weeks2": "Efter 2 veckor",
         "months3": "Efter 3 månader",
         "placeholder": "Välj lagringsperiod..."
-      },
-      "alwaysOnMicrophone": {
-        "label": "Alltid påslagen mikrofon",
-        "description": "Håll mikrofonen aktiv för snabbare svar"
-      },
-      "clamshellMicrophone": {
-        "title": "Clamshell-mikrofon",
-        "description": "Mikrofon som ska användas när bärbara datorns lock är stängt"
       },
       "postProcessingToggle": {
         "label": "Efterbearbetning",
@@ -602,6 +631,11 @@
           "details": "Fısıltı använder Whisper.cpp för snabb, lokal tal-till-text-behandling. Tack till det fantastiska arbete som utförts av Georgi Gerganov med medarbetare."
         }
       }
+    },
+    "apiKey": {
+      "saving": "Sparar nyckel…",
+      "saved": "Nyckeln har sparats",
+      "failed": "Nyckeln sparades inte"
     }
   },
   "footer": {
@@ -639,7 +673,11 @@
     "yes": "Ja",
     "no": "Nej",
     "noOptionsFound": "Inga alternativ hittades",
-    "clear": "Rensa"
+    "clear": "Rensa",
+    "confirm": "Bekräfta",
+    "moreInfo": "Mer information",
+    "copyFailed": "Det gick inte att kopiera till urklipp",
+    "retry": "Försök igen"
   },
   "accessibility": {
     "permissionsRequired": "Behörigheter för hjälpmedel krävs",
@@ -658,7 +696,27 @@
     },
     "recordingFailed": "Misslyckades med att starta inspelning: {{error}}",
     "modelLoadFailed": "Misslyckades med att ladda modell: {{model}}",
-    "modelLoadFailedUnknown": "okänd modell"
+    "modelLoadFailedUnknown": "okänd modell",
+    "settingSaveFailed": "Det gick inte att spara inställningen",
+    "fetchModelsFailed": "Det gick inte att hämta modellistan",
+    "unknown": "Okänt fel",
+    "openFolderFailed": "Det gick inte att öppna mappen",
+    "models": {
+      "loadFailed": "Det gick inte att läsa in modellistan",
+      "selectFailed": "Det gick inte att byta till den här modellen",
+      "downloadFailed": "Det gick inte att hämta modellen",
+      "cancelFailed": "Det gick inte att avbryta hämtningen",
+      "deleteFailed": "Det gick inte att radera modellen",
+      "extractFailed": "Det gick inte att packa upp den hämtade modellen"
+    },
+    "dictation": {
+      "transcription": "Transkriptionen misslyckades",
+      "paste": "Det gick inte att klistra in texten",
+      "model_load": "Det gick inte att läsa in transkriptionsmodellen",
+      "no_speech": "Inget tal upptäcktes",
+      "recording": "Inspelningen misslyckades",
+      "generic": "Dikteringen misslyckades"
+    }
   },
   "appLanguage": {
     "title": "Applikationsspråk",
@@ -666,7 +724,8 @@
   },
   "overlay": {
     "transcribing": "Transkriberar...",
-    "processing": "Bearbetar..."
+    "processing": "Bearbetar...",
+    "cancel": "Avbryt inspelning"
   },
   "meeting": {
     "title": "Meeting",
@@ -784,7 +843,8 @@
         "decoding": "Reading audio",
         "transcribing": "Transcribing",
         "summarizing": "Writing title and summary"
-      }
+      },
+      "failed": "Det gick inte att transkribera inspelningen: {{error}}"
     },
     "exportDir": {
       "title": "Save as Markdown to a folder",
@@ -797,8 +857,63 @@
       "button": "Transcribe again",
       "hint": "Transcribe this meeting again from its saved audio with the current meeting model.",
       "failedHint": "This transcript looks incomplete. Transcribe it again from the saved audio?",
-      "confirmText": "The current transcript will be replaced (notes and title stay). Continue?"
-    }
+      "confirmText": "The current transcript will be replaced (notes and title stay). Continue?",
+      "confirmTitle": "Transkribera mötet igen?",
+      "cancelling": "Avbryter…"
+    },
+    "transcriptionFailed": "Transkriptionen misslyckades, så mötet har ingen text. Ljudet sparades och inspelningen behölls. Orsak: {{error}}",
+    "liveTranslateTargetLabel": "Översätt till",
+    "geminiDiarizeToggle": "Identifiera enskilda talare",
+    "geminiDiarizeDescription": "Märk varje rad med vem som sa den. Har företräde framför rensningsalternativet nedan och hoppas automatiskt över för inspelningar längre än 30 minuter, som API:et inte kan tillskriva.",
+    "geminiSmartToggle": "Rensa transkriptionen",
+    "geminiSmartDescription": "Ta bort utfyllnadsord och felstarter och tillämpa formatering i stället för att transkribera varje ljud ordagrant. Ignoreras när talaridentifiering är på — Gemini kan inte göra båda samtidigt.",
+    "liveModeLabel": "Medan mötet pågår",
+    "liveModeOff": "Transkribera när det är slut",
+    "liveModeTranscribe": "Transkribera live",
+    "liveModeTranslate": "Översätt live",
+    "liveModeNote": {
+      "off": "Ljudet skickas till Google först när du har avslutat mötet, om alternativet ovan är på.",
+      "transcribe": "Texten visas medan folk pratar. Ungefär fyra gånger billigare än liveöversättning. Låt alternativet ovan vara på för att få talarnamn när mötet är slut.",
+      "translate": "Texten visas medan folk pratar, med en översättning under varje rad. Det dyraste alternativet och det enda som inte kan ha talarnamn — en andra genomgång skulle förlora översättningen."
+    },
+    "transcriptSpeakerUnknown": "Talare",
+    "subtitlesToggle": "Visa liveundertexter på skärmen",
+    "subtitlesDescription": "Visa vad de andra deltagarna säger nära skärmens nederkant medan mötet pågår, så att du kan läsa med utan att lämna samtalet. Klick går igenom, och undertexterna döljs vid skärmdelning och i inspelningar. Kräver ett liveläge ovan.",
+    "stillProcessing": "Transkriberar",
+    "costEstimate": "~${{amount}}",
+    "costTooltip": "Uppskattat utifrån de tokenantal som API:et rapporterade, prissatt från en ögonblicksbild av offentliga priser. Förhandsversioners priser ändras, och gratiskvot och faktureringsrabatter räknas inte med, så beloppet stämmer inte exakt med fakturan. Ett avslutande + betyder att en modell saknade publicerat pris och att den verkliga kostnaden är högre.",
+    "cloudBadge": "Ljud skickat till {{providers}}",
+    "notesNotSavedYet": "Inte sparat än",
+    "notesSaveFailed": "Inte sparat",
+    "durationHoursMinutes": "{{hours}} h {{minutes}} min",
+    "recovered": "Mötet har återställts",
+    "discardConfirmTitle": "Ignorera det här mötet?",
+    "discardConfirmWithAudio": "Det sparade ljudet och den ofullständiga transkriptionen raderas. Detta kan inte ångras.",
+    "discardConfirmText": "Den ofullständiga transkriptionen raderas. Detta kan inte ångras.",
+    "recoverTitleUnfinished": "Bearbetningen av mötet slutfördes inte",
+    "recoverTitleInterrupted": "Mötet avbröts",
+    "recoverDescriptionWithAudio": "Ljudet behölls. Återställ mötet för att transkribera ljudet igen och spara det som ett vanligt möte.",
+    "recoverDescriptionPartial": "Ljudet är inte längre tillgängligt. Vid återställning behålls den ofullständiga transkription som sparades under mötet.",
+    "confirmDeleteText": "”{{title}}” och dess transkription, anteckningar, sammanfattning och ljud raderas. Detta kan inte ångras.",
+    "deleteNamed": "Radera ”{{title}}”",
+    "markdownFilter": "Markdown",
+    "exported": "Mötet har exporterats",
+    "errors": {
+      "startFailed": "Det gick inte att starta mötet: {{error}}",
+      "stopFailed": "Det gick inte att avsluta mötet korrekt: {{error}}",
+      "summaryFailed": "Det gick inte att skapa sammanfattningen: {{error}}",
+      "notesSaveFailed": "Det gick inte att spara dina anteckningar: {{error}}",
+      "recoverFailed": "Det gick inte att återställa mötet: {{error}}",
+      "discardFailed": "Det gick inte att ignorera mötet: {{error}}",
+      "renameFailed": "Det gick inte att byta namn på mötet: {{error}}",
+      "retranscribeFailed": "Det gick inte att transkribera mötet igen: {{error}}",
+      "audioFailed": "Det gick inte att läsa in inspelningen",
+      "cancelFailed": "Det gick inte att avbryta",
+      "calendarFailed": "Det gick inte att få åtkomst till kalendern: {{error}}",
+      "folderPickerFailed": "Det gick inte att öppna mappväljaren: {{error}}",
+      "filePickerFailed": "Det gick inte att öppna filväljaren: {{error}}"
+    },
+    "settingsLoadError": "Det gick inte att läsa in mötesinställningarna"
   },
   "meetingPrompt": {
     "startTitle": "Möte upptäckt",
@@ -813,5 +928,10 @@
     "end": "Avsluta mötet",
     "continue": "Fortsätt spela in",
     "autoEndIn": "Avslutas automatiskt om {{seconds}} s"
+  },
+  "audioPlayer": {
+    "play": "Spela upp",
+    "pause": "Pausa",
+    "seek": "Uppspelningsposition"
   }
 }

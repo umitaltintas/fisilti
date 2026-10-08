@@ -75,6 +75,9 @@
   height: 24px;
   border-radius: 50%;
   background: transparent;
+  border: none;
+  padding: 0;
+  color: inherit;
   display: flex;
   align-items: center;
   justify-content: center;

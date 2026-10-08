@@ -29,7 +29,8 @@
     "groups": {
       "features": "Tính năng",
       "system": "Hệ thống"
-    }
+    },
+    "navigation": "Các mục cài đặt"
   },
   "onboarding": {
     "subtitle": "Để bắt đầu, hãy chọn một mô hình chuyển đổi giọng nói",
@@ -106,7 +107,8 @@
     },
     "errors": {
       "loadModels": "Không thể tải các mô hình có sẵn",
-      "downloadModel": "Không thể tải mô hình: {{error}}"
+      "downloadModel": "Không thể tải mô hình: {{error}}",
+      "selectModel": "Không thể chuyển sang mô hình này. Vui lòng thử lại."
     },
     "permissions": {
       "title": "Cần cấp quyền",
@@ -159,7 +161,12 @@
     },
     "cancel": "Hủy",
     "cancelDownload": "Hủy tải xuống",
-    "cloud": "Đám mây"
+    "cloud": "Đám mây",
+    "errors": {
+      "statusFailed": "Không thể kiểm tra trạng thái mô hình",
+      "loadFailed": "Tải mô hình thất bại",
+      "switchFailed": "Chuyển mô hình thất bại"
+    }
   },
   "settings": {
     "modelSettings": {
@@ -227,7 +234,9 @@
         "multilingualShort": "Đa ngôn ngữ",
         "english": "Chỉ tiếng Anh",
         "regional": "Ngôn ngữ cụ thể"
-      }
+      },
+      "downloadNamed": "Tải xuống {{modelName}}",
+      "useNamed": "Dùng {{modelName}}"
     },
     "general": {
       "title": "Chung",
@@ -260,7 +269,8 @@
           "restore": "Không thể khôi phục phím tắt gốc",
           "set": "Không thể đặt phím tắt: {{error}}",
           "reset": "Không thể đặt lại phím tắt về giá trị gốc"
-        }
+        },
+        "change": "Đổi phím tắt: {{shortcut}}"
       },
       "language": {
         "title": "Ngôn ngữ",
@@ -300,6 +310,20 @@
       "volume": {
         "title": "Âm lượng",
         "description": "Điều chỉnh âm lượng của âm thanh phản hồi"
+      },
+      "soundTheme": {
+        "label": "Chủ đề âm thanh",
+        "description": "Chọn chủ đề âm thanh cho phản hồi bắt đầu và kết thúc ghi âm",
+        "custom": "Tùy chỉnh",
+        "preview": "Nghe thử chủ đề âm thanh (phát âm bắt đầu, rồi âm dừng)"
+      },
+      "alwaysOnMicrophone": {
+        "label": "Micrô luôn bật",
+        "description": "Giữ micrô hoạt động để phản hồi nhanh hơn"
+      },
+      "clamshellMicrophone": {
+        "title": "Micrô chế độ gập",
+        "description": "Micrô sử dụng khi nắp laptop được đóng"
       }
     },
     "advanced": {
@@ -478,7 +502,18 @@
         "createPrompt": "Tạo Prompt",
         "cancel": "Hủy",
         "selectToEdit": "Chọn một prompt ở trên để xem và chỉnh sửa chi tiết.",
-        "createFirst": "Nhấn 'Tạo Prompt mới' ở trên để tạo prompt xử lý sau đầu tiên của bạn."
+        "createFirst": "Nhấn 'Tạo Prompt mới' ở trên để tạo prompt xử lý sau đầu tiên của bạn.",
+        "unsavedTitle": "Hủy các thay đổi chưa lưu?",
+        "unsavedText": "Các chỉnh sửa của bạn cho lời nhắc này chưa được lưu.",
+        "discardChanges": "Hủy thay đổi",
+        "saved": "Đã lưu lời nhắc",
+        "deleteConfirmTitle": "Xóa lời nhắc này?",
+        "deleteConfirmText": "\"{{name}}\" sẽ bị xóa. Không thể hoàn tác thao tác này.",
+        "errors": {
+          "create": "Không thể tạo lời nhắc",
+          "update": "Không thể lưu lời nhắc",
+          "delete": "Không thể xóa lời nhắc"
+        }
       },
       "description": "Để một mô hình AI chỉnh sửa, định dạng lại hoặc dịch mỗi bản ghi trước khi dán."
     },
@@ -496,7 +531,13 @@
       "retranscribeError": "Không thể phiên âm lại. Vui lòng thử lại.",
       "transcribing": "Đang phiên âm...",
       "transcriptionFailed": "Phiên âm thất bại. Bạn có thể phiên âm lại bằng biểu tượng thử lại.",
-      "retentionSettings": "Cài đặt lịch sử"
+      "retentionSettings": "Cài đặt lịch sử",
+      "loadError": "Không thể tải lịch sử",
+      "loadMoreError": "Không thể tải thêm lịch sử",
+      "saveError": "Không thể cập nhật mục này",
+      "deleteConfirmTitle": "Xóa bản chép lời này?",
+      "deleteConfirmText": "Bản chép lời và bản ghi âm của nó sẽ bị xóa. Không thể hoàn tác thao tác này.",
+      "openFolderError": "Không thể mở thư mục bản ghi âm"
     },
     "debug": {
       "title": "Gỡ lỗi",
@@ -511,10 +552,6 @@
       "updateChecks": {
         "label": "Kiểm tra cập nhật",
         "description": "Tự động kiểm tra phiên bản mới của Fısıltı"
-      },
-      "soundTheme": {
-        "label": "Chủ đề âm thanh",
-        "description": "Chọn chủ đề âm thanh cho phản hồi bắt đầu và kết thúc ghi âm"
       },
       "wordCorrectionThreshold": {
         "title": "Ngưỡng sửa từ",
@@ -534,14 +571,6 @@
         "weeks2": "Sau 2 tuần",
         "months3": "Sau 3 tháng",
         "placeholder": "Chọn thời gian lưu giữ..."
-      },
-      "alwaysOnMicrophone": {
-        "label": "Micrô luôn bật",
-        "description": "Giữ micrô hoạt động để phản hồi nhanh hơn"
-      },
-      "clamshellMicrophone": {
-        "title": "Micrô chế độ gập",
-        "description": "Micrô sử dụng khi nắp laptop được đóng"
       },
       "postProcessingToggle": {
         "label": "Xử lý sau",
@@ -602,6 +631,11 @@
           "details": "Fısıltı sử dụng Whisper.cpp để xử lý chuyển đổi giọng nói thành văn bản nhanh, cục bộ. Cảm ơn công việc tuyệt vời của Georgi Gerganov và các cộng tác viên."
         }
       }
+    },
+    "apiKey": {
+      "saving": "Đang lưu khóa…",
+      "saved": "Đã lưu khóa",
+      "failed": "Chưa lưu được khóa"
     }
   },
   "footer": {
@@ -639,7 +673,11 @@
     "yes": "Có",
     "no": "Không",
     "noOptionsFound": "Không tìm thấy tùy chọn",
-    "clear": "Xóa"
+    "clear": "Xóa",
+    "confirm": "Xác nhận",
+    "moreInfo": "Thêm thông tin",
+    "copyFailed": "Không thể sao chép vào bảng nhớ tạm",
+    "retry": "Thử lại"
   },
   "accessibility": {
     "permissionsRequired": "Cần quyền truy cập",
@@ -658,7 +696,27 @@
     },
     "recordingFailed": "Không thể bắt đầu ghi âm: {{error}}",
     "modelLoadFailed": "Không thể tải mô hình: {{model}}",
-    "modelLoadFailedUnknown": "mô hình không xác định"
+    "modelLoadFailedUnknown": "mô hình không xác định",
+    "settingSaveFailed": "Không thể lưu cài đặt",
+    "fetchModelsFailed": "Không thể lấy danh sách mô hình",
+    "unknown": "Lỗi không xác định",
+    "openFolderFailed": "Không thể mở thư mục",
+    "models": {
+      "loadFailed": "Không thể tải danh sách mô hình",
+      "selectFailed": "Không thể chuyển sang mô hình này",
+      "downloadFailed": "Tải xuống mô hình thất bại",
+      "cancelFailed": "Không thể hủy tải xuống",
+      "deleteFailed": "Không thể xóa mô hình",
+      "extractFailed": "Không thể giải nén mô hình đã tải xuống"
+    },
+    "dictation": {
+      "transcription": "Chép lời thất bại",
+      "paste": "Không thể dán văn bản",
+      "model_load": "Không thể tải mô hình chép lời",
+      "no_speech": "Không phát hiện giọng nói",
+      "recording": "Ghi âm thất bại",
+      "generic": "Đọc chính tả thất bại"
+    }
   },
   "appLanguage": {
     "title": "Ngôn ngữ ứng dụng",
@@ -666,7 +724,8 @@
   },
   "overlay": {
     "transcribing": "Đang chuyển đổi...",
-    "processing": "Đang xử lý..."
+    "processing": "Đang xử lý...",
+    "cancel": "Hủy ghi âm"
   },
   "meeting": {
     "title": "Meeting",
@@ -784,7 +843,8 @@
         "decoding": "Reading audio",
         "transcribing": "Transcribing",
         "summarizing": "Writing title and summary"
-      }
+      },
+      "failed": "Không thể chép lời bản ghi âm: {{error}}"
     },
     "exportDir": {
       "title": "Save as Markdown to a folder",
@@ -797,8 +857,63 @@
       "button": "Transcribe again",
       "hint": "Transcribe this meeting again from its saved audio with the current meeting model.",
       "failedHint": "This transcript looks incomplete. Transcribe it again from the saved audio?",
-      "confirmText": "The current transcript will be replaced (notes and title stay). Continue?"
-    }
+      "confirmText": "The current transcript will be replaced (notes and title stay). Continue?",
+      "confirmTitle": "Chép lời lại cuộc họp này?",
+      "cancelling": "Đang hủy…"
+    },
+    "transcriptionFailed": "Chép lời thất bại nên cuộc họp này không có văn bản. Âm thanh đã được lưu và bản ghi âm vẫn được giữ lại. Lý do: {{error}}",
+    "liveTranslateTargetLabel": "Dịch sang",
+    "geminiDiarizeToggle": "Nhận diện từng người nói",
+    "geminiDiarizeDescription": "Gắn nhãn người nói cho mỗi dòng. Được ưu tiên hơn tùy chọn làm gọn bên dưới, và tự động bỏ qua với bản ghi dài hơn 30 phút vì API không thể phân biệt người nói.",
+    "geminiSmartToggle": "Làm gọn bản chép lời",
+    "geminiSmartDescription": "Bỏ các từ đệm, câu nói vấp và áp dụng định dạng thay vì chép nguyên văn mọi âm thanh. Bị bỏ qua khi bật nhận diện người nói — Gemini không thể làm cả hai cùng lúc.",
+    "liveModeLabel": "Trong khi họp",
+    "liveModeOff": "Chép lời khi kết thúc",
+    "liveModeTranscribe": "Chép lời trực tiếp",
+    "liveModeTranslate": "Dịch trực tiếp",
+    "liveModeNote": {
+      "off": "Âm thanh chỉ được gửi đến Google sau khi bạn dừng cuộc họp, nếu tùy chọn ở trên được bật.",
+      "transcribe": "Văn bản xuất hiện ngay khi mọi người nói. Rẻ hơn khoảng bốn lần so với dịch trực tiếp. Giữ tùy chọn ở trên bật để có tên người nói khi cuộc họp kết thúc.",
+      "translate": "Văn bản xuất hiện ngay khi mọi người nói, kèm bản dịch dưới mỗi dòng. Đây là tùy chọn đắt nhất và là tùy chọn duy nhất không thể có tên người nói — lượt xử lý thứ hai sẽ làm mất bản dịch."
+    },
+    "transcriptSpeakerUnknown": "Người nói",
+    "subtitlesToggle": "Hiển thị phụ đề trực tiếp trên màn hình",
+    "subtitlesDescription": "Hiển thị nổi lời của những người tham gia khác gần cuối màn hình trong khi họp, để bạn đọc theo mà không cần rời cuộc gọi. Có thể nhấp xuyên qua, và bị ẩn khỏi chia sẻ màn hình lẫn bản ghi hình. Cần chọn một chế độ trực tiếp ở trên.",
+    "stillProcessing": "Đang chép lời",
+    "costEstimate": "~${{amount}}",
+    "costTooltip": "Ước tính từ số token mà API báo cáo, tính theo bảng giá công khai tại một thời điểm. Giá bản xem trước có thể thay đổi, và hạn mức miễn phí cũng như chiết khấu thanh toán không được tính, nên con số này sẽ không khớp chính xác với hóa đơn. Dấu + ở cuối nghĩa là có một mô hình chưa công bố giá và chi phí thực tế cao hơn.",
+    "cloudBadge": "Âm thanh đã gửi đến {{providers}}",
+    "notesNotSavedYet": "Chưa lưu",
+    "notesSaveFailed": "Không được lưu",
+    "durationHoursMinutes": "{{hours}} giờ {{minutes}} phút",
+    "recovered": "Đã khôi phục cuộc họp",
+    "discardConfirmTitle": "Hủy bỏ cuộc họp này?",
+    "discardConfirmWithAudio": "Âm thanh đã lưu và bản chép lời dở dang sẽ bị xóa. Không thể hoàn tác thao tác này.",
+    "discardConfirmText": "Bản chép lời dở dang sẽ bị xóa. Không thể hoàn tác thao tác này.",
+    "recoverTitleUnfinished": "Cuộc họp này chưa xử lý xong",
+    "recoverTitleInterrupted": "Cuộc họp này đã bị gián đoạn",
+    "recoverDescriptionWithAudio": "Âm thanh vẫn được giữ lại. Khôi phục để chép lời lại âm thanh và lưu thành một cuộc họp bình thường.",
+    "recoverDescriptionPartial": "Âm thanh không còn khả dụng. Khôi phục sẽ giữ lại bản chép lời dở dang đã được lưu trong lúc họp.",
+    "confirmDeleteText": "\"{{title}}\" cùng bản chép lời, ghi chú, bản tóm tắt và âm thanh sẽ bị xóa. Không thể hoàn tác thao tác này.",
+    "deleteNamed": "Xóa \"{{title}}\"",
+    "markdownFilter": "Markdown",
+    "exported": "Đã xuất cuộc họp",
+    "errors": {
+      "startFailed": "Không thể bắt đầu cuộc họp: {{error}}",
+      "stopFailed": "Không thể dừng cuộc họp đúng cách: {{error}}",
+      "summaryFailed": "Không thể tạo bản tóm tắt: {{error}}",
+      "notesSaveFailed": "Không thể lưu ghi chú: {{error}}",
+      "recoverFailed": "Không thể khôi phục cuộc họp này: {{error}}",
+      "discardFailed": "Không thể hủy bỏ cuộc họp này: {{error}}",
+      "renameFailed": "Không thể đổi tên cuộc họp: {{error}}",
+      "retranscribeFailed": "Không thể chép lời lại cuộc họp: {{error}}",
+      "audioFailed": "Không thể tải bản ghi âm",
+      "cancelFailed": "Không thể hủy",
+      "calendarFailed": "Không thể truy cập lịch: {{error}}",
+      "folderPickerFailed": "Không thể mở trình chọn thư mục: {{error}}",
+      "filePickerFailed": "Không thể mở trình chọn tệp: {{error}}"
+    },
+    "settingsLoadError": "Không thể tải cài đặt cuộc họp"
   },
   "meetingPrompt": {
     "startTitle": "Đã phát hiện cuộc họp",
@@ -813,5 +928,10 @@
     "end": "Kết thúc cuộc họp",
     "continue": "Tiếp tục ghi",
     "autoEndIn": "Tự động kết thúc sau {{seconds}} giây"
+  },
+  "audioPlayer": {
+    "play": "Phát",
+    "pause": "Tạm dừng",
+    "seek": "Vị trí phát"
   }
 }

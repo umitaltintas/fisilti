@@ -73,7 +73,7 @@ const getSupportedLanguage = (
 
 // Initialize i18n with English as default
 // Language will be synced from settings after init
-i18n.use(initReactI18next).init({
+void i18n.use(initReactI18next).init({
   resources,
   lng: "en",
   fallbackLng: "en",
@@ -108,7 +108,7 @@ export const syncLanguageFromSettings = async () => {
 };
 
 // Run language sync on init
-syncLanguageFromSettings();
+void syncLanguageFromSettings();
 
 // Listen for language changes to update HTML dir and lang attributes
 i18n.on("languageChanged", (lng) => {

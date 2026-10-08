@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import { Play, Pause } from "lucide-react";
 
 interface AudioPlayerProps {
@@ -16,6 +17,7 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
   className = "",
   autoPlay = false,
 }) => {
+  const { t } = useTranslation();
   const [isPlaying, setIsPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
@@ -229,13 +231,17 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
 
   return (
     <div className={`flex items-center gap-3 ${className}`}>
+      {/* Recordings of speech: the transcript shown alongside is the text
+          alternative, so there is no caption track. */}
+      {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
       <audio ref={audioRef} src={src ?? undefined} preload="metadata" />
 
       <button
-        onClick={togglePlay}
+        type="button"
+        onClick={() => void togglePlay()}
         disabled={isLoading}
-        className="transition-colors cursor-pointer text-text hover:text-logo-primary disabled:opacity-50"
-        aria-label={isPlaying ? "Pause" : "Play"}
+        className="rounded transition-colors cursor-pointer text-text hover:text-logo-primary disabled:opacity-50 focus:outline-none focus-visible:ring-1 focus-visible:ring-logo-primary"
+        aria-label={isPlaying ? t("audioPlayer.pause") : t("audioPlayer.play")}
       >
         {isPlaying ? (
           <Pause width={20} height={20} fill="currentColor" />
@@ -251,6 +257,7 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
 
         <input
           type="range"
+          aria-label={t("audioPlayer.seek")}
           min="0"
           max={duration || 0}
           step="0.01"

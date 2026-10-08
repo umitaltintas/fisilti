@@ -1,6 +1,5 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useId, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { UnlistenFn } from "@tauri-apps/api/event";
 import { History, Mic, Settings2 } from "lucide-react";
 
 import { LiveSession } from "./LiveSession";
@@ -8,509 +7,91 @@ import { MeetingHistory } from "./MeetingHistory";
 import { MeetingDetail } from "./MeetingDetail";
 import { MeetingPreferences } from "./MeetingPreferences";
 import { ImportRecording } from "./ImportRecording";
-import { NOTES_AUTOSAVE_MS, SEARCH_DEBOUNCE_MS } from "./shared";
-import {
-  deleteMeeting,
-  discardInterruptedMeeting,
-  getMeeting,
-  getMeetingStartedAt,
-  getMeetingStatus,
-  getMeetingSummaryTemplates,
-  getMeetingTranscript,
-  getSummaryProviderInfo,
-  listInterruptedMeetings,
-  listMeetings,
-  listenMeetingError,
-  listenMeetingFinalizing,
-  listenMeetingImportFinished,
-  listenMeetingState,
-  listenMeetingSummary,
-  listenMeetingTitle,
-  listenMeetingTranscript,
-  recoverMeeting,
-  startMeeting,
-  stopMeeting,
-  summarizeMeetingWith,
-  updateMeetingNotes,
-  type InterruptedMeeting,
-  type MeetingListItem,
-  type MeetingRecord,
-  type MeetingStatus,
-  type MeetingSummaryTemplate,
-  type SummaryProviderInfo,
-  type TranscriptSegment,
-} from "@/lib/meeting";
+import { summaryProviderInfo } from "@/lib/meeting";
 import { useModelStore } from "@/stores/modelStore";
-import { isCloudEngine } from "@/lib/utils/model";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { isLiveMeeting, useMeetingStore } from "@/stores/meetingStore";
+import { isCloudModel, meetingModelId } from "@/lib/utils/model";
 
 type MeetingTab = "session" | "history" | "settings";
+const TAB_ORDER: MeetingTab[] = ["session", "history", "settings"];
 
 // The Meeting section, split into three tabs so each job gets its own space:
 // "Session" (the live/last workspace), "History" (past meetings + detail) and
-// "Settings" (one-time configuration). Shared session state and backend event
-// subscriptions live here so switching tabs never drops a running meeting.
+// "Settings" (one-time configuration).
+//
+// The session itself lives in the app-wide meeting store, not here: this page
+// can unmount (navigating to another section) without losing a running
+// meeting's transcript, notes or status.
 export const MeetingSettings: React.FC = () => {
   const { t } = useTranslation();
+  const tabsId = useId();
+  const tabRefs = useRef<Record<MeetingTab, HTMLButtonElement | null>>({
+    session: null,
+    history: null,
+    settings: null,
+  });
 
   const [tab, setTab] = useState<MeetingTab>("session");
+  const [detailId, setDetailId] = useState<number | null>(null);
+
+  const status = useMeetingStore((s) => s.status);
+  const liveMeetingId = useMeetingStore((s) => s.meetingId);
+  const isActive = status !== "idle";
+
+  const settings = useSettingsStore((s) => s.settings);
+  const models = useModelStore((s) => s.models);
 
   // Cloud models skip the live per-segment pass (it would be one request each),
   // so the live transcript stays empty until the on-stop finalize. Detect that
-  // to show an accurate hint instead of "listening…".
-  const { currentModel, models } = useModelStore();
-  const selectedIsCloud = (() => {
-    const engine = models.find((m) => m.id === currentModel)?.engine_type;
-    return isCloudEngine(engine);
-  })();
-
-  const [status, setStatus] = useState<MeetingStatus>("idle");
-  const [transcript, setTranscript] = useState("");
-  // Accumulated transcript segments for the live (and final) transcript,
-  // rendered as a plain chronological flow. Replaced wholesale by the polished
-  // list when the finalize pass completes.
-  const [liveSegments, setLiveSegments] = useState<TranscriptSegment[]>([]);
-  const [finalizing, setFinalizing] = useState(false);
-  const [elapsed, setElapsed] = useState(0);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // The user's own editable notes for the in-progress / just-finished meeting.
-  const [userNotes, setUserNotes] = useState("");
-  const [notesSaving, setNotesSaving] = useState(false);
-  // The AI summary for the live/just-finished meeting.
-  const [summary, setSummary] = useState("");
-  const [summarizing, setSummarizing] = useState(false);
-  const [summaryError, setSummaryError] = useState<string | null>(null);
-
-  // Summary template picker + custom prompt for the live flow (the detail
-  // view keeps its own local pair).
-  const [templates, setTemplates] = useState<MeetingSummaryTemplate[]>([]);
-  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
-  const [customPrompt, setCustomPrompt] = useState("");
-
-  // Trust indicator: where the summary provider runs.
-  const [providerInfo, setProviderInfo] = useState<SummaryProviderInfo | null>(
-    null,
+  // from the MEETING model — not the dictation one — to show an accurate hint
+  // instead of "listening…".
+  const selectedIsCloud = isCloudModel(
+    models.find((m) => m.id === meetingModelId(settings)),
   );
-
-  // The id of the most recently saved meeting (so live notes/summary edits can
-  // be persisted to the right row).
-  const [currentMeetingId, setCurrentMeetingId] = useState<number | null>(null);
-
-  // Past meetings list + detail view.
-  const [pastMeetings, setPastMeetings] = useState<MeetingListItem[]>([]);
-  const [pastError, setPastError] = useState<string | null>(null);
-  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
-  const [detail, setDetail] = useState<MeetingRecord | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
-  const [detailError, setDetailError] = useState<string | null>(null);
-
-  // Search box (debounced -> list_meetings({query})).
-  const [searchQuery, setSearchQuery] = useState("");
-
-  // Crash-recovery banner.
-  const [interrupted, setInterrupted] = useState<InterruptedMeeting[]>([]);
-  const [recoveringId, setRecoveringId] = useState<number | null>(null);
-  const [recoverError, setRecoverError] = useState<string | null>(null);
-
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  // Epoch-ms the running session actually started, so the displayed elapsed
-  // time stays correct even when this component attaches mid-meeting.
-  const startedAtRef = useRef<number | null>(null);
-  // Mirrors `status` for the state-change listener, which must compare against
-  // the current value without re-subscribing on every transition.
-  const statusRef = useRef<MeetingStatus>("idle");
-  const notesSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const searchRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const isRunning = status === "running";
-
-  useEffect(() => {
-    statusRef.current = status;
-  }, [status]);
-
-  const loadPastMeetings = useCallback(async (query?: string) => {
-    try {
-      const items = await listMeetings(query);
-      setPastMeetings(items);
-      setPastError(null);
-    } catch (e) {
-      setPastError(String(e));
-    }
-  }, []);
-
-  // Crash-recovery banner source. Also lists sessions kept because their
-  // transcription failed, so it has to be refreshed after a meeting ends — not
-  // only on mount.
-  const loadInterrupted = useCallback(async () => {
-    try {
-      setInterrupted(await listInterruptedMeetings());
-    } catch {
-      // Best-effort; no banner on failure.
-    }
-  }, []);
-
-  const stopTimer = useCallback(() => {
-    if (timerRef.current !== null) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-  }, []);
-
-  // Start the elapsed clock from `startedAtMs` (the backend's session start).
-  // Omit it for a session we just started ourselves. Deriving the display from
-  // a timestamp instead of incrementing a counter keeps it right when the
-  // window was opened late or the interval was throttled in the background.
-  const startTimer = useCallback(
-    (startedAtMs?: number | null) => {
-      stopTimer();
-      startedAtRef.current = startedAtMs ?? Date.now();
-      const tick = () => {
-        const base = startedAtRef.current ?? Date.now();
-        setElapsed(Math.max(0, Math.floor((Date.now() - base) / 1000)));
-      };
-      tick();
-      timerRef.current = setInterval(tick, 1000);
-    },
-    [stopTimer],
+  const templates = useMemo(
+    () => settings?.meeting_summary_templates ?? [],
+    [settings?.meeting_summary_templates],
   );
+  const providerInfo = useMemo(() => summaryProviderInfo(settings), [settings]);
 
-  // Reflect an already-running session on mount and subscribe to updates.
-  useEffect(() => {
-    let cancelled = false;
-
-    void loadPastMeetings();
-
-    // Load summary templates for the picker + the provider trust info.
-    void getMeetingSummaryTemplates().then((tpl) => {
-      if (cancelled) return;
-      setTemplates(tpl);
-      setSelectedTemplate((cur) => cur ?? tpl[0]?.id ?? null);
-    });
-    void getSummaryProviderInfo().then((info) => {
-      if (!cancelled) setProviderInfo(info);
-    });
-
-    // Crash-recovery: surface any interrupted meetings as a banner.
-    void loadInterrupted();
-
-    (async () => {
-      try {
-        const current = await getMeetingStatus();
-        if (cancelled) return;
-        setStatus(current);
-        if (current === "running") {
-          try {
-            setTranscript(await getMeetingTranscript());
-          } catch {
-            // ignore: transcript fetch is best-effort
-          }
-          const startedAt = await getMeetingStartedAt().catch(() => null);
-          startTimer(startedAt);
-        }
-      } catch (e) {
-        if (!cancelled) setError(String(e));
-      }
-    })();
-
-    const unlisteners: UnlistenFn[] = [];
-    const register = (p: Promise<UnlistenFn>) => {
-      p.then((fn) => {
-        if (cancelled) fn();
-        else unlisteners.push(fn);
-      }).catch((e) => {
-        if (!cancelled) setError(String(e));
-      });
-    };
-
-    register(
-      listenMeetingTranscript((update) => {
-        setTranscript(update.full_transcript);
-        // Accumulate labeled segments for the live preview. The on-stop
-        // finalize pass replaces the full transcript text but only re-emits
-        // the LAST segment, so the polished labeled list is re-fetched from
-        // the saved record in handleStop; here we just append live segments.
-        setLiveSegments((prev) => [...prev, update.segment]);
-      }),
-    );
-
-    register(
-      listenMeetingFinalizing((value) => {
-        setFinalizing(value);
-        // The finalize pass just wrote the meeting row. Refresh both lists so a
-        // session stopped from the tray / shortcut / auto-end (i.e. without
-        // going through handleStop) still shows up — as a past meeting, or as a
-        // recovery banner entry when its transcription failed.
-        if (!value) {
-          void loadPastMeetings();
-          void loadInterrupted();
-        }
-      }),
-    );
-
-    // A session can be started or stopped without this window being involved:
-    // the tray item, a global shortcut, or the meeting auto-detect prompt. Track
-    // that state here, otherwise an already-open window shows "idle" (and a
-    // frozen 00:00) for the whole meeting.
-    register(
-      listenMeetingState((next) => {
-        if (statusRef.current === next) return;
-        statusRef.current = next;
-        setStatus(next);
-        if (next === "running") {
-          setError(null);
-          setTranscript("");
-          setLiveSegments([]);
-          setSummary("");
-          setSummaryError(null);
-          setUserNotes("");
-          setFinalizing(false);
-          setCurrentMeetingId(null);
-          void getMeetingStartedAt()
-            .catch(() => null)
-            .then((startedAt) => startTimer(startedAt));
-        } else {
-          stopTimer();
-        }
-      }),
-    );
-
-    // An import may finish while another tab is showing; keep the list current.
-    register(
-      listenMeetingImportFinished(({ id }) => {
-        if (id != null) void loadPastMeetings();
-      }),
-    );
-
-    // Transcription failures are otherwise invisible: the finalize pass logs a
-    // warning and the user just sees an empty transcript.
-    register(
-      listenMeetingError((message) => {
-        setError(t("meeting.transcriptionFailed", { error: message }));
-      }),
-    );
-
-    register(
-      listenMeetingSummary((s) => {
-        setSummary(s);
-      }),
-    );
-
-    // Automatic titles (calendar/window naming at start, LLM auto-title after
-    // stop) arrive with the affected row id; rename only the matching meeting.
-    register(
-      listenMeetingTitle(({ id, title }) => {
-        setDetail((prev) =>
-          prev && prev.id === id ? { ...prev, title } : prev,
-        );
-        setPastMeetings((prev) =>
-          prev.map((m) => (m.id === id ? { ...m, title } : m)),
-        );
-      }),
-    );
-
-    return () => {
-      cancelled = true;
-      for (const fn of unlisteners) fn();
-      stopTimer();
-    };
-  }, [startTimer, stopTimer, loadPastMeetings, loadInterrupted, t]);
-
-  // Debounced search: empty query -> all meetings.
-  useEffect(() => {
-    if (searchRef.current) clearTimeout(searchRef.current);
-    searchRef.current = setTimeout(() => {
-      void loadPastMeetings(searchQuery);
-    }, SEARCH_DEBOUNCE_MS);
-    return () => {
-      if (searchRef.current) clearTimeout(searchRef.current);
-    };
-  }, [searchQuery, loadPastMeetings]);
-
-  const handleStart = async () => {
-    setError(null);
-    setBusy(true);
-    try {
-      await startMeeting();
-      setUserNotes("");
-      setSummary("");
-      setSummaryError(null);
-      setTranscript("");
-      setLiveSegments([]);
-      setFinalizing(false);
-      setElapsed(0);
-      setCurrentMeetingId(null);
-      setStatus("running");
-      startTimer();
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setBusy(false);
+  const openDetail = (id: number) => {
+    // The live meeting is shown by the Session tab, not as a saved record.
+    if (isLiveMeeting(id, { status, meetingId: liveMeetingId })) {
+      setTab("session");
+      return;
     }
-  };
-
-  const handleStop = async () => {
-    setError(null);
-    setBusy(true);
-    try {
-      // stopMeeting() resolves only after the finalize pass + persistence,
-      // returning the polished full transcript. The finalize pass re-emits
-      // only the last labeled segment, so to render the polished, interleaved
-      // labeled transcript we re-fetch the just-saved record's segments.
-      const finalTranscript = await stopMeeting();
-      setTranscript(finalTranscript);
-      setStatus("idle");
-      stopTimer();
-      // A new meeting was just saved; refresh the past-meetings list and pull
-      // its polished labeled segments to replace the live preview.
-      const items = await listMeetings(searchQuery).catch(
-        () => [] as MeetingListItem[],
-      );
-      setPastMeetings(items);
-      // A session whose transcription failed is kept for recovery instead of
-      // being completed, so it is NOT in this list — surface it in the banner.
-      void loadInterrupted();
-      // Only adopt the newest row as "the meeting we just recorded" when this
-      // stop actually produced one. Otherwise items[0] is an OLDER meeting and
-      // its notes/summary would be shown as if they belonged to this session.
-      const newest = finalTranscript.trim().length > 0 ? items[0] : undefined;
-      if (newest) {
-        setCurrentMeetingId(newest.id);
-        try {
-          const record = await getMeeting(newest.id);
-          if (record.segments.length > 0) {
-            setLiveSegments(record.segments);
-          }
-          if (record.notes) setUserNotes(record.notes);
-          if (record.summary) setSummary(record.summary);
-        } catch {
-          // Best-effort: keep the accumulated live segments as a fallback.
-        }
-      }
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  // Resolve the template argument to pass: a free-text custom prompt overrides
-  // the dropdown selection when present.
-  const resolveTemplateArg = useCallback((): string | undefined => {
-    const custom = customPrompt.trim();
-    if (custom.length > 0) return custom;
-    return selectedTemplate ?? undefined;
-  }, [customPrompt, selectedTemplate]);
-
-  const handleSummarize = async () => {
-    setSummaryError(null);
-    setSummarizing(true);
-    try {
-      const result = await summarizeMeetingWith(resolveTemplateArg());
-      setSummary(result);
-      // The summary is persisted onto the last-saved row by the backend;
-      // refresh the list so the "has summary" marker appears.
-      void loadPastMeetings(searchQuery);
-    } catch (e) {
-      setSummaryError(String(e));
-    } finally {
-      setSummarizing(false);
-    }
-  };
-
-  // Debounced autosave for the live user-notes textarea.
-  const handleUserNotesChange = (value: string) => {
-    setUserNotes(value);
-    if (currentMeetingId == null) return;
-    const id = currentMeetingId;
-    if (notesSaveRef.current) clearTimeout(notesSaveRef.current);
-    setNotesSaving(true);
-    notesSaveRef.current = setTimeout(() => {
-      updateMeetingNotes(id, value)
-        .catch((e) => setSummaryError(String(e)))
-        .finally(() => setNotesSaving(false));
-    }, NOTES_AUTOSAVE_MS);
-  };
-
-  const openDetail = async (id: number) => {
+    setDetailId(id);
     setTab("history");
-    setDetail(null);
-    setDetailError(null);
-    setDetailLoading(true);
-    try {
-      const record = await getMeeting(id);
-      setDetail(record);
-    } catch (e) {
-      setDetailError(String(e));
-    } finally {
-      setDetailLoading(false);
-    }
-  };
-
-  const closeDetail = () => {
-    setDetail(null);
-    setDetailError(null);
-    setDetailLoading(false);
-  };
-
-  const handleDelete = async (id: number) => {
-    setPastError(null);
-    try {
-      await deleteMeeting(id);
-      setConfirmDeleteId(null);
-      if (detail?.id === id) closeDetail();
-      await loadPastMeetings(searchQuery);
-    } catch (e) {
-      setPastError(String(e));
-    }
-  };
-
-  const handleRecover = async (id: number) => {
-    setRecoverError(null);
-    setRecoveringId(id);
-    try {
-      await recoverMeeting(id);
-      setInterrupted((prev) => prev.filter((m) => m.id !== id));
-      await loadPastMeetings(searchQuery);
-    } catch (e) {
-      setRecoverError(String(e));
-    } finally {
-      setRecoveringId(null);
-    }
-  };
-
-  const handleDiscardInterrupted = async (id: number) => {
-    // Actually delete the row and the capture buffers it owned. Dismissing the
-    // card in the UI alone left the row in the database, so it came straight
-    // back on the next load — and its audio buffers were unreachable but still
-    // on disk.
-    setInterrupted((prev) => prev.filter((m) => m.id !== id));
-    try {
-      await discardInterruptedMeeting(id);
-      await loadPastMeetings(searchQuery);
-    } catch (e) {
-      // Put the card back: it still exists, and silently losing the only way
-      // to act on it is worse than showing the error.
-      setRecoverError(String(e));
-      void loadInterrupted();
-    }
-  };
-
-  const copyText = (text: string) => {
-    navigator.clipboard.writeText(text).catch((e) => {
-      console.error("Failed to copy:", e);
-    });
   };
 
   const goToHistoryList = () => {
-    closeDetail();
+    setDetailId(null);
     setTab("history");
   };
 
   // Re-clicking the active History tab pops back from a detail view.
-  const handleTabChange = (next: MeetingTab) => {
-    if (next === "history" && tab === "history") closeDetail();
+  const selectTab = (next: MeetingTab) => {
+    if (next === "history" && tab === "history") setDetailId(null);
     setTab(next);
+  };
+
+  // WAI-ARIA tabs: arrows move between tabs (and select them), Home/End jump.
+  const handleTabKeyDown = (event: React.KeyboardEvent) => {
+    const index = TAB_ORDER.indexOf(tab);
+    const rtl = document.dir === "rtl";
+    let next: number | null = null;
+    if (event.key === (rtl ? "ArrowLeft" : "ArrowRight"))
+      next = (index + 1) % TAB_ORDER.length;
+    else if (event.key === (rtl ? "ArrowRight" : "ArrowLeft"))
+      next = (index - 1 + TAB_ORDER.length) % TAB_ORDER.length;
+    else if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = TAB_ORDER.length - 1;
+    if (next === null) return;
+    event.preventDefault();
+    const target = TAB_ORDER[next];
+    setTab(target);
+    tabRefs.current[target]?.focus();
   };
 
   const tabs: { id: MeetingTab; label: string; Icon: typeof Mic }[] = [
@@ -519,111 +100,90 @@ export const MeetingSettings: React.FC = () => {
     { id: "settings", label: t("meeting.tabSettings"), Icon: Settings2 },
   ];
 
-  const detailOpen = detail !== null || detailLoading || detailError !== null;
+  const tabId = (id: MeetingTab) => `${tabsId}-tab-${id}`;
+  const panelId = (id: MeetingTab) => `${tabsId}-panel-${id}`;
+
+  const importCard = (
+    <ImportRecording disabled={isActive} onImported={openDetail} />
+  );
 
   return (
     <div className="max-w-3xl w-full mx-auto space-y-6">
-      {/* Tab bar */}
       <div
         role="tablist"
+        aria-label={t("sidebar.meeting")}
         className="flex items-center gap-1 rounded-lg border border-mid-gray/20 bg-mid-gray/5 p-1"
       >
-        {tabs.map(({ id, label, Icon }) => (
-          <button
-            key={id}
-            role="tab"
-            aria-selected={tab === id}
-            onClick={() => handleTabChange(id)}
-            className={`flex-1 flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm transition-colors cursor-pointer ${
-              tab === id
-                ? "bg-background text-text border border-mid-gray/20 shadow-sm"
-                : "border border-transparent text-text/60 hover:text-text"
-            }`}
-          >
-            <Icon width={15} height={15} />
-            <span>{label}</span>
-            {id === "session" && isRunning && (
-              <span className="relative flex h-2 w-2">
-                <span className="absolute inline-flex h-full w-full rounded-full bg-red-500/70 animate-ping" />
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
-              </span>
-            )}
-          </button>
-        ))}
+        {tabs.map(({ id, label, Icon }) => {
+          const selected = tab === id;
+          return (
+            <button
+              key={id}
+              ref={(el) => {
+                tabRefs.current[id] = el;
+              }}
+              type="button"
+              role="tab"
+              id={tabId(id)}
+              aria-selected={selected}
+              aria-controls={panelId(id)}
+              tabIndex={selected ? 0 : -1}
+              onClick={() => selectTab(id)}
+              onKeyDown={handleTabKeyDown}
+              className={`flex-1 flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm transition-colors cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-logo-primary ${
+                selected
+                  ? "bg-background text-text border border-mid-gray/20 shadow-sm"
+                  : "border border-transparent text-text/60 hover:text-text"
+              }`}
+            >
+              <Icon width={15} height={15} aria-hidden />
+              <span>{label}</span>
+              {id === "session" && status === "running" && (
+                <span className="relative flex h-2 w-2" aria-hidden>
+                  <span className="absolute inline-flex h-full w-full rounded-full bg-red-500/70 animate-ping" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
-      {tab === "session" && (
-        <LiveSession
-          isRunning={isRunning}
-          busy={busy}
-          elapsed={elapsed}
-          error={error}
-          finalizing={finalizing}
-          selectedIsCloud={selectedIsCloud}
-          transcript={transcript}
-          liveSegments={liveSegments}
-          userNotes={userNotes}
-          notesSaving={notesSaving}
-          hasSavedMeeting={currentMeetingId != null}
-          summary={summary}
-          summarizing={summarizing}
-          summaryError={summaryError}
-          templates={templates}
-          selectedTemplate={selectedTemplate}
-          onSelectTemplate={setSelectedTemplate}
-          customPrompt={customPrompt}
-          onCustomPromptChange={setCustomPrompt}
-          providerInfo={providerInfo}
-          recentMeetings={pastMeetings}
-          interrupted={interrupted}
-          recoveringId={recoveringId}
-          recoverError={recoverError}
-          onStart={handleStart}
-          onStop={handleStop}
-          onSummarize={handleSummarize}
-          onUserNotesChange={handleUserNotesChange}
-          onOpenMeeting={openDetail}
-          onViewAllMeetings={goToHistoryList}
-          onRecover={handleRecover}
-          onDiscardInterrupted={handleDiscardInterrupted}
-          onCopy={copyText}
-          importSlot={
-            <ImportRecording disabled={isRunning} onImported={openDetail} />
-          }
-        />
-      )}
-
-      {tab === "history" &&
-        (detailOpen ? (
-          <MeetingDetail
-            detail={detail}
-            loading={detailLoading}
-            error={detailError}
+      <div role="tabpanel" id={panelId(tab)} aria-labelledby={tabId(tab)}>
+        {tab === "session" && (
+          <LiveSession
+            selectedIsCloud={selectedIsCloud}
             templates={templates}
             providerInfo={providerInfo}
-            onBack={closeDetail}
-            onCopy={copyText}
-            onRefreshList={() => loadPastMeetings(searchQuery)}
-            setDetail={setDetail}
+            onOpenMeeting={openDetail}
+            onViewAllMeetings={goToHistoryList}
+            importSlot={importCard}
           />
-        ) : (
-          <div className="space-y-4">
-            <ImportRecording disabled={isRunning} onImported={openDetail} />
-            <MeetingHistory
-              meetings={pastMeetings}
-              error={pastError}
-              searchQuery={searchQuery}
-              onSearchChange={setSearchQuery}
-              confirmDeleteId={confirmDeleteId}
-              onRequestDelete={setConfirmDeleteId}
-              onCancelDelete={() => setConfirmDeleteId(null)}
-              onConfirmDelete={handleDelete}
-              onOpen={openDetail}
-            />
-          </div>
-        ))}
+        )}
 
-      {tab === "settings" && <MeetingPreferences />}
+        {tab === "history" &&
+          (detailId !== null ? (
+            <MeetingDetail
+              key={detailId}
+              meetingId={detailId}
+              templates={templates}
+              providerInfo={providerInfo}
+              onBack={() => setDetailId(null)}
+            />
+          ) : (
+            <div className="space-y-4">
+              {importCard}
+              <MeetingHistory
+                onOpen={openDetail}
+                onDeleted={(id) => {
+                  if (detailId === id) setDetailId(null);
+                }}
+              />
+            </div>
+          ))}
+
+        {tab === "settings" && <MeetingPreferences />}
+      </div>
     </div>
   );
 };

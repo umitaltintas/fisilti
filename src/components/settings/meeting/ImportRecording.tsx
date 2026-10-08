@@ -16,6 +16,8 @@ import {
   listenMeetingImportProgress,
   type MeetingImportProgress,
 } from "@/lib/meeting";
+import { errorMessage } from "@/lib/utils/errors";
+import { InlineError } from "./shared";
 
 interface ImportRecordingProps {
   /** A live meeting owns the engine; importing waits until it ends. */
@@ -47,6 +49,8 @@ export const ImportRecording: React.FC<ImportRecordingProps> = ({
   stateRef.current = { disabled, busy: progress !== null, extensions };
   const onImportedRef = useRef(onImported);
   onImportedRef.current = onImported;
+  const tRef = useRef(t);
+  tRef.current = t;
 
   const startImport = useCallback(
     async (path: string) => {
@@ -69,8 +73,10 @@ export const ImportRecording: React.FC<ImportRecordingProps> = ({
         // A refusal before the import starts (a meeting is running, another
         // import is under way) sends no "finished" event; resync with
         // whatever is actually running so the card does not hang at 0%.
-        const message = String(e);
-        if (message !== MEETING_IMPORT_CANCELLED) setError(message);
+        const message = errorMessage(e);
+        if (message !== MEETING_IMPORT_CANCELLED) {
+          setError(t("meeting.import.failed", { error: message }));
+        }
         setProgress(await getMeetingImportProgress().catch(() => null));
       }
     },
@@ -81,15 +87,26 @@ export const ImportRecording: React.FC<ImportRecordingProps> = ({
     let cancelled = false;
     const unlisteners: UnlistenFn[] = [];
     const register = (p: Promise<UnlistenFn>) => {
-      void p.then((fn) => (cancelled ? fn() : unlisteners.push(fn)));
+      p.then((fn) => {
+        if (cancelled) fn();
+        else unlisteners.push(fn);
+      }).catch((e: unknown) => {
+        console.warn("Failed to listen for import events:", e);
+      });
     };
 
-    void getSupportedImportExtensions().then((exts) => {
-      if (!cancelled) setExtensions(exts);
-    });
-    void getMeetingImportProgress().then((p) => {
-      if (!cancelled && p) setProgress(p);
-    });
+    getSupportedImportExtensions()
+      .then((exts) => {
+        if (!cancelled) setExtensions(exts);
+      })
+      .catch((e: unknown) => {
+        console.warn("Failed to read supported import formats:", e);
+      });
+    getMeetingImportProgress()
+      .then((p) => {
+        if (!cancelled && p) setProgress(p);
+      })
+      .catch(() => undefined);
 
     register(listenMeetingImportProgress((p) => setProgress(p)));
     register(
@@ -97,7 +114,7 @@ export const ImportRecording: React.FC<ImportRecordingProps> = ({
         setProgress(null);
         setCancelling(false);
         if (failure && failure !== MEETING_IMPORT_CANCELLED) {
-          setError(failure);
+          setError(tRef.current("meeting.import.failed", { error: failure }));
         }
         if (id != null) onImportedRef.current(id);
       }),
@@ -125,17 +142,28 @@ export const ImportRecording: React.FC<ImportRecordingProps> = ({
   }, [startImport]);
 
   const handlePick = async () => {
-    const picked = await open({
-      multiple: false,
-      directory: false,
-      filters: [{ name: t("meeting.import.fileFilter"), extensions }],
-    });
-    if (typeof picked === "string") void startImport(picked);
+    try {
+      const picked = await open({
+        multiple: false,
+        directory: false,
+        filters: [{ name: t("meeting.import.fileFilter"), extensions }],
+      });
+      if (typeof picked === "string") void startImport(picked);
+    } catch (e) {
+      setError(
+        t("meeting.errors.filePickerFailed", { error: errorMessage(e) }),
+      );
+    }
   };
 
   const handleCancel = async () => {
     setCancelling(true);
-    await cancelMeetingImport().catch(() => setCancelling(false));
+    try {
+      await cancelMeetingImport();
+    } catch (e) {
+      setCancelling(false);
+      setError(`${t("meeting.errors.cancelFailed")} (${errorMessage(e)})`);
+    }
   };
 
   if (progress) {
@@ -199,11 +227,7 @@ export const ImportRecording: React.FC<ImportRecordingProps> = ({
             ? t("meeting.import.busyMeeting")
             : t("meeting.import.description")}
         </p>
-        {error && (
-          <p className="mt-1 text-xs text-red-400 whitespace-pre-wrap break-words">
-            {error}
-          </p>
-        )}
+        {error && <InlineError className="mt-1 text-xs">{error}</InlineError>}
       </div>
       <Button
         onClick={() => void handlePick()}

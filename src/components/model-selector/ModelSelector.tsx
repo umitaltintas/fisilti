@@ -1,12 +1,13 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { listen } from "@tauri-apps/api/event";
 import { commands } from "@/bindings";
 import { getTranslatedModelName } from "../../lib/utils/modelTranslation";
 import { useModelStore } from "../../stores/modelStore";
 import ModelStatusButton from "./ModelStatusButton";
 import ModelDropdown from "./ModelDropdown";
 import DownloadProgressDisplay from "./DownloadProgressDisplay";
+import { useTauriEvent } from "@/hooks/useTauriEvent";
+import { useMeetingStore } from "@/stores/meetingStore";
 
 import { ModelStateEvent } from "@/lib/types/events";
 
@@ -59,69 +60,64 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
           }
         } catch {
           setModelStatus("error");
-          setModelError("Failed to check model status");
+          setModelError(t("modelSelector.errors.statusFailed"));
         }
       } else {
         setModelStatus("none");
       }
     };
-    checkStatus();
-  }, [currentModel]);
+    void checkStatus();
+  }, [currentModel, t]);
 
+  // Model loading lifecycle
+  useTauriEvent<ModelStateEvent>("model-state-changed", (payload) => {
+    const { event_type, error } = payload;
+    switch (event_type) {
+      case "loading_started":
+        setModelStatus("loading");
+        setModelError(null);
+        break;
+      case "loading_completed":
+        setModelStatus("ready");
+        setModelError(null);
+        setPendingModelId(null);
+        break;
+      case "loading_failed":
+        setModelStatus("error");
+        setModelError(error || t("modelSelector.errors.loadFailed"));
+        setPendingModelId(null);
+        break;
+      case "unloaded":
+        setModelStatus("unloaded");
+        setModelError(null);
+        break;
+    }
+  });
+
+  // A finished download becomes the dictation model only when there is none
+  // yet. Downloading a model to try it, or for meetings, must not silently
+  // swap the model you dictate with — and never mid-meeting, which owns the
+  // engine. (First-run onboarding selects its own model; this component is
+  // not mounted then.)
+  useTauriEvent<string>("model-download-complete", (modelId) => {
+    if (useModelStore.getState().currentModel) return;
+    if (useMeetingStore.getState().status !== "idle") return;
+    void (async () => {
+      try {
+        if (await commands.isRecording()) return;
+        setPendingModelId(modelId);
+        setModelError(null);
+        setShowModelDropdown(false);
+        const success = await selectModel(modelId);
+        if (!success) setPendingModelId(null);
+      } catch (error) {
+        console.warn("Auto-select after download failed:", error);
+      }
+    })();
+  });
+
+  // Click outside to close dropdown
   useEffect(() => {
-    // Listen for model loading lifecycle events
-    const modelStateUnlisten = listen<ModelStateEvent>(
-      "model-state-changed",
-      (event) => {
-        const { event_type, error } = event.payload;
-        switch (event_type) {
-          case "loading_started":
-            setModelStatus("loading");
-            setModelError(null);
-            break;
-          case "loading_completed":
-            setModelStatus("ready");
-            setModelError(null);
-            setPendingModelId(null);
-            break;
-          case "loading_failed":
-            setModelStatus("error");
-            setModelError(error || "Failed to load model");
-            setPendingModelId(null);
-            break;
-          case "unloaded":
-            setModelStatus("unloaded");
-            setModelError(null);
-            break;
-        }
-      },
-    );
-
-    // Auto-select model when download completes (fires after extraction too)
-    const downloadCompleteUnlisten = listen<string>(
-      "model-download-complete",
-      (event) => {
-        const modelId = event.payload;
-        setTimeout(async () => {
-          try {
-            const isRecording = await commands.isRecording();
-            if (!isRecording) {
-              setPendingModelId(modelId);
-              setModelError(null);
-              setShowModelDropdown(false);
-              const success = await selectModel(modelId);
-              if (!success) {
-                setPendingModelId(null);
-              }
-            }
-          } catch {
-            // Ignore errors in auto-select
-          }
-        }, 500);
-      },
-    );
-
-    // Click outside to close dropdown
     const handleClickOutside = (event: MouseEvent) => {
       if (
         dropdownRef.current &&
@@ -130,15 +126,9 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
         setShowModelDropdown(false);
       }
     };
-
     document.addEventListener("mousedown", handleClickOutside);
-
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-      modelStateUnlisten.then((fn) => fn());
-      downloadCompleteUnlisten.then((fn) => fn());
-    };
-  }, [selectModel]);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const handleModelSelect = async (modelId: string) => {
     setPendingModelId(modelId);
@@ -146,10 +136,11 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
     setShowModelDropdown(false);
     const success = await selectModel(modelId);
     if (!success) {
+      const message = t("modelSelector.errors.switchFailed");
       setPendingModelId(null);
       setModelStatus("error");
-      setModelError("Failed to switch model");
-      onError?.("Failed to switch model");
+      setModelError(message);
+      onError?.(message);
     }
   };
 
@@ -258,7 +249,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
           <ModelDropdown
             models={models}
             currentModelId={displayModelId}
-            onModelSelect={handleModelSelect}
+            onModelSelect={(id) => void handleModelSelect(id)}
           />
         )}
       </div>

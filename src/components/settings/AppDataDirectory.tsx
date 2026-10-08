@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 import { commands } from "@/bindings";
+import { errorMessage } from "@/lib/utils/errors";
 import { SettingContainer } from "../ui/SettingContainer";
 import { PathDisplay } from "../ui/PathDisplay";
 
@@ -28,39 +30,41 @@ export const AppDataDirectory: React.FC<AppDataDirectoryProps> = ({
           setError(result.error);
         }
       } catch (err) {
-        setError(
-          err instanceof Error ? err.message : "Failed to load app directory",
-        );
+        setError(errorMessage(err));
       } finally {
         setLoading(false);
       }
     };
 
-    loadAppDirectory();
+    void loadAppDirectory();
   }, []);
 
   const handleOpen = async () => {
     if (!appDirPath) return;
     try {
-      await commands.openAppDataDir();
+      const result = await commands.openAppDataDir();
+      if (result.status === "error") throw result.error;
     } catch (openError) {
       console.error("Failed to open app data directory:", openError);
+      toast.error(t("errors.openFolderFailed"), {
+        description: errorMessage(openError),
+      });
     }
   };
 
   if (loading) {
     return (
-      <div className="animate-pulse">
-        <div className="h-4 bg-gray-200 rounded w-1/3 mb-2"></div>
-        <div className="h-8 bg-gray-100 rounded"></div>
+      <div className="animate-pulse px-4 py-2">
+        <div className="h-4 bg-mid-gray/20 rounded w-1/3 mb-2"></div>
+        <div className="h-8 bg-mid-gray/10 rounded"></div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-        <p className="text-red-600 text-sm">
+      <div className="px-4 py-2">
+        <p role="alert" className="text-red-400 text-sm break-words">
           {t("errors.loadDirectory", { error })}
         </p>
       </div>
@@ -77,7 +81,7 @@ export const AppDataDirectory: React.FC<AppDataDirectoryProps> = ({
     >
       <PathDisplay
         path={appDirPath}
-        onOpen={handleOpen}
+        onOpen={() => void handleOpen()}
         disabled={!appDirPath}
       />
     </SettingContainer>

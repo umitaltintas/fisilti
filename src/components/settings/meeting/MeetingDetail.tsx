@@ -1,8 +1,9 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import { writeTextFile } from "@tauri-apps/plugin-fs";
+import { toast } from "sonner";
 import {
   ArrowLeft,
   AudioLines,
@@ -10,14 +11,19 @@ import {
   Loader2,
   Pencil,
   RefreshCw,
+  X,
 } from "lucide-react";
 
 import { Button } from "../../ui/Button";
+import { IconButton } from "../../ui/IconButton";
+import { AudioPlayer } from "../../ui/AudioPlayer";
+import { useConfirm } from "../../ui/ConfirmDialog";
 import type { SelectOption } from "../../ui/Select";
 import { Markdown } from "./Markdown";
 import {
   CopyButton,
-  NOTES_AUTOSAVE_MS,
+  InlineError,
+  NotesSaveIndicator,
   PlainTranscript,
   SectionHeading,
   SummaryControls,
@@ -28,6 +34,9 @@ import {
   plainTranscriptText,
 } from "./shared";
 import {
+  MEETING_EVENTS,
+  MEETING_IMPORT_CANCELLED,
+  cancelMeetingImport,
   estimateMeetingCost,
   exportMeetingMarkdown,
   getMeeting,
@@ -40,40 +49,160 @@ import {
   type MeetingImportProgress,
   type MeetingRecord,
   type MeetingSummaryTemplate,
+  type MeetingSummaryUpdate,
+  type MeetingTitleUpdate,
   type SummaryProviderInfo,
 } from "@/lib/meeting";
+import {
+  NOTES_AUTOSAVE_MS,
+  useMeetingStore,
+  type NotesSaveState,
+} from "@/stores/meetingStore";
+import { useTauriEvent } from "@/hooks/useTauriEvent";
+import { errorMessage } from "@/lib/utils/errors";
 
 interface MeetingDetailProps {
-  detail: MeetingRecord | null;
-  loading: boolean;
-  error: string | null;
+  meetingId: number;
   templates: MeetingSummaryTemplate[];
   providerInfo: SummaryProviderInfo | null;
   onBack: () => void;
-  onCopy: (text: string) => void;
-  onRefreshList: () => void;
-  setDetail: React.Dispatch<React.SetStateAction<MeetingRecord | null>>;
 }
 
-// Full-page detail view of a saved meeting (takes over the History tab).
 /** Sub-cent meetings are the common case for a short transcription, and
  * "$0.00" reads as "free" rather than "too small to show". */
 const formatCost = (usd: number): string =>
   usd > 0 && usd < 0.01 ? "<0.01" : usd.toFixed(2);
 
+// Full-page detail view of a saved meeting (takes over the History tab).
+// Render with `key={meetingId}` so every piece of local state starts fresh for
+// each meeting.
 export const MeetingDetail: React.FC<MeetingDetailProps> = ({
-  detail,
-  loading,
-  error,
+  meetingId,
   templates,
   providerInfo,
   onBack,
-  onCopy,
-  onRefreshList,
-  setDetail,
 }) => {
   const { t, i18n } = useTranslation();
   const locale = i18n.language;
+  const patchMeeting = useMeetingStore((s) => s.patchMeeting);
+  const loadMeetings = useMeetingStore((s) => s.loadMeetings);
+  const { confirm, dialog } = useConfirm();
+
+  const [detail, setDetail] = useState<MeetingRecord | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  // Editable notes, seeded once from the loaded record — never re-seeded from
+  // it afterwards, which used to overwrite whatever was being typed.
+  const [notes, setNotes] = useState("");
+  const [notesSave, setNotesSave] = useState<NotesSaveState>("idle");
+  const [notesError, setNotesError] = useState<string | null>(null);
+  const notesTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const notesSeqRef = useRef(0);
+
+  // Inline title rename.
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
+  const [titleError, setTitleError] = useState<string | null>(null);
+  const titleInputRef = useRef<HTMLInputElement>(null);
+
+  // Regenerate controls.
+  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
+  const [customPrompt, setCustomPrompt] = useState("");
+  const [regenerating, setRegenerating] = useState(false);
+  const [regenError, setRegenError] = useState<string | null>(null);
+
+  // Transcribe again from the saved audio.
+  const [retranscribing, setRetranscribing] = useState(false);
+  const [cancellingRetranscribe, setCancellingRetranscribe] = useState(false);
+  const [retranscribeProgress, setRetranscribeProgress] =
+    useState<MeetingImportProgress | null>(null);
+  const [retranscribeError, setRetranscribeError] = useState<string | null>(
+    null,
+  );
+
+  const [exporting, setExporting] = useState(false);
+  const notesId = useId();
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const record = await getMeeting(meetingId);
+      setDetail(record);
+      return record;
+    } catch (error) {
+      setLoadError(errorMessage(error));
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, [meetingId]);
+
+  useEffect(() => {
+    void load().then((record) => {
+      if (record) setNotes(record.notes ?? "");
+    });
+  }, [load]);
+
+  useEffect(() => {
+    setSelectedTemplate((cur) => cur ?? templates[0]?.id ?? null);
+  }, [templates]);
+
+  useEffect(() => {
+    if (editingTitle) titleInputRef.current?.focus();
+  }, [editingTitle]);
+
+  // Automatic renames and summaries for this meeting land while it is open.
+  useTauriEvent<MeetingTitleUpdate>(MEETING_EVENTS.title, ({ id, title }) => {
+    if (id === meetingId) {
+      setDetail((prev) => (prev ? { ...prev, title } : prev));
+    }
+  });
+  useTauriEvent<MeetingSummaryUpdate>(MEETING_EVENTS.summary, (payload) => {
+    if (typeof payload === "object" && payload.id === meetingId) {
+      setDetail((prev) =>
+        prev ? { ...prev, summary: payload.summary } : prev,
+      );
+    }
+  });
+
+  useEffect(() => {
+    if (!retranscribing) return;
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    void listenMeetingImportProgress((p) => setRetranscribeProgress(p)).then(
+      (fn) => {
+        if (cancelled) fn();
+        else unlisten = fn;
+      },
+    );
+    return () => {
+      cancelled = true;
+      unlisten?.();
+      setRetranscribeProgress(null);
+    };
+  }, [retranscribing]);
+
+  // Flush a pending notes save when leaving the meeting.
+  const notesRef = useRef(notes);
+  notesRef.current = notes;
+  useEffect(
+    () => () => {
+      if (notesTimerRef.current) {
+        clearTimeout(notesTimerRef.current);
+        void updateMeetingNotes(meetingId, notesRef.current).catch(
+          (error: unknown) =>
+            toast.error(
+              t("meeting.errors.notesSaveFailed", {
+                error: errorMessage(error),
+              }),
+            ),
+        );
+      }
+    },
+    [meetingId, t],
+  );
 
   const title = detail
     ? detail.title.trim() || t("meeting.untitledMeeting")
@@ -87,170 +216,143 @@ export const MeetingDetail: React.FC<MeetingDetailProps> = ({
       (detail.duration_ms > 60_000 &&
         detail.transcript.trim().length < (detail.duration_ms / 60_000) * 30));
   const labeledSegments = detail?.segments ?? [];
-  const hasLabeledSegments = labeledSegments.length > 0;
   const summary = detail?.summary?.trim() ?? "";
   // Null when no cloud model ran, which must read differently from "$0.00" —
   // the latter would claim a paid path was free.
   const cost = estimateMeetingCost(detail?.usage);
+  const hasAudio = !!detail?.audio_path;
 
-  // Inline title rename.
-  const [editingTitle, setEditingTitle] = useState(false);
-  const [titleDraft, setTitleDraft] = useState("");
-
-  // Editable user notes in the detail view (debounced autosave).
-  const [notes, setNotes] = useState("");
-  const [notesSaving, setNotesSaving] = useState(false);
-  const notesSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Regenerate controls.
-  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
-  const [customPrompt, setCustomPrompt] = useState("");
-  const [regenerating, setRegenerating] = useState(false);
-  const [regenError, setRegenError] = useState<string | null>(null);
-
-  // Transcribe again from the saved audio (for meetings that came back
-  // empty or garbled). Asks for confirmation: it replaces the transcript.
-  const [confirmRetranscribe, setConfirmRetranscribe] = useState(false);
-  const [retranscribing, setRetranscribing] = useState(false);
-  const [retranscribeProgress, setRetranscribeProgress] =
-    useState<MeetingImportProgress | null>(null);
-  const [retranscribeError, setRetranscribeError] = useState<string | null>(
-    null,
-  );
-
-  // Export.
-  const [exporting, setExporting] = useState(false);
-  const [exportErr, setExportErr] = useState<string | null>(null);
-
-  const detailId = detail?.id;
-
-  // Sync local editable state when the detail record loads/changes.
-  useEffect(() => {
-    setNotes(detail?.notes ?? "");
-    setTitleDraft(detail?.title ?? "");
-    setEditingTitle(false);
-    setRegenError(null);
-    setExportErr(null);
-  }, [detailId, detail?.notes, detail?.title]);
-
-  useEffect(() => {
-    setConfirmRetranscribe(false);
-    setRetranscribeError(null);
-  }, [detailId]);
-
-  useEffect(() => {
-    if (!retranscribing) return;
-    let unlisten: (() => void) | undefined;
-    let cancelled = false;
-    void listenMeetingImportProgress((p) => setRetranscribeProgress(p)).then(
-      (fn) => (cancelled ? fn() : (unlisten = fn)),
-    );
-    return () => {
-      cancelled = true;
-      unlisten?.();
-      setRetranscribeProgress(null);
-    };
-  }, [retranscribing]);
-
-  useEffect(() => {
-    setSelectedTemplate((cur) => cur ?? templates[0]?.id ?? null);
-  }, [templates]);
-
-  // Resolve a playable audio URL for the saved recording, if any. Older
-  // meetings have no `audio_path`; we ask the backend for the absolute path
-  // and wrap it with convertFileSrc so the asset protocol can serve it.
-  const [audioSrc, setAudioSrc] = useState<string | null>(null);
-  const detailHasAudioPath = !!detail?.audio_path;
-  useEffect(() => {
-    let cancelled = false;
-    setAudioSrc(null);
-    if (detailId == null || !detailHasAudioPath) return;
-    getMeetingAudioPath(detailId)
-      .then((path) => {
-        if (!cancelled) setAudioSrc(convertFileSrc(path));
-      })
-      .catch(() => {
-        // Audio missing or unreadable; fall back to the no-audio hint.
+  const loadAudio = useCallback(async () => {
+    try {
+      return convertFileSrc(await getMeetingAudioPath(meetingId));
+    } catch (error) {
+      toast.error(t("meeting.errors.audioFailed"), {
+        description: errorMessage(error),
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [detailId, detailHasAudioPath]);
+      return null;
+    }
+  }, [meetingId, t]);
+
+  const handleNotesChange = (value: string) => {
+    setNotes(value);
+    setNotesSave("saving");
+    setNotesError(null);
+    if (notesTimerRef.current) clearTimeout(notesTimerRef.current);
+    notesTimerRef.current = setTimeout(() => {
+      notesTimerRef.current = null;
+      const seq = ++notesSeqRef.current;
+      updateMeetingNotes(meetingId, value)
+        .then(() => {
+          if (seq !== notesSeqRef.current) return;
+          setNotesSave("saved");
+          // Keep the record in step, so nothing reads the stale copy later.
+          setDetail((prev) => (prev ? { ...prev, notes: value } : prev));
+        })
+        .catch((error: unknown) => {
+          if (seq !== notesSeqRef.current) return;
+          setNotesSave("error");
+          setNotesError(errorMessage(error));
+        });
+    }, NOTES_AUTOSAVE_MS);
+  };
+
+  const startEditingTitle = () => {
+    setTitleDraft(detail?.title ?? "");
+    setTitleError(null);
+    setEditingTitle(true);
+  };
 
   const handleSaveTitle = async () => {
-    if (detailId == null) return;
     const next = titleDraft.trim();
-    setEditingTitle(false);
-    if (next === (detail?.title ?? "").trim()) return;
+    if (next === (detail?.title ?? "").trim()) {
+      setEditingTitle(false);
+      return;
+    }
     try {
-      await updateMeetingTitle(detailId, next);
+      await updateMeetingTitle(meetingId, next);
       setDetail((prev) => (prev ? { ...prev, title: next } : prev));
-      onRefreshList();
-    } catch (e) {
-      setRegenError(String(e));
+      patchMeeting(meetingId, { title: next });
+      setEditingTitle(false);
+    } catch (error) {
+      // Stay in edit mode with the draft intact, error under the field.
+      setTitleError(
+        t("meeting.errors.renameFailed", { error: errorMessage(error) }),
+      );
     }
   };
 
   const handleRetranscribe = async () => {
-    if (detailId == null) return;
-    setConfirmRetranscribe(false);
+    const ok = await confirm({
+      title: t("meeting.retranscribe.confirmTitle"),
+      description: t("meeting.retranscribe.confirmText"),
+      confirmLabel: t("meeting.retranscribe.button"),
+    });
+    if (!ok) return;
     setRetranscribeError(null);
+    setCancellingRetranscribe(false);
     setRetranscribing(true);
     try {
-      await retranscribeMeeting(detailId);
-      setDetail(await getMeeting(detailId));
-      onRefreshList();
-    } catch (e) {
-      setRetranscribeError(String(e));
+      await retranscribeMeeting(meetingId);
+      await load();
+      void loadMeetings();
+    } catch (error) {
+      const message = errorMessage(error);
+      if (message !== MEETING_IMPORT_CANCELLED) {
+        setRetranscribeError(
+          t("meeting.errors.retranscribeFailed", { error: message }),
+        );
+      }
     } finally {
       setRetranscribing(false);
+      setCancellingRetranscribe(false);
     }
   };
 
-  const handleNotesChange = (value: string) => {
-    setNotes(value);
-    if (detailId == null) return;
-    const id = detailId;
-    if (notesSaveRef.current) clearTimeout(notesSaveRef.current);
-    setNotesSaving(true);
-    notesSaveRef.current = setTimeout(() => {
-      updateMeetingNotes(id, value)
-        .catch((e) => setRegenError(String(e)))
-        .finally(() => setNotesSaving(false));
-    }, NOTES_AUTOSAVE_MS);
+  const handleCancelRetranscribe = async () => {
+    setCancellingRetranscribe(true);
+    try {
+      await cancelMeetingImport();
+    } catch (error) {
+      setCancellingRetranscribe(false);
+      toast.error(t("meeting.errors.cancelFailed"), {
+        description: errorMessage(error),
+      });
+    }
   };
 
   const handleRegenerate = async () => {
-    if (detailId == null) return;
     setRegenError(null);
     setRegenerating(true);
     const custom = customPrompt.trim();
     const arg = custom.length > 0 ? custom : (selectedTemplate ?? undefined);
     try {
-      const result = await regenerateMeetingSummary(detailId, arg);
+      const result = await regenerateMeetingSummary(meetingId, arg);
       setDetail((prev) => (prev ? { ...prev, summary: result } : prev));
-      onRefreshList();
-    } catch (e) {
-      setRegenError(String(e));
+      patchMeeting(meetingId, { has_summary: result.trim().length > 0 });
+    } catch (error) {
+      setRegenError(
+        t("meeting.errors.summaryFailed", { error: errorMessage(error) }),
+      );
     } finally {
       setRegenerating(false);
     }
   };
 
   const handleExport = async () => {
-    if (detailId == null) return;
-    setExportErr(null);
     setExporting(true);
     try {
-      const markdown = await exportMeetingMarkdown(detailId);
+      const markdown = await exportMeetingMarkdown(meetingId);
       const path = await save({
         defaultPath: exportFilename(title),
-        filters: [{ name: "Markdown", extensions: ["md"] }],
+        filters: [{ name: t("meeting.markdownFilter"), extensions: ["md"] }],
       });
       if (!path) return; // user cancelled
       await writeTextFile(path, markdown);
-    } catch (e) {
-      setExportErr(String(e));
+      toast.success(t("meeting.exported"));
+    } catch (error) {
+      toast.error(t("meeting.exportError"), {
+        description: errorMessage(error),
+      });
     } finally {
       setExporting(false);
     }
@@ -263,15 +365,17 @@ export const MeetingDetail: React.FC<MeetingDetailProps> = ({
 
   return (
     <div className="space-y-2">
+      {dialog}
       <div className="px-1 flex items-center justify-between gap-2">
         <button
+          type="button"
           onClick={onBack}
-          className="flex items-center gap-1.5 text-sm text-text/70 hover:text-logo-primary transition-colors cursor-pointer"
+          className="flex items-center gap-1.5 rounded text-sm text-text/70 hover:text-logo-primary transition-colors cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-logo-primary"
         >
-          <ArrowLeft width={16} height={16} />
+          <ArrowLeft width={16} height={16} className="rtl:rotate-180" />
           <span>{t("meeting.back")}</span>
         </button>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0">
           {detail && (
             <div className="flex items-center gap-2 text-xs text-text/50 min-w-0">
               <span className="truncate">
@@ -279,16 +383,14 @@ export const MeetingDetail: React.FC<MeetingDetailProps> = ({
               </span>
               <span aria-hidden>•</span>
               <span className="tabular-nums">
-                {formatDuration(detail.duration_ms)}
+                {formatDuration(detail.duration_ms, t)}
               </span>
               {cost && (
                 <>
                   <span aria-hidden>•</span>
                   {/* Labelled as an estimate on purpose: the price table is a
                       snapshot of preview pricing, and free-tier quota and
-                      billing discounts are invisible from here. Someone
-                      comparing this to an invoice should already know it will
-                      not match to the cent. */}
+                      billing discounts are invisible from here. */}
                   <span
                     className="tabular-nums"
                     title={t("meeting.costTooltip")}
@@ -304,11 +406,11 @@ export const MeetingDetail: React.FC<MeetingDetailProps> = ({
           )}
           {detail && (
             <Button
-              onClick={handleExport}
+              onClick={() => void handleExport()}
               variant="secondary"
               size="sm"
               disabled={exporting}
-              className="flex items-center gap-1.5"
+              className="flex items-center gap-1.5 shrink-0"
             >
               {exporting ? (
                 <Loader2 width={14} height={14} className="animate-spin" />
@@ -323,96 +425,102 @@ export const MeetingDetail: React.FC<MeetingDetailProps> = ({
         </div>
       </div>
 
-      <div className="bg-background border border-mid-gray/20 rounded-lg p-4 space-y-4">
-        {loading && (
-          <p className="text-sm text-text/60">{t("meeting.loading")}</p>
-        )}
-
-        {error && (
-          <p className="text-sm text-red-400 whitespace-pre-wrap break-words">
-            {error}
+      <div className="bg-background border border-mid-gray/20 rounded-lg p-4 space-y-5">
+        {loading && !detail && (
+          <p
+            className="flex items-center gap-2 text-sm text-text/60"
+            role="status"
+          >
+            <Loader2 width={14} height={14} className="animate-spin" />
+            {t("meeting.loading")}
           </p>
         )}
 
-        {exportErr && (
-          <p className="text-sm text-red-400 whitespace-pre-wrap break-words">
-            {t("meeting.exportError")}
-          </p>
+        {loadError && (
+          <div className="flex flex-wrap items-center gap-3">
+            <InlineError>
+              {t("meeting.loadError")} ({loadError})
+            </InlineError>
+            <Button variant="secondary" size="sm" onClick={() => void load()}>
+              {t("common.retry")}
+            </Button>
+          </div>
         )}
 
-        {detail && detailHasAudioPath && detail.status === "completed" && (
+        {detail && hasAudio && detail.status === "completed" && (
           <RetranscribePanel
             looksFailed={transcriptLooksFailed}
-            confirming={confirmRetranscribe}
             running={retranscribing}
+            cancelling={cancellingRetranscribe}
             progress={retranscribeProgress}
             error={retranscribeError}
-            onRequest={() => setConfirmRetranscribe(true)}
-            onCancel={() => setConfirmRetranscribe(false)}
-            onConfirm={() => void handleRetranscribe()}
+            onRequest={() => void handleRetranscribe()}
+            onCancel={() => void handleCancelRetranscribe()}
           />
         )}
 
         {detail && (
           <>
             {editingTitle ? (
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  value={titleDraft}
-                  onChange={(e) => setTitleDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") void handleSaveTitle();
-                    if (e.key === "Escape") setEditingTitle(false);
-                  }}
-                  autoFocus
-                  className="flex-1 rounded-md border border-mid-gray/20 bg-mid-gray/5 px-2 py-1 text-base text-text focus:border-logo-primary focus:outline-none focus:ring-1 focus:ring-logo-primary"
-                />
-                <Button
-                  onClick={handleSaveTitle}
-                  variant="primary-soft"
-                  size="sm"
-                >
-                  {t("meeting.save")}
-                </Button>
-                <Button
-                  onClick={() => setEditingTitle(false)}
-                  variant="secondary"
-                  size="sm"
-                >
-                  {t("meeting.cancel")}
-                </Button>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <input
+                    ref={titleInputRef}
+                    type="text"
+                    value={titleDraft}
+                    aria-label={t("meeting.renameTitle")}
+                    aria-invalid={titleError ? true : undefined}
+                    onChange={(e) => setTitleDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") void handleSaveTitle();
+                      if (e.key === "Escape") setEditingTitle(false);
+                    }}
+                    className="flex-1 rounded-md border border-mid-gray/20 bg-mid-gray/5 px-2 py-1 text-base text-text focus:border-logo-primary focus:outline-none focus:ring-1 focus:ring-logo-primary"
+                  />
+                  <Button
+                    onClick={() => void handleSaveTitle()}
+                    variant="primary-soft"
+                    size="sm"
+                  >
+                    {t("meeting.save")}
+                  </Button>
+                  <Button
+                    onClick={() => setEditingTitle(false)}
+                    variant="secondary"
+                    size="sm"
+                  >
+                    {t("meeting.cancel")}
+                  </Button>
+                </div>
+                {titleError && (
+                  <InlineError className="text-xs">{titleError}</InlineError>
+                )}
               </div>
             ) : (
-              <div className="flex items-center gap-2 group">
+              <div className="flex items-center gap-2">
                 <h3 className="text-base font-medium text-text break-words">
                   {title}
                 </h3>
-                <button
-                  onClick={() => setEditingTitle(true)}
-                  title={t("meeting.rename")}
-                  className="p-1 rounded-md text-text/40 hover:text-logo-primary transition-colors cursor-pointer"
+                <IconButton
+                  onClick={startEditingTitle}
+                  label={t("meeting.renameTitle")}
+                  size="sm"
                 >
                   <Pencil width={14} height={14} />
-                </button>
+                </IconButton>
               </div>
             )}
 
-            <div className="space-y-2">
+            <section className="space-y-2">
               <div className="flex items-center justify-between">
                 <SectionHeading>{t("meeting.transcript")}</SectionHeading>
                 <CopyButton
-                  onCopy={() =>
-                    onCopy(
-                      plainTranscriptText(labeledSegments, detail.transcript),
-                    )
-                  }
+                  text={plainTranscriptText(labeledSegments, detail.transcript)}
                   disabled={!hasTranscript}
-                  title={t("meeting.copyTranscript")}
-                  copiedTitle={t("meeting.copied")}
+                  label={t("meeting.copyTranscript")}
                 />
               </div>
-              {hasLabeledSegments ? (
+              {labeledSegments.length > 0 ? (
                 <PlainTranscript segments={labeledSegments} />
               ) : hasTranscript ? (
                 <p className="text-sm text-text/90 whitespace-pre-wrap break-words select-text">
@@ -423,64 +531,58 @@ export const MeetingDetail: React.FC<MeetingDetailProps> = ({
                   {t("meeting.transcriptEmpty")}
                 </p>
               )}
-            </div>
+            </section>
 
-            <div className="space-y-2">
+            <section className="space-y-2">
               <SectionHeading>{t("meeting.audio")}</SectionHeading>
-              {audioSrc ? (
-                <audio
-                  controls
-                  src={audioSrc}
-                  className="w-full"
-                  preload="metadata"
-                />
+              {hasAudio ? (
+                <AudioPlayer onLoadRequest={loadAudio} className="w-full" />
               ) : (
                 <p className="text-sm text-text/40">{t("meeting.noAudio")}</p>
               )}
-            </div>
+            </section>
 
             {/* Editable user notes */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <SectionHeading>{t("meeting.myNotes")}</SectionHeading>
+            <section className="space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <SectionHeading id={`${notesId}-heading`}>
+                  {t("meeting.myNotes")}
+                </SectionHeading>
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-medium uppercase tracking-wide text-text/40">
-                    {notesSaving
-                      ? t("meeting.notesSaving")
-                      : t("meeting.notesSaved")}
-                  </span>
+                  <NotesSaveIndicator state={notesSave} error={notesError} />
                   <CopyButton
-                    onCopy={() => onCopy(notes)}
+                    text={notes}
                     disabled={notes.trim().length === 0}
-                    title={t("meeting.copyMyNotes")}
-                    copiedTitle={t("meeting.copied")}
+                    label={t("meeting.copyMyNotes")}
                   />
                 </div>
               </div>
               <textarea
+                aria-labelledby={`${notesId}-heading`}
                 value={notes}
                 onChange={(e) => handleNotesChange(e.target.value)}
                 placeholder={t("meeting.myNotesPlaceholder")}
                 className="w-full min-h-[6rem] resize-y rounded-md border border-mid-gray/20 bg-mid-gray/5 p-2 text-sm text-text/90 placeholder:text-text/40 focus:border-logo-primary focus:outline-none focus:ring-1 focus:ring-logo-primary"
               />
-            </div>
+              {notesSave === "error" && notesError && (
+                <InlineError className="text-xs">
+                  {t("meeting.errors.notesSaveFailed", { error: notesError })}
+                </InlineError>
+              )}
+            </section>
 
             {/* AI summary + regenerate */}
-            <div className="space-y-2">
+            <section className="space-y-2">
               <div className="flex items-center justify-between">
                 <SectionHeading>{t("meeting.summary")}</SectionHeading>
                 {summary.length > 0 && (
-                  <CopyButton
-                    onCopy={() => onCopy(summary)}
-                    title={t("meeting.copySummary")}
-                    copiedTitle={t("meeting.copied")}
-                  />
+                  <CopyButton text={summary} label={t("meeting.copySummary")} />
                 )}
               </div>
 
               <div className="flex flex-wrap items-center gap-3">
                 <Button
-                  onClick={handleRegenerate}
+                  onClick={() => void handleRegenerate()}
                   variant="primary-soft"
                   size="md"
                   disabled={!hasTranscript || regenerating}
@@ -511,18 +613,14 @@ export const MeetingDetail: React.FC<MeetingDetailProps> = ({
                 disabled={!hasTranscript || regenerating}
               />
 
-              {regenError && (
-                <p className="text-sm text-red-400 whitespace-pre-wrap break-words">
-                  {regenError}
-                </p>
-              )}
+              {regenError && <InlineError>{regenError}</InlineError>}
 
               {summary.length > 0 ? (
                 <Markdown>{summary}</Markdown>
               ) : (
                 <p className="text-sm text-text/40">{t("meeting.noSummary")}</p>
               )}
-            </div>
+            </section>
           </>
         )}
       </div>
@@ -532,13 +630,12 @@ export const MeetingDetail: React.FC<MeetingDetailProps> = ({
 
 interface RetranscribePanelProps {
   looksFailed: boolean;
-  confirming: boolean;
   running: boolean;
+  cancelling: boolean;
   progress: MeetingImportProgress | null;
   error: string | null;
   onRequest: () => void;
   onCancel: () => void;
-  onConfirm: () => void;
 }
 
 // One row offering to transcribe the meeting again from its saved audio.
@@ -546,13 +643,12 @@ interface RetranscribePanelProps {
 // otherwise a quiet secondary action.
 const RetranscribePanel: React.FC<RetranscribePanelProps> = ({
   looksFailed,
-  confirming,
   running,
+  cancelling,
   progress,
   error,
   onRequest,
   onCancel,
-  onConfirm,
 }) => {
   const { t } = useTranslation();
   const pct =
@@ -567,33 +663,46 @@ const RetranscribePanel: React.FC<RetranscribePanelProps> = ({
       }`}
     >
       <div className="flex items-center gap-3">
-        <AudioLines width={15} height={15} className="shrink-0 text-text/50" />
-        <p className="flex-1 min-w-0 text-xs text-text/70">
-          {running
-            ? `${t(`meeting.import.stage.${progress?.stage ?? "decoding"}`)}${
-                pct != null ? ` · ${pct}%` : ""
-              }`
-            : confirming
-              ? t("meeting.retranscribe.confirmText")
-              : looksFailed
-                ? t("meeting.retranscribe.failedHint")
-                : t("meeting.retranscribe.hint")}
-        </p>
         {running ? (
           <Loader2
             width={15}
             height={15}
             className="shrink-0 animate-spin text-logo-primary"
+            aria-hidden
           />
-        ) : confirming ? (
-          <div className="flex items-center gap-1 shrink-0">
-            <Button onClick={onConfirm} variant="primary-soft" size="sm">
-              {t("meeting.confirm")}
-            </Button>
-            <Button onClick={onCancel} variant="secondary" size="sm">
-              {t("meeting.cancel")}
-            </Button>
-          </div>
+        ) : (
+          <AudioLines
+            width={15}
+            height={15}
+            className="shrink-0 text-text/50"
+            aria-hidden
+          />
+        )}
+        <p
+          className="flex-1 min-w-0 text-xs text-text/70"
+          role={running ? "status" : undefined}
+        >
+          {running
+            ? cancelling
+              ? t("meeting.retranscribe.cancelling")
+              : `${t(`meeting.import.stage.${progress?.stage ?? "decoding"}`)}${
+                  pct != null ? ` · ${pct}%` : ""
+                }`
+            : looksFailed
+              ? t("meeting.retranscribe.failedHint")
+              : t("meeting.retranscribe.hint")}
+        </p>
+        {running ? (
+          <Button
+            onClick={onCancel}
+            variant="secondary"
+            size="sm"
+            disabled={cancelling}
+            className="flex items-center gap-1 shrink-0"
+          >
+            <X width={13} height={13} aria-hidden />
+            <span>{t("meeting.cancel")}</span>
+          </Button>
         ) : (
           <Button
             onClick={onRequest}
@@ -605,11 +714,7 @@ const RetranscribePanel: React.FC<RetranscribePanelProps> = ({
           </Button>
         )}
       </div>
-      {error && (
-        <p className="text-xs text-red-400 whitespace-pre-wrap break-words">
-          {error}
-        </p>
-      )}
+      {error && <InlineError className="text-xs">{error}</InlineError>}
     </div>
   );
 };

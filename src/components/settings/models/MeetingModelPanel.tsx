@@ -6,7 +6,6 @@ import { Dropdown } from "@/components/ui/Dropdown";
 import { SettingContainer } from "@/components/ui/SettingContainer";
 import { SettingsGroup } from "@/components/ui/SettingsGroup";
 import { isCloudModel } from "@/lib/utils/model";
-import { changeMeetingSelectedModel } from "@/lib/meeting";
 import { getTranslatedModelName } from "@/lib/utils/modelTranslation";
 import { useSettingsStore } from "@/stores/settingsStore";
 
@@ -32,8 +31,14 @@ export const MeetingModelPanel: React.FC<MeetingModelPanelProps> = ({
   dictationModel,
 }) => {
   const { t } = useTranslation();
-  const { settings, refreshSettings } = useSettingsStore();
-  const selected = settings?.meeting_selected_model ?? "";
+  const selected = useSettingsStore(
+    (s) => s.settings?.meeting_selected_model ?? "",
+  );
+  const updateSetting = useSettingsStore((s) => s.updateSetting);
+  const refreshSettings = useSettingsStore((s) => s.refreshSettings);
+  const updating = useSettingsStore(
+    (s) => s.isUpdating["meeting_selected_model"] === true,
+  );
 
   const options = useMemo(() => {
     const followLabel = dictationModel
@@ -59,13 +64,11 @@ export const MeetingModelPanel: React.FC<MeetingModelPanelProps> = ({
   }, [models, dictationModel, t]);
 
   const handleSelect = async (modelId: string) => {
-    try {
-      await changeMeetingSelectedModel(modelId);
-      // The command owns the write, so pull the persisted value back rather
-      // than assuming it took — an unknown id is rejected by the backend.
+    // A rejected id (e.g. a model deleted meanwhile) is rolled back and
+    // reported by the store; on success, pull the persisted value back in
+    // case the backend normalized it.
+    if (await updateSetting("meeting_selected_model", modelId)) {
       await refreshSettings();
-    } catch (error) {
-      console.error("Failed to change the meeting model:", error);
     }
   };
 
@@ -88,6 +91,7 @@ export const MeetingModelPanel: React.FC<MeetingModelPanelProps> = ({
         <Dropdown
           options={options}
           selectedValue={selected}
+          disabled={updating}
           onSelect={(value) => void handleSelect(value)}
         />
       </SettingContainer>

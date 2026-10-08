@@ -59,7 +59,7 @@ const AccessibilityPermissions: React.FC = () => {
       setPermissionState(hasPermissions ? "granted" : "request");
     };
 
-    initialSetup();
+    void initialSetup();
   }, [isMacOS]);
 
   // Skip rendering on non-macOS platforms or if permission is already granted

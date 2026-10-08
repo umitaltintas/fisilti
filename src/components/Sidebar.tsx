@@ -1,6 +1,15 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { Cog, History, Info, Sparkles, Cpu, Radio } from "lucide-react";
+import {
+  Cog,
+  History,
+  Info,
+  Loader2,
+  Sparkles,
+  Cpu,
+  Radio,
+} from "lucide-react";
+import { useMeetingStore } from "@/stores/meetingStore";
 import FisiltiWordmark from "./icons/FisiltiWordmark";
 import FisiltiMark from "./icons/FisiltiMark";
 import {
@@ -20,7 +29,7 @@ interface IconProps {
   height?: number | string;
   size?: number | string;
   className?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 /** Which cluster of the sidebar a section belongs to. */
@@ -90,6 +99,33 @@ const GROUP_LABEL_KEYS: Record<SectionGroup, string | null> = {
   system: "sidebar.groups.system",
 };
 
+/** Live-meeting marker on the Meetings entry, visible from every page: a
+ * pulsing red dot while recording, a spinner while the stop is finalizing. */
+const MeetingActivityIndicator: React.FC = () => {
+  const { t } = useTranslation();
+  const status = useMeetingStore((s) => s.status);
+  if (status === "running") {
+    return (
+      <span className="ms-auto flex items-center">
+        <span className="relative flex h-2 w-2" aria-hidden>
+          <span className="absolute inline-flex h-full w-full rounded-full bg-red-500/70 animate-ping" />
+          <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
+        </span>
+        <span className="sr-only">{t("meeting.recording")}</span>
+      </span>
+    );
+  }
+  if (status === "finalizing") {
+    return (
+      <span className="ms-auto flex items-center">
+        <Loader2 width={13} height={13} className="animate-spin" aria-hidden />
+        <span className="sr-only">{t("meeting.finalizing")}</span>
+      </span>
+    );
+  }
+  return null;
+};
+
 interface SidebarProps {
   activeSection: SidebarSection;
   onSectionChange: (section: SidebarSection) => void;
@@ -107,7 +143,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   }));
 
   return (
-    <nav className="flex h-full w-44 flex-col items-center border-e border-mid-gray/20 px-2">
+    <nav
+      aria-label={t("sidebar.navigation")}
+      className="flex h-full w-44 flex-col items-center border-e border-mid-gray/20 px-2"
+    >
       <FisiltiWordmark width={120} className="m-4" />
       <div className="flex w-full flex-col gap-4 border-t border-mid-gray/20 pt-3">
         {GROUP_ORDER.map((group) => {
@@ -138,13 +177,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     }`}
                     onClick={() => onSectionChange(section.id)}
                   >
-                    <Icon width={20} height={20} className="shrink-0" />
+                    <Icon
+                      width={20}
+                      height={20}
+                      className="shrink-0"
+                      aria-hidden
+                    />
                     <span
                       className="truncate text-sm font-medium"
                       title={t(section.labelKey)}
                     >
                       {t(section.labelKey)}
                     </span>
+                    {section.id === "meeting" && <MeetingActivityIndicator />}
                   </button>
                 );
               })}

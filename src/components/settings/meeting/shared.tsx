@@ -1,44 +1,93 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Check, ChevronRight, Cloud, Copy, Lock } from "lucide-react";
+import type { TFunction } from "i18next";
+import {
+  AlertCircle,
+  Check,
+  ChevronRight,
+  Cloud,
+  Copy,
+  Loader2,
+  Lock,
+} from "lucide-react";
 
 import { Select, type SelectOption } from "../../ui/Select";
+import { IconButton } from "../../ui/IconButton";
+import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
 import {
   getTranscriptionLocation,
   type SummaryProviderInfo,
   type TranscriptSegment,
 } from "@/lib/meeting";
+import type { NotesSaveState } from "@/stores/meetingStore";
 
-export const NOTES_AUTOSAVE_MS = 800;
-export const SEARCH_DEBOUNCE_MS = 300;
-
+/** Copy-to-clipboard icon button. Shows a check only after the copy
+ * actually succeeded. */
 export const CopyButton: React.FC<{
-  onCopy: () => void;
+  text: string;
   disabled?: boolean;
-  title: string;
-  copiedTitle: string;
-}> = ({ onCopy, disabled, title, copiedTitle }) => {
-  const [copied, setCopied] = useState(false);
-
-  const handleClick = () => {
-    onCopy();
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
+  label: string;
+}> = ({ text, disabled, label }) => {
+  const { t } = useTranslation();
+  const { copied, copy } = useCopyToClipboard();
 
   return (
-    <button
-      onClick={handleClick}
+    <IconButton
+      onClick={() => void copy(text)}
       disabled={disabled}
-      title={copied ? copiedTitle : title}
-      className="p-1.5 rounded-md flex items-center justify-center transition-colors cursor-pointer text-text/50 hover:text-logo-primary disabled:cursor-not-allowed disabled:text-text/20"
+      label={copied ? t("meeting.copied") : label}
     >
       {copied ? (
         <Check width={16} height={16} />
       ) : (
         <Copy width={16} height={16} />
       )}
-    </button>
+    </IconButton>
+  );
+};
+
+/** Truthful save indicator for notes: says "Saved" only once the backend
+ * confirmed it, and says so plainly when a save failed or cannot happen. */
+export const NotesSaveIndicator: React.FC<{
+  state: NotesSaveState;
+  error?: string | null;
+}> = ({ state, error }) => {
+  const { t } = useTranslation();
+  if (state === "idle") return null;
+  const base =
+    "inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide";
+  if (state === "saving") {
+    return (
+      <span className={`${base} text-text/40`} role="status">
+        <Loader2 width={10} height={10} className="animate-spin" aria-hidden />
+        {t("meeting.notesSaving")}
+      </span>
+    );
+  }
+  if (state === "saved") {
+    return (
+      <span className={`${base} text-text/40`} role="status">
+        <Check width={10} height={10} aria-hidden />
+        {t("meeting.notesSaved")}
+      </span>
+    );
+  }
+  if (state === "pending") {
+    return (
+      <span className={`${base} text-amber-500`} role="status">
+        {t("meeting.notesNotSavedYet")}
+      </span>
+    );
+  }
+  return (
+    <span
+      className={`${base} text-red-400`}
+      role="alert"
+      title={error ?? undefined}
+    >
+      <AlertCircle width={10} height={10} aria-hidden />
+      {t("meeting.notesSaveFailed")}
+    </span>
   );
 };
 
@@ -77,7 +126,7 @@ export const PlainTranscript: React.FC<{
   </div>
 );
 
-// Build a copy-friendly transcript: one line per segment, no speaker labels.
+// Build a copy-friendly transcript: one line per segment.
 // Falls back to the plain joined transcript when no segments are available.
 export const plainTranscriptText = (
   segments: TranscriptSegment[],
@@ -95,7 +144,6 @@ export const plainTranscriptText = (
     .join("\n");
 };
 
-// Persistent "100% on-device transcription" trust badge.
 // Honest indicator for where TRANSCRIPTION runs. This used to claim
 // "100% on-device" unconditionally, which stopped being true the moment a cloud
 // transcription model or a Gemini path could be selected. A privacy claim that
@@ -122,7 +170,7 @@ export const OnDeviceBadge: React.FC = () => {
   if (cloudProviders.length > 0) {
     return (
       <span className="inline-flex items-center gap-1.5 rounded-full bg-mid-gray/15 px-2.5 py-1 text-[11px] font-medium text-text/60">
-        <Cloud width={12} height={12} />
+        <Cloud width={12} height={12} aria-hidden />
         {t("meeting.cloudBadge", { providers: cloudProviders.join(", ") })}
       </span>
     );
@@ -130,7 +178,7 @@ export const OnDeviceBadge: React.FC = () => {
 
   return (
     <span className="inline-flex items-center gap-1.5 rounded-full bg-logo-primary/10 px-2.5 py-1 text-[11px] font-medium text-logo-primary">
-      <Lock width={12} height={12} />
+      <Lock width={12} height={12} aria-hidden />
       {t("meeting.onDeviceBadge")}
     </span>
   );
@@ -152,7 +200,7 @@ export const SummaryLocationNote: React.FC<{
   if (info.location === "local") {
     return (
       <p className="inline-flex items-center gap-1.5 text-[11px] text-emerald-500">
-        <Lock width={11} height={11} />
+        <Lock width={11} height={11} aria-hidden />
         {t("meeting.summaryLocal")}
       </p>
     );
@@ -168,12 +216,27 @@ export const SummaryLocationNote: React.FC<{
 export const SectionHeading: React.FC<{
   children: React.ReactNode;
   className?: string;
-}> = ({ children, className = "" }) => (
+  id?: string;
+}> = ({ children, className = "", id }) => (
   <h2
+    id={id}
     className={`text-xs font-medium text-mid-gray uppercase tracking-wide ${className}`}
   >
     {children}
   </h2>
+);
+
+/** Inline error line, the same everywhere on the meeting pages. */
+export const InlineError: React.FC<{
+  children: React.ReactNode;
+  className?: string;
+}> = ({ children, className = "" }) => (
+  <p
+    role="alert"
+    className={`text-sm text-red-400 whitespace-pre-wrap break-words ${className}`}
+  >
+    {children}
+  </p>
 );
 
 export function formatElapsed(seconds: number): string {
@@ -219,14 +282,14 @@ export function formatMeetingTime(epochMs: number, locale: string): string {
   }
 }
 
-// Format a duration in ms as `Hh Mm` (>= 1h) or `mm:ss` otherwise.
-export function formatDuration(durationMs: number): string {
+// Format a duration in ms as a localized "1 h 5 min" (>= 1h) or `mm:ss`.
+export function formatDuration(durationMs: number, t: TFunction): string {
   const totalSeconds = Math.max(0, Math.floor(durationMs / 1000));
   const hours = Math.floor(totalSeconds / 3600);
   const mins = Math.floor((totalSeconds % 3600) / 60);
   const secs = totalSeconds % 60;
   if (hours > 0) {
-    return `${hours}h ${mins}m`;
+    return t("meeting.durationHoursMinutes", { hours, minutes: mins });
   }
   return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
 }
@@ -262,21 +325,23 @@ export const SummaryControls: React.FC<SummaryControlsProps> = ({
   disabled,
 }) => {
   const { t } = useTranslation();
+  const promptId = useId();
   return (
     <details className="group">
       <summary className="flex items-center gap-1 cursor-pointer list-none text-xs text-text/50 hover:text-logo-primary transition-colors select-none">
         <ChevronRight
           width={14}
           height={14}
-          className="transition-transform group-open:rotate-90"
+          className="transition-transform group-open:rotate-90 rtl:rotate-180 rtl:group-open:rotate-90"
+          aria-hidden
         />
         <span>{t("meeting.summaryOptions")}</span>
       </summary>
       <div className="mt-3 space-y-2">
         <div className="space-y-1">
-          <label className="text-[11px] font-medium uppercase tracking-wide text-mid-gray">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-mid-gray">
             {t("meeting.template")}
-          </label>
+          </p>
           <Select
             value={selectedTemplate}
             options={templateOptions}
@@ -287,10 +352,14 @@ export const SummaryControls: React.FC<SummaryControlsProps> = ({
           />
         </div>
         <div className="space-y-1">
-          <label className="text-[11px] font-medium uppercase tracking-wide text-mid-gray">
+          <label
+            htmlFor={promptId}
+            className="text-[11px] font-medium uppercase tracking-wide text-mid-gray"
+          >
             {t("meeting.customPrompt")}
           </label>
           <textarea
+            id={promptId}
             value={customPrompt}
             onChange={(e) => onCustomPromptChange(e.target.value)}
             placeholder={t("meeting.customPromptPlaceholder")}

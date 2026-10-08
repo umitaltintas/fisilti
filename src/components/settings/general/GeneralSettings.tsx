@@ -7,6 +7,7 @@ import { ShortcutInput } from "../ShortcutInput";
 import { PushToTalk } from "../PushToTalk";
 import { ShowOverlay } from "../ShowOverlay";
 import { MicrophoneSelector } from "../MicrophoneSelector";
+import { ClamshellMicrophoneSelector } from "../ClamshellMicrophoneSelector";
 import { MuteWhileRecording } from "../MuteWhileRecording";
 import { AudioFeedback } from "../AudioFeedback";
 import { OutputDeviceSelector } from "../OutputDeviceSelector";
@@ -46,6 +47,10 @@ export const GeneralSettings: React.FC = () => {
 
       <SettingsGroup title={t("settings.sound.title")}>
         <MicrophoneSelector descriptionMode="tooltip" grouped={true} />
+        {/* Which microphone to use with the lid closed. Laptops only (the
+            component renders nothing elsewhere); it lives next to the main
+            microphone choice it overrides. */}
+        <ClamshellMicrophoneSelector descriptionMode="tooltip" grouped={true} />
         <MuteWhileRecording descriptionMode="tooltip" grouped={true} />
         <AudioFeedback descriptionMode="tooltip" grouped={true} />
         <OutputDeviceSelector
@@ -54,8 +59,8 @@ export const GeneralSettings: React.FC = () => {
           disabled={!audioFeedbackEnabled}
         />
         <SoundPicker
-          label={t("settings.debug.soundTheme.label")}
-          description={t("settings.debug.soundTheme.description")}
+          label={t("settings.sound.soundTheme.label")}
+          description={t("settings.sound.soundTheme.description")}
         />
         <VolumeSlider disabled={!audioFeedbackEnabled} />
       </SettingsGroup>

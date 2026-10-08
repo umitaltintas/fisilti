@@ -29,7 +29,8 @@
     "groups": {
       "features": "功能",
       "system": "系统"
-    }
+    },
+    "navigation": "设置分区"
   },
   "onboarding": {
     "subtitle": "请选择一个转录模型以开始使用",
@@ -106,7 +107,8 @@
     },
     "errors": {
       "loadModels": "无法加载可用模型",
-      "downloadModel": "模型下载失败: {{error}}"
+      "downloadModel": "模型下载失败: {{error}}",
+      "selectModel": "无法切换到此模型，请重试。"
     },
     "permissions": {
       "title": "需要权限",
@@ -159,7 +161,12 @@
     },
     "cancel": "取消",
     "cancelDownload": "取消下载",
-    "cloud": "云端"
+    "cloud": "云端",
+    "errors": {
+      "statusFailed": "无法检查模型状态",
+      "loadFailed": "加载模型失败",
+      "switchFailed": "切换模型失败"
+    }
   },
   "settings": {
     "modelSettings": {
@@ -227,7 +234,9 @@
         "multilingualShort": "多语言",
         "english": "仅英语",
         "regional": "特定语言"
-      }
+      },
+      "downloadNamed": "下载 {{modelName}}",
+      "useNamed": "使用 {{modelName}}"
     },
     "general": {
       "title": "通用",
@@ -260,7 +269,8 @@
           "restore": "无法恢复原始快捷键",
           "set": "无法设置快捷键: {{error}}",
           "reset": "无法将快捷键重置为原始值"
-        }
+        },
+        "change": "更改快捷键：{{shortcut}}"
       },
       "language": {
         "title": "语言",
@@ -300,6 +310,20 @@
       "volume": {
         "title": "音量",
         "description": "调整音频反馈的音量"
+      },
+      "soundTheme": {
+        "label": "声音主题",
+        "description": "选择录制开始和停止反馈的声音主题",
+        "custom": "自定义",
+        "preview": "试听声音主题（先播放开始音，再播放停止音）"
+      },
+      "alwaysOnMicrophone": {
+        "label": "麦克风常开",
+        "description": "保持麦克风活跃以获得更快的响应"
+      },
+      "clamshellMicrophone": {
+        "title": "合盖麦克风",
+        "description": "笔记本电脑盖子关闭时使用的麦克风"
       }
     },
     "advanced": {
@@ -478,7 +502,18 @@
         "createPrompt": "创建提示词",
         "cancel": "取消",
         "selectToEdit": "选择上方的提示词以查看和编辑其详细信息。",
-        "createFirst": "点击上方的「创建新提示词」来创建您的第一个后处理提示词。"
+        "createFirst": "点击上方的「创建新提示词」来创建您的第一个后处理提示词。",
+        "unsavedTitle": "放弃未保存的更改？",
+        "unsavedText": "你对此提示词的编辑尚未保存。",
+        "discardChanges": "放弃更改",
+        "saved": "提示词已保存",
+        "deleteConfirmTitle": "删除此提示词？",
+        "deleteConfirmText": "“{{name}}”将被删除。此操作无法撤销。",
+        "errors": {
+          "create": "无法创建提示词",
+          "update": "无法保存提示词",
+          "delete": "无法删除提示词"
+        }
       },
       "description": "在粘贴之前，让 AI 模型整理、重新排版或翻译每一段转录。"
     },
@@ -496,7 +531,13 @@
       "retranscribeError": "重新转录失败。请重试。",
       "transcribing": "转录中...",
       "transcriptionFailed": "转录失败。您可以使用重试图标重新转录。",
-      "retentionSettings": "历史记录设置"
+      "retentionSettings": "历史记录设置",
+      "loadError": "无法加载历史记录",
+      "loadMoreError": "无法加载更多历史记录",
+      "saveError": "无法更新此条目",
+      "deleteConfirmTitle": "删除此转录？",
+      "deleteConfirmText": "转录及其录音将被删除。此操作无法撤销。",
+      "openFolderError": "无法打开录音文件夹"
     },
     "debug": {
       "title": "调试",
@@ -511,10 +552,6 @@
       "updateChecks": {
         "label": "检查更新",
         "description": "自动检查 Fısıltı 的新版本"
-      },
-      "soundTheme": {
-        "label": "声音主题",
-        "description": "选择录制开始和停止反馈的声音主题"
       },
       "wordCorrectionThreshold": {
         "title": "词汇修正阈值",
@@ -534,14 +571,6 @@
         "weeks2": "2 周后",
         "months3": "3 个月后",
         "placeholder": "选择保留期限..."
-      },
-      "alwaysOnMicrophone": {
-        "label": "麦克风常开",
-        "description": "保持麦克风活跃以获得更快的响应"
-      },
-      "clamshellMicrophone": {
-        "title": "合盖麦克风",
-        "description": "笔记本电脑盖子关闭时使用的麦克风"
       },
       "postProcessingToggle": {
         "label": "后处理",
@@ -602,6 +631,11 @@
           "details": "Fısıltı 使用 Whisper.cpp 进行快速的本地语音转文字处理。感谢 Georgi Gerganov 和贡献者们的出色工作。"
         }
       }
+    },
+    "apiKey": {
+      "saving": "正在保存密钥…",
+      "saved": "密钥已保存",
+      "failed": "密钥未保存"
     }
   },
   "footer": {
@@ -639,7 +673,11 @@
     "yes": "是",
     "no": "否",
     "noOptionsFound": "未找到选项",
-    "clear": "清除"
+    "clear": "清除",
+    "confirm": "确认",
+    "moreInfo": "更多信息",
+    "copyFailed": "无法复制到剪贴板",
+    "retry": "重试"
   },
   "accessibility": {
     "permissionsRequired": "需要辅助功能权限",
@@ -658,7 +696,27 @@
     },
     "recordingFailed": "录音启动失败: {{error}}",
     "modelLoadFailed": "加载模型失败: {{model}}",
-    "modelLoadFailedUnknown": "未知模型"
+    "modelLoadFailedUnknown": "未知模型",
+    "settingSaveFailed": "无法保存设置",
+    "fetchModelsFailed": "无法获取模型列表",
+    "unknown": "未知错误",
+    "openFolderFailed": "无法打开文件夹",
+    "models": {
+      "loadFailed": "无法加载模型列表",
+      "selectFailed": "无法切换到此模型",
+      "downloadFailed": "模型下载失败",
+      "cancelFailed": "无法取消下载",
+      "deleteFailed": "无法删除模型",
+      "extractFailed": "无法解压已下载的模型"
+    },
+    "dictation": {
+      "transcription": "转录失败",
+      "paste": "无法粘贴文本",
+      "model_load": "无法加载转录模型",
+      "no_speech": "未检测到语音",
+      "recording": "录音失败",
+      "generic": "听写失败"
+    }
   },
   "appLanguage": {
     "title": "应用语言",
@@ -666,7 +724,8 @@
   },
   "overlay": {
     "transcribing": "正在转录...",
-    "processing": "处理中..."
+    "processing": "处理中...",
+    "cancel": "取消录音"
   },
   "meeting": {
     "title": "Meeting",
@@ -784,7 +843,8 @@
         "decoding": "Reading audio",
         "transcribing": "Transcribing",
         "summarizing": "Writing title and summary"
-      }
+      },
+      "failed": "无法转录该录音：{{error}}"
     },
     "exportDir": {
       "title": "Save as Markdown to a folder",
@@ -797,8 +857,63 @@
       "button": "Transcribe again",
       "hint": "Transcribe this meeting again from its saved audio with the current meeting model.",
       "failedHint": "This transcript looks incomplete. Transcribe it again from the saved audio?",
-      "confirmText": "The current transcript will be replaced (notes and title stay). Continue?"
-    }
+      "confirmText": "The current transcript will be replaced (notes and title stay). Continue?",
+      "confirmTitle": "重新转录此会议？",
+      "cancelling": "正在取消…"
+    },
+    "transcriptionFailed": "转录失败，因此此会议没有文本。音频已保存，录音也已保留。原因：{{error}}",
+    "liveTranslateTargetLabel": "翻译为",
+    "geminiDiarizeToggle": "识别各个说话人",
+    "geminiDiarizeDescription": "为每一行标注说话人。优先于下方的整理选项；对于超过 30 分钟的录音，API 无法区分说话人，将自动跳过。",
+    "geminiSmartToggle": "整理转录文本",
+    "geminiSmartDescription": "去除口头禅和重复开头并应用格式，而不是逐字转录每个声音。开启说话人识别时此项将被忽略 — Gemini 无法同时完成两者。",
+    "liveModeLabel": "会议进行时",
+    "liveModeOff": "结束后转录",
+    "liveModeTranscribe": "实时转录",
+    "liveModeTranslate": "实时翻译",
+    "liveModeNote": {
+      "off": "如果上方选项已开启，音频仅在你停止会议后才会发送给 Google。",
+      "transcribe": "文字随发言实时显示。费用约为实时翻译的四分之一。保持上方选项开启，即可在会议结束后获得说话人姓名。",
+      "translate": "文字随发言实时显示，每行下方附有翻译。这是最昂贵的选项，也是唯一无法标注说话人的模式 — 第二次处理会丢失翻译。"
+    },
+    "transcriptSpeakerUnknown": "说话人",
+    "subtitlesToggle": "在屏幕上显示实时字幕",
+    "subtitlesDescription": "会议期间将其他参与者的发言悬浮显示在屏幕底部附近，无需离开通话即可阅读。可点击穿透，且不会出现在屏幕共享和录屏中。需要在上方选择实时模式。",
+    "stillProcessing": "正在转录",
+    "costEstimate": "~${{amount}}",
+    "costTooltip": "根据 API 报告的 token 数量，按公开价格快照估算。预览版价格可能变动，且未计入免费额度和账单折扣，因此不会与账单完全一致。末尾的 + 表示某个模型没有公开价格，实际费用更高。",
+    "cloudBadge": "音频已发送至 {{providers}}",
+    "notesNotSavedYet": "尚未保存",
+    "notesSaveFailed": "未保存",
+    "durationHoursMinutes": "{{hours}} 小时 {{minutes}} 分钟",
+    "recovered": "会议已恢复",
+    "discardConfirmTitle": "放弃此会议？",
+    "discardConfirmWithAudio": "已保存的音频和部分转录将被删除。此操作无法撤销。",
+    "discardConfirmText": "部分转录将被删除。此操作无法撤销。",
+    "recoverTitleUnfinished": "此会议未完成处理",
+    "recoverTitleInterrupted": "此会议已中断",
+    "recoverDescriptionWithAudio": "音频已保留。恢复后将重新转录音频，并保存为普通会议。",
+    "recoverDescriptionPartial": "音频已不可用。恢复将保留会议进行时已保存的部分转录。",
+    "confirmDeleteText": "“{{title}}”及其转录、笔记、摘要和音频将被删除。此操作无法撤销。",
+    "deleteNamed": "删除“{{title}}”",
+    "markdownFilter": "Markdown",
+    "exported": "会议已导出",
+    "errors": {
+      "startFailed": "无法开始会议：{{error}}",
+      "stopFailed": "无法正常停止会议：{{error}}",
+      "summaryFailed": "无法生成摘要：{{error}}",
+      "notesSaveFailed": "无法保存笔记：{{error}}",
+      "recoverFailed": "无法恢复此会议：{{error}}",
+      "discardFailed": "无法放弃此会议：{{error}}",
+      "renameFailed": "无法重命名会议：{{error}}",
+      "retranscribeFailed": "无法重新转录会议：{{error}}",
+      "audioFailed": "无法加载录音",
+      "cancelFailed": "无法取消",
+      "calendarFailed": "无法获取日历访问权限：{{error}}",
+      "folderPickerFailed": "无法打开文件夹选择器：{{error}}",
+      "filePickerFailed": "无法打开文件选择器：{{error}}"
+    },
+    "settingsLoadError": "无法加载会议设置"
   },
   "meetingPrompt": {
     "startTitle": "检测到会议",
@@ -813,5 +928,10 @@
     "end": "结束会议",
     "continue": "继续录制",
     "autoEndIn": "{{seconds}} 秒后自动结束"
+  },
+  "audioPlayer": {
+    "play": "播放",
+    "pause": "暂停",
+    "seek": "播放位置"
   }
 }

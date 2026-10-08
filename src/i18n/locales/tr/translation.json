@@ -29,7 +29,8 @@
     "groups": {
       "features": "Özellikler",
       "system": "Sistem"
-    }
+    },
+    "navigation": "Ayar bölümleri"
   },
   "onboarding": {
     "subtitle": "Başlamak için bir transkripsiyon modeli seçin",
@@ -106,7 +107,8 @@
     },
     "errors": {
       "loadModels": "Mevcut modeller yüklenemedi",
-      "downloadModel": "Model indirilemedi: {{error}}"
+      "downloadModel": "Model indirilemedi: {{error}}",
+      "selectModel": "Bu modele geçilemedi. Lütfen tekrar deneyin."
     },
     "permissions": {
       "title": "İzinler Gerekli",
@@ -159,6 +161,11 @@
       "languageOnly": "Yalnızca {{language}}",
       "translation": "İngilizce'ye çevirebilir",
       "translate": "İngilizce'ye çevir"
+    },
+    "errors": {
+      "statusFailed": "Model durumu kontrol edilemedi",
+      "loadFailed": "Model yüklenemedi",
+      "switchFailed": "Model değiştirilemedi"
     }
   },
   "settings": {
@@ -197,7 +204,8 @@
           "restore": "Orijinal kısayol geri yüklenemedi",
           "set": "Kısayol ayarlanamadı: {{error}}",
           "reset": "Kısayol orijinal değerine sıfırlanamadı"
-        }
+        },
+        "change": "Kısayolu değiştir: {{shortcut}}"
       },
       "language": {
         "title": "Dil",
@@ -277,7 +285,9 @@
         "english": "Yalnızca İngilizce",
         "regional": "Belirli diller",
         "multilingualShort": "Çok dilli"
-      }
+      },
+      "downloadNamed": "{{modelName}} modelini indir",
+      "useNamed": "{{modelName}} modelini kullan"
     },
     "sound": {
       "title": "Ses",
@@ -300,6 +310,20 @@
       "volume": {
         "title": "Ses Seviyesi",
         "description": "Sesli geri bildirimlerin ses seviyesini ayarlayın"
+      },
+      "soundTheme": {
+        "label": "Ses Teması",
+        "description": "Kayıt başlangıç ve bitişi için sesli geri bildirim temasını seçin",
+        "custom": "Özel",
+        "preview": "Ses temasını dinle (önce başlangıç, sonra bitiş sesi çalar)"
+      },
+      "alwaysOnMicrophone": {
+        "label": "Mikrofon Her Zaman Açık",
+        "description": "Daha hızlı yanıt için mikrofonu aktif tutar"
+      },
+      "clamshellMicrophone": {
+        "title": "Kapalı Kapak Mikrofonu",
+        "description": "Dizüstü bilgisayar kapağı kapalıyken kullanılacak mikrofon"
       }
     },
     "advanced": {
@@ -478,7 +502,18 @@
         "createPrompt": "Prompt Oluştur",
         "cancel": "İptal",
         "selectToEdit": "Ayrıntılarını görüntülemek ve düzenlemek için yukarıdan bir prompt seçin.",
-        "createFirst": "İlk son işlem prompt'unuzu oluşturmak için yukarıdaki “Yeni Prompt Oluştur” seçeneğine tıklayın."
+        "createFirst": "İlk son işlem prompt'unuzu oluşturmak için yukarıdaki “Yeni Prompt Oluştur” seçeneğine tıklayın.",
+        "unsavedTitle": "Kaydedilmemiş değişiklikler atılsın mı?",
+        "unsavedText": "Bu istemde yaptığınız değişiklikler kaydedilmedi.",
+        "discardChanges": "Değişiklikleri at",
+        "saved": "İstem kaydedildi",
+        "deleteConfirmTitle": "Bu istem silinsin mi?",
+        "deleteConfirmText": "\"{{name}}\" silinecek. Bu işlem geri alınamaz.",
+        "errors": {
+          "create": "İstem oluşturulamadı",
+          "update": "İstem kaydedilemedi",
+          "delete": "İstem silinemedi"
+        }
       },
       "description": "Her transkripsiyon yapıştırılmadan önce bir AI modeliyle düzeltilsin, biçimlendirilsin veya çevrilsin."
     },
@@ -496,7 +531,13 @@
       "retranscribeError": "Yeniden yazıya dökme başarısız oldu. Lütfen tekrar deneyin.",
       "transcribing": "Yazıya döküyor...",
       "transcriptionFailed": "Transkripsiyon başarısız oldu. Yeniden deneme simgesini kullanarak tekrar yazıya dökebilirsiniz.",
-      "retentionSettings": "Geçmiş ayarları"
+      "retentionSettings": "Geçmiş ayarları",
+      "loadError": "Geçmiş yüklenemedi",
+      "loadMoreError": "Daha fazla geçmiş yüklenemedi",
+      "saveError": "Bu kayıt güncellenemedi",
+      "deleteConfirmTitle": "Bu transkripsiyon silinsin mi?",
+      "deleteConfirmText": "Transkripsiyon ve ses kaydı silinecek. Bu işlem geri alınamaz.",
+      "openFolderError": "Kayıtlar klasörü açılamadı"
     },
     "debug": {
       "title": "Hata Ayıklama",
@@ -511,10 +552,6 @@
       "updateChecks": {
         "label": "Güncellemeleri Kontrol Et",
         "description": "Fisilti için yeni sürümleri otomatik olarak kontrol eder"
-      },
-      "soundTheme": {
-        "label": "Ses Teması",
-        "description": "Kayıt başlangıç ve bitişi için sesli geri bildirim temasını seçin"
       },
       "wordCorrectionThreshold": {
         "title": "Kelime Düzeltme Eşiği",
@@ -534,14 +571,6 @@
         "weeks2": "2 hafta sonra",
         "months3": "3 ay sonra",
         "placeholder": "Saklama süresi seçin..."
-      },
-      "alwaysOnMicrophone": {
-        "label": "Mikrofon Her Zaman Açık",
-        "description": "Daha hızlı yanıt için mikrofonu aktif tutar"
-      },
-      "clamshellMicrophone": {
-        "title": "Kapalı Kapak Mikrofonu",
-        "description": "Dizüstü bilgisayar kapağı kapalıyken kullanılacak mikrofon"
       },
       "postProcessingToggle": {
         "label": "Son İşlem",
@@ -602,6 +631,11 @@
           "details": "Fisilti, hızlı ve yerel konuşmadan metne dönüştürme için Whisper.cpp kullanır. Georgi Gerganov ve katkıda bulunanların harika çalışmaları için teşekkür ederiz."
         }
       }
+    },
+    "apiKey": {
+      "saving": "Anahtar kaydediliyor…",
+      "saved": "Anahtar kaydedildi",
+      "failed": "Anahtar kaydedilemedi"
     }
   },
   "footer": {
@@ -639,7 +673,11 @@
     "yes": "Evet",
     "no": "Hayır",
     "noOptionsFound": "Seçenek bulunamadı",
-    "clear": "Temizle"
+    "clear": "Temizle",
+    "confirm": "Onayla",
+    "moreInfo": "Daha fazla bilgi",
+    "copyFailed": "Panoya kopyalanamadı",
+    "retry": "Tekrar dene"
   },
   "accessibility": {
     "permissionsRequired": "Erişilebilirlik İzinleri Gerekli",
@@ -658,7 +696,27 @@
     },
     "recordingFailed": "Kayıt başlatılamadı: {{error}}",
     "modelLoadFailed": "Model yüklenemedi: {{model}}",
-    "modelLoadFailedUnknown": "bilinmeyen model"
+    "modelLoadFailedUnknown": "bilinmeyen model",
+    "settingSaveFailed": "Ayar kaydedilemedi",
+    "fetchModelsFailed": "Model listesi alınamadı",
+    "unknown": "Bilinmeyen hata",
+    "openFolderFailed": "Klasör açılamadı",
+    "models": {
+      "loadFailed": "Model listesi yüklenemedi",
+      "selectFailed": "Bu modele geçilemedi",
+      "downloadFailed": "Model indirilemedi",
+      "cancelFailed": "İndirme iptal edilemedi",
+      "deleteFailed": "Model silinemedi",
+      "extractFailed": "İndirilen model açılamadı"
+    },
+    "dictation": {
+      "transcription": "Yazıya dökme başarısız oldu",
+      "paste": "Metin yapıştırılamadı",
+      "model_load": "Transkripsiyon modeli yüklenemedi",
+      "no_speech": "Konuşma algılanmadı",
+      "recording": "Kayıt başarısız oldu",
+      "generic": "Dikte başarısız oldu"
+    }
   },
   "appLanguage": {
     "title": "Uygulama Dili",
@@ -666,7 +724,8 @@
   },
   "overlay": {
     "transcribing": "Transkribe ediliyor...",
-    "processing": "İşleniyor..."
+    "processing": "İşleniyor...",
+    "cancel": "Kaydı iptal et"
   },
   "meeting": {
     "title": "Meeting",
@@ -806,7 +865,8 @@
         "decoding": "Ses okunuyor",
         "transcribing": "Yazıya dökülüyor",
         "summarizing": "Başlık ve özet yazılıyor"
-      }
+      },
+      "failed": "Kayıt yazıya dökülemedi: {{error}}"
     },
     "exportDir": {
       "title": "Markdown olarak klasöre kaydet",
@@ -819,8 +879,41 @@
       "button": "Yeniden yazıya dök",
       "hint": "Bu toplantıyı kayıtlı sesinden, şu anki toplantı modeliyle yeniden yazıya dök.",
       "failedHint": "Bu döküm eksik görünüyor. Kayıtlı sesten yeniden yazıya dökülsün mü?",
-      "confirmText": "Mevcut döküm değiştirilecek (notlar ve başlık kalır). Devam edilsin mi?"
-    }
+      "confirmText": "Mevcut döküm değiştirilecek (notlar ve başlık kalır). Devam edilsin mi?",
+      "confirmTitle": "Bu toplantı yeniden yazıya dökülsün mü?",
+      "cancelling": "İptal ediliyor…"
+    },
+    "notesNotSavedYet": "Henüz kaydedilmedi",
+    "notesSaveFailed": "Kaydedilmedi",
+    "durationHoursMinutes": "{{hours}} sa {{minutes}} dk",
+    "recovered": "Toplantı kurtarıldı",
+    "discardConfirmTitle": "Bu toplantı atılsın mı?",
+    "discardConfirmWithAudio": "Kaydedilen ses ve yarım kalan transkript silinecek. Bu işlem geri alınamaz.",
+    "discardConfirmText": "Yarım kalan transkript silinecek. Bu işlem geri alınamaz.",
+    "recoverTitleUnfinished": "Bu toplantının işlenmesi tamamlanmadı",
+    "recoverTitleInterrupted": "Bu toplantı yarıda kesildi",
+    "recoverDescriptionWithAudio": "Ses kaydı saklandı. Sesi yeniden yazıya döküp normal bir toplantı olarak kaydetmek için kurtarın.",
+    "recoverDescriptionPartial": "Ses kaydı artık mevcut değil. Kurtarma, toplantı sürerken kaydedilen yarım transkripti korur.",
+    "confirmDeleteText": "\"{{title}}\" ile birlikte transkripti, notları, özeti ve ses kaydı silinecek. Bu işlem geri alınamaz.",
+    "deleteNamed": "\"{{title}}\" toplantısını sil",
+    "markdownFilter": "Markdown",
+    "exported": "Toplantı dışa aktarıldı",
+    "errors": {
+      "startFailed": "Toplantı başlatılamadı: {{error}}",
+      "stopFailed": "Toplantı düzgün şekilde durdurulamadı: {{error}}",
+      "summaryFailed": "Özet oluşturulamadı: {{error}}",
+      "notesSaveFailed": "Notlarınız kaydedilemedi: {{error}}",
+      "recoverFailed": "Bu toplantı kurtarılamadı: {{error}}",
+      "discardFailed": "Bu toplantı atılamadı: {{error}}",
+      "renameFailed": "Toplantı yeniden adlandırılamadı: {{error}}",
+      "retranscribeFailed": "Toplantı yeniden yazıya dökülemedi: {{error}}",
+      "audioFailed": "Kayıt yüklenemedi",
+      "cancelFailed": "İptal edilemedi",
+      "calendarFailed": "Takvim erişimi alınamadı: {{error}}",
+      "folderPickerFailed": "Klasör seçici açılamadı: {{error}}",
+      "filePickerFailed": "Dosya seçici açılamadı: {{error}}"
+    },
+    "settingsLoadError": "Toplantı ayarları yüklenemedi"
   },
   "meetingPrompt": {
     "startTitle": "Toplantı algılandı",
@@ -835,5 +928,10 @@
     "end": "Toplantıyı bitir",
     "continue": "Kayda devam et",
     "autoEndIn": "{{seconds}} sn içinde otomatik bitirilecek"
+  },
+  "audioPlayer": {
+    "play": "Oynat",
+    "pause": "Duraklat",
+    "seek": "Oynatma konumu"
   }
 }

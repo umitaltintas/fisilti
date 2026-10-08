@@ -29,7 +29,8 @@
     "groups": {
       "features": "Funkce",
       "system": "Systém"
-    }
+    },
+    "navigation": "Sekce nastavení"
   },
   "onboarding": {
     "subtitle": "Pro začátek vyberte model pro přepis",
@@ -106,7 +107,8 @@
     },
     "errors": {
       "loadModels": "Nepodařilo se načíst dostupné modely",
-      "downloadModel": "Nepodařilo se stáhnout model: {{error}}"
+      "downloadModel": "Nepodařilo se stáhnout model: {{error}}",
+      "selectModel": "Na tento model se nepodařilo přepnout. Zkuste to prosím znovu."
     },
     "permissions": {
       "title": "Vyžadována oprávnění",
@@ -159,7 +161,12 @@
     },
     "cancel": "Zrušit",
     "cancelDownload": "Zrušit stahování",
-    "cloud": "Cloud"
+    "cloud": "Cloud",
+    "errors": {
+      "statusFailed": "Stav modelu se nepodařilo ověřit",
+      "loadFailed": "Model se nepodařilo načíst",
+      "switchFailed": "Model se nepodařilo přepnout"
+    }
   },
   "settings": {
     "modelSettings": {
@@ -227,7 +234,9 @@
         "multilingualShort": "Vícejazyčný",
         "english": "Pouze angličtina",
         "regional": "Konkrétní jazyky"
-      }
+      },
+      "downloadNamed": "Stáhnout {{modelName}}",
+      "useNamed": "Použít {{modelName}}"
     },
     "general": {
       "title": "Obecné",
@@ -260,7 +269,8 @@
           "restore": "Nepodařilo se obnovit původní zkratku",
           "set": "Nepodařilo se nastavit zkratku: {{error}}",
           "reset": "Nepodařilo se vrátit zkratku na původní hodnotu"
-        }
+        },
+        "change": "Změnit zkratku: {{shortcut}}"
       },
       "language": {
         "title": "Jazyk",
@@ -300,6 +310,20 @@
       "volume": {
         "title": "Hlasitost",
         "description": "Upravte hlasitost zvukové odezvy"
+      },
+      "soundTheme": {
+        "label": "Zvukový motiv",
+        "description": "Vyberte zvukový motiv pro odezvu při startu a ukončení nahrávání",
+        "custom": "Vlastní",
+        "preview": "Přehrát ukázku zvukového motivu (začátek, pak konec)"
+      },
+      "alwaysOnMicrophone": {
+        "label": "Vždy zapnutý mikrofon",
+        "description": "Udržovat mikrofon aktivní pro rychlejší odezvu"
+      },
+      "clamshellMicrophone": {
+        "title": "Mikrofon při zavřeném víku",
+        "description": "Mikrofon, který se použije při zavřeném víku notebooku"
       }
     },
     "advanced": {
@@ -478,7 +502,18 @@
         "createPrompt": "Vytvořit prompt",
         "cancel": "Zrušit",
         "selectToEdit": "Vyberte výše prompt, abyste zobrazili a upravili jeho podrobnosti.",
-        "createFirst": "Klikněte nahoře na 'Vytvořit nový prompt' a vytvořte svůj první prompt pro následné zpracování."
+        "createFirst": "Klikněte nahoře na 'Vytvořit nový prompt' a vytvořte svůj první prompt pro následné zpracování.",
+        "unsavedTitle": "Zahodit neuložené změny?",
+        "unsavedText": "Úpravy tohoto promptu nebyly uloženy.",
+        "discardChanges": "Zahodit změny",
+        "saved": "Prompt uložen",
+        "deleteConfirmTitle": "Smazat tento prompt?",
+        "deleteConfirmText": "„{{name}}“ bude smazán. Tuto akci nelze vrátit zpět.",
+        "errors": {
+          "create": "Prompt se nepodařilo vytvořit",
+          "update": "Prompt se nepodařilo uložit",
+          "delete": "Prompt se nepodařilo smazat"
+        }
       },
       "description": "Nechte model AI upravit, přeformátovat nebo přeložit každý přepis, než se vloží."
     },
@@ -496,7 +531,13 @@
       "retranscribeError": "Opětovný přepis se nezdařil. Zkuste to prosím znovu.",
       "transcribing": "Přepisuji...",
       "transcriptionFailed": "Přepis selhal. Můžete zkusit přepis znovu pomocí ikony opakování.",
-      "retentionSettings": "Nastavení historie"
+      "retentionSettings": "Nastavení historie",
+      "loadError": "Historii se nepodařilo načíst",
+      "loadMoreError": "Další historii se nepodařilo načíst",
+      "saveError": "Tento záznam se nepodařilo aktualizovat",
+      "deleteConfirmTitle": "Smazat tento přepis?",
+      "deleteConfirmText": "Přepis a jeho nahrávka budou smazány. Tuto akci nelze vrátit zpět.",
+      "openFolderError": "Složku s nahrávkami se nepodařilo otevřít"
     },
     "debug": {
       "title": "Ladění",
@@ -511,10 +552,6 @@
       "updateChecks": {
         "label": "Kontrolovat aktualizace",
         "description": "Automaticky kontrolovat nové verze Fısıltı"
-      },
-      "soundTheme": {
-        "label": "Zvukový motiv",
-        "description": "Vyberte zvukový motiv pro odezvu při startu a ukončení nahrávání"
       },
       "wordCorrectionThreshold": {
         "title": "Práh korekce slov",
@@ -534,14 +571,6 @@
         "weeks2": "Po 2 týdnech",
         "months3": "Po 3 měsících",
         "placeholder": "Vyberte dobu uchování..."
-      },
-      "alwaysOnMicrophone": {
-        "label": "Vždy zapnutý mikrofon",
-        "description": "Udržovat mikrofon aktivní pro rychlejší odezvu"
-      },
-      "clamshellMicrophone": {
-        "title": "Mikrofon při zavřeném víku",
-        "description": "Mikrofon, který se použije při zavřeném víku notebooku"
       },
       "postProcessingToggle": {
         "label": "Následné zpracování",
@@ -602,6 +631,11 @@
           "details": "Fısıltı používá Whisper.cpp pro rychlé lokální zpracování řeči na text. Díky skvělé práci Georgiho Gerganova a přispěvatelů."
         }
       }
+    },
+    "apiKey": {
+      "saving": "Ukládání klíče…",
+      "saved": "Klíč uložen",
+      "failed": "Klíč nebyl uložen"
     }
   },
   "footer": {
@@ -639,7 +673,11 @@
     "yes": "Ano",
     "no": "Ne",
     "noOptionsFound": "Nenalezeny žádné možnosti",
-    "clear": "Vymazat"
+    "clear": "Vymazat",
+    "confirm": "Potvrdit",
+    "moreInfo": "Další informace",
+    "copyFailed": "Kopírování do schránky se nezdařilo",
+    "retry": "Zkusit znovu"
   },
   "accessibility": {
     "permissionsRequired": "Vyžadována oprávnění usnadnění přístupu",
@@ -658,7 +696,27 @@
     },
     "recordingFailed": "Nepodařilo se spustit nahrávání: {{error}}",
     "modelLoadFailed": "Nepodařilo se načíst model: {{model}}",
-    "modelLoadFailedUnknown": "neznámý model"
+    "modelLoadFailedUnknown": "neznámý model",
+    "settingSaveFailed": "Nastavení se nepodařilo uložit",
+    "fetchModelsFailed": "Seznam modelů se nepodařilo získat",
+    "unknown": "Neznámá chyba",
+    "openFolderFailed": "Složku se nepodařilo otevřít",
+    "models": {
+      "loadFailed": "Seznam modelů se nepodařilo načíst",
+      "selectFailed": "Na tento model se nepodařilo přepnout",
+      "downloadFailed": "Stažení modelu se nezdařilo",
+      "cancelFailed": "Stahování se nepodařilo zrušit",
+      "deleteFailed": "Model se nepodařilo smazat",
+      "extractFailed": "Stažený model se nepodařilo rozbalit"
+    },
+    "dictation": {
+      "transcription": "Přepis se nezdařil",
+      "paste": "Text se nepodařilo vložit",
+      "model_load": "Model pro přepis se nepodařilo načíst",
+      "no_speech": "Nebyla rozpoznána žádná řeč",
+      "recording": "Nahrávání se nezdařilo",
+      "generic": "Diktování se nezdařilo"
+    }
   },
   "appLanguage": {
     "title": "Jazyk aplikace",
@@ -666,7 +724,8 @@
   },
   "overlay": {
     "transcribing": "Přepisuji...",
-    "processing": "Zpracovávám..."
+    "processing": "Zpracovávám...",
+    "cancel": "Zrušit nahrávání"
   },
   "meeting": {
     "title": "Meeting",
@@ -784,7 +843,8 @@
         "decoding": "Reading audio",
         "transcribing": "Transcribing",
         "summarizing": "Writing title and summary"
-      }
+      },
+      "failed": "Nahrávku se nepodařilo přepsat: {{error}}"
     },
     "exportDir": {
       "title": "Save as Markdown to a folder",
@@ -797,8 +857,63 @@
       "button": "Transcribe again",
       "hint": "Transcribe this meeting again from its saved audio with the current meeting model.",
       "failedHint": "This transcript looks incomplete. Transcribe it again from the saved audio?",
-      "confirmText": "The current transcript will be replaced (notes and title stay). Continue?"
-    }
+      "confirmText": "The current transcript will be replaced (notes and title stay). Continue?",
+      "confirmTitle": "Přepsat tuto schůzku znovu?",
+      "cancelling": "Rušení…"
+    },
+    "transcriptionFailed": "Přepis se nezdařil, proto tato schůzka nemá text. Zvuk byl uložen a nahrávka zachována. Důvod: {{error}}",
+    "liveTranslateTargetLabel": "Překládat do",
+    "geminiDiarizeToggle": "Rozlišovat jednotlivé mluvčí",
+    "geminiDiarizeDescription": "U každého řádku uvede, kdo ho řekl. Má přednost před možností úpravy níže a u nahrávek delších než 30 minut, které API nedokáže přiřadit, se automaticky vynechá.",
+    "geminiSmartToggle": "Upravit přepis",
+    "geminiSmartDescription": "Odstraní výplňová slova a nedokončené začátky vět a použije formátování místo doslovného přepisu každého zvuku. Ignoruje se, když je zapnuté rozlišování mluvčích — Gemini nezvládne obojí najednou.",
+    "liveModeLabel": "Během schůzky",
+    "liveModeOff": "Přepsat po skončení",
+    "liveModeTranscribe": "Přepisovat živě",
+    "liveModeTranslate": "Překládat živě",
+    "liveModeNote": {
+      "off": "Zvuk se odešle do Google až po ukončení schůzky, pokud je zapnutá možnost výše.",
+      "transcribe": "Text se zobrazuje průběžně, jak lidé mluví. Zhruba čtyřikrát levnější než živý překlad. Ponechte možnost výše zapnutou, abyste po skončení schůzky získali jména mluvčích.",
+      "translate": "Text se zobrazuje průběžně, jak lidé mluví, s překladem pod každým řádkem. Nejdražší možnost a jediná, která nemůže mít jména mluvčích — druhé zpracování by překlad ztratilo."
+    },
+    "transcriptSpeakerUnknown": "Mluvčí",
+    "subtitlesToggle": "Zobrazovat živé titulky na obrazovce",
+    "subtitlesDescription": "Během schůzky zobrazuje u spodního okraje obrazovky, co říkají ostatní účastníci, takže můžete číst bez opuštění hovoru. Nepřekáží klikání a je skryté při sdílení obrazovky i v nahrávkách. Vyžaduje živý režim výše.",
+    "stillProcessing": "Probíhá přepis",
+    "costEstimate": "~${{amount}}",
+    "costTooltip": "Odhad podle počtu tokenů hlášených API, oceněný podle snímku veřejných sazeb. Ceny preview verzí se mění a bezplatná kvóta ani slevy se nezapočítávají, takže částka nebude přesně odpovídat faktuře. Znak + na konci znamená, že jeden model neměl zveřejněnou cenu a skutečné náklady jsou vyšší.",
+    "cloudBadge": "Zvuk odeslán do {{providers}}",
+    "notesNotSavedYet": "Zatím neuloženo",
+    "notesSaveFailed": "Neuloženo",
+    "durationHoursMinutes": "{{hours}} h {{minutes}} min",
+    "recovered": "Schůzka obnovena",
+    "discardConfirmTitle": "Zahodit tuto schůzku?",
+    "discardConfirmWithAudio": "Uložený zvuk a částečný přepis budou smazány. Tuto akci nelze vrátit zpět.",
+    "discardConfirmText": "Částečný přepis bude smazán. Tuto akci nelze vrátit zpět.",
+    "recoverTitleUnfinished": "Zpracování této schůzky nebylo dokončeno",
+    "recoverTitleInterrupted": "Tato schůzka byla přerušena",
+    "recoverDescriptionWithAudio": "Zvuk byl zachován. Obnovením se zvuk znovu přepíše a uloží jako běžná schůzka.",
+    "recoverDescriptionPartial": "Zvuk už není k dispozici. Obnovením se zachová částečný přepis uložený během schůzky.",
+    "confirmDeleteText": "„{{title}}“ včetně přepisu, poznámek, shrnutí a zvuku bude smazána. Tuto akci nelze vrátit zpět.",
+    "deleteNamed": "Smazat „{{title}}“",
+    "markdownFilter": "Markdown",
+    "exported": "Schůzka exportována",
+    "errors": {
+      "startFailed": "Schůzku se nepodařilo zahájit: {{error}}",
+      "stopFailed": "Schůzku se nepodařilo řádně ukončit: {{error}}",
+      "summaryFailed": "Shrnutí se nepodařilo vytvořit: {{error}}",
+      "notesSaveFailed": "Poznámky se nepodařilo uložit: {{error}}",
+      "recoverFailed": "Tuto schůzku se nepodařilo obnovit: {{error}}",
+      "discardFailed": "Tuto schůzku se nepodařilo zahodit: {{error}}",
+      "renameFailed": "Schůzku se nepodařilo přejmenovat: {{error}}",
+      "retranscribeFailed": "Schůzku se nepodařilo znovu přepsat: {{error}}",
+      "audioFailed": "Nahrávku se nepodařilo načíst",
+      "cancelFailed": "Zrušení se nezdařilo",
+      "calendarFailed": "Nepodařilo se získat přístup ke kalendáři: {{error}}",
+      "folderPickerFailed": "Výběr složky se nepodařilo otevřít: {{error}}",
+      "filePickerFailed": "Výběr souboru se nepodařilo otevřít: {{error}}"
+    },
+    "settingsLoadError": "Nastavení schůzek se nepodařilo načíst"
   },
   "meetingPrompt": {
     "startTitle": "Zjištěna schůzka",
@@ -813,5 +928,10 @@
     "end": "Ukončit schůzku",
     "continue": "Pokračovat v nahrávání",
     "autoEndIn": "Automatické ukončení za {{seconds}} s"
+  },
+  "audioPlayer": {
+    "play": "Přehrát",
+    "pause": "Pozastavit",
+    "seek": "Pozice přehrávání"
   }
 }

@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 import { commands } from "@/bindings";
+import { errorMessage } from "@/lib/utils/errors";
 import { SettingContainer } from "../../ui/SettingContainer";
 import { PathDisplay } from "../../ui/PathDisplay";
 
@@ -28,25 +30,25 @@ export const LogDirectory: React.FC<LogDirectoryProps> = ({
           setError(result.error);
         }
       } catch (err) {
-        const errorMessage =
-          err && typeof err === "object" && "message" in err
-            ? String(err.message)
-            : "Failed to load log directory";
-        setError(errorMessage);
+        setError(errorMessage(err));
       } finally {
         setLoading(false);
       }
     };
 
-    loadLogDirectory();
+    void loadLogDirectory();
   }, []);
 
   const handleOpen = async () => {
     if (!logDir) return;
     try {
-      await commands.openLogDir();
+      const result = await commands.openLogDir();
+      if (result.status === "error") throw result.error;
     } catch (openError) {
       console.error("Failed to open log directory:", openError);
+      toast.error(t("errors.openFolderFailed"), {
+        description: errorMessage(openError),
+      });
     }
   };
 
@@ -60,14 +62,18 @@ export const LogDirectory: React.FC<LogDirectoryProps> = ({
     >
       {loading ? (
         <div className="animate-pulse">
-          <div className="h-8 bg-gray-100 rounded" />
+          <div className="h-8 bg-mid-gray/10 rounded" />
         </div>
       ) : error ? (
-        <div className="p-3 bg-red-50 border border-red-200 rounded text-xs text-red-600">
+        <div role="alert" className="text-xs text-red-400 break-words">
           {t("errors.loadDirectory", { error })}
         </div>
       ) : (
-        <PathDisplay path={logDir} onOpen={handleOpen} disabled={!logDir} />
+        <PathDisplay
+          path={logDir}
+          onOpen={() => void handleOpen()}
+          disabled={!logDir}
+        />
       )}
     </SettingContainer>
   );

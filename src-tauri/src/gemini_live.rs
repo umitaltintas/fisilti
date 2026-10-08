@@ -673,27 +673,19 @@ where
                 ))
                 .await;
             let deadline = tokio::time::Instant::now() + STOP_FLUSH_TIMEOUT;
-            loop {
-                match tokio::time::timeout_at(deadline, reader.next()).await {
-                    Ok(Some(Ok(message))) => match decode_message(message, label) {
-                        Ok(Some(value)) => {
-                            let absorbed = absorb_message(
-                                &value,
-                                &mut state,
-                                config,
-                                label,
-                                on_transcript,
-                                usage,
-                            );
-                            if absorbed.turn_complete {
-                                break;
-                            }
+            // Ends on a read error, stream end, or the flush deadline.
+            while let Ok(Some(Ok(message))) = tokio::time::timeout_at(deadline, reader.next()).await
+            {
+                match decode_message(message, label) {
+                    Ok(Some(value)) => {
+                        let absorbed =
+                            absorb_message(&value, &mut state, config, label, on_transcript, usage);
+                        if absorbed.turn_complete {
+                            break;
                         }
-                        Ok(None) => {}
-                        Err(()) => break,
-                    },
-                    // Read error, stream end, or the flush deadline passed.
-                    _ => break,
+                    }
+                    Ok(None) => {}
+                    Err(()) => break,
                 }
             }
             let _ = writer.send(Message::Close(None)).await;

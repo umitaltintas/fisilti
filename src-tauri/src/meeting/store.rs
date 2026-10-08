@@ -348,21 +348,21 @@ impl MeetingStore {
     /// Update the title column of an existing meeting row.
     pub fn update_title(&self, id: i64, title: &str) -> Result<()> {
         let conn = self.get_connection()?;
-        conn.execute(
+        let changed = conn.execute(
             "UPDATE meetings SET title = ?1 WHERE id = ?2",
             params![title, id],
         )?;
-        Ok(())
+        expect_one_row(changed, id)
     }
 
     /// Update the user notes column of an existing meeting row.
     pub fn update_notes(&self, id: i64, notes: &str) -> Result<()> {
         let conn = self.get_connection()?;
-        conn.execute(
+        let changed = conn.execute(
             "UPDATE meetings SET notes = ?1 WHERE id = ?2",
             params![notes, id],
         )?;
-        Ok(())
+        expect_one_row(changed, id)
     }
 
     /// Update the summary column of an existing meeting row.
@@ -414,6 +414,31 @@ impl MeetingStore {
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(rows)
+    }
+
+    /// Every capture-buffer path any row still records (rows keep them only
+    /// while `recording`). Used to sweep buffers nothing refers to.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    pub fn referenced_buffer_paths(&self) -> Result<std::collections::HashSet<String>> {
+        let conn = self.get_connection()?;
+        let mut stmt = conn.prepare(
+            "SELECT buffer_mic_path, buffer_system_path, buffer_mixed_path FROM meetings
+             WHERE buffer_mic_path IS NOT NULL
+                OR buffer_system_path IS NOT NULL
+                OR buffer_mixed_path IS NOT NULL",
+        )?;
+        let mut paths = std::collections::HashSet::new();
+        let rows = stmt.query_map([], |row| {
+            Ok([
+                row.get::<_, Option<String>>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, Option<String>>(2)?,
+            ])
+        })?;
+        for row in rows {
+            paths.extend(row?.into_iter().flatten());
+        }
+        Ok(paths)
     }
 
     pub fn get_buffers(&self, id: i64) -> Result<StoredBuffers> {
@@ -751,6 +776,21 @@ mod tests {
         let record = store.get_meeting(id).expect("get");
         assert_eq!(record.notes.as_deref(), Some("my live notes"));
         assert_eq!(record.transcript, "final");
+    }
+
+    #[test]
+    fn only_rows_still_holding_buffers_are_referenced() {
+        let store = temp_store("referenced_buffers");
+        let live = store
+            .start_meeting(1_000, "Live", &buffers())
+            .expect("insert");
+        let paths = store.referenced_buffer_paths().expect("paths");
+        assert!(paths.contains("/tmp/mic.f32"));
+        assert!(paths.contains("/tmp/mix.f32"));
+        store
+            .finalize_meeting(live, "done", &[], 2_000, 1_000)
+            .expect("finalize");
+        assert!(store.referenced_buffer_paths().expect("paths").is_empty());
     }
 
     #[test]

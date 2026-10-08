@@ -400,10 +400,8 @@ mod tests {
 
     #[test]
     fn deleting_a_meeting_removes_its_exported_note() {
-        let dir = std::env::temp_dir().join(format!(
-            "fisilti-export-remove-test-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("fisilti-export-remove-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
 

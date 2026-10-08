@@ -29,7 +29,8 @@
     "groups": {
       "features": "الميزات",
       "system": "النظام"
-    }
+    },
+    "navigation": "أقسام الإعدادات"
   },
   "onboarding": {
     "subtitle": "للبدء، اختر نموذج التفريغ الصوتي",
@@ -106,7 +107,8 @@
     },
     "errors": {
       "loadModels": "فشل تحميل النماذج المتاحة",
-      "downloadModel": "فشل تنزيل النموذج: {{error}}"
+      "downloadModel": "فشل تنزيل النموذج: {{error}}",
+      "selectModel": "تعذّر التبديل إلى هذا النموذج. يُرجى المحاولة مرة أخرى."
     },
     "permissions": {
       "title": "الأذونات المطلوبة",
@@ -159,7 +161,12 @@
       "translation": "يدعم الترجمة",
       "translate": "ترجمة"
     },
-    "cloud": "السحابة"
+    "cloud": "السحابة",
+    "errors": {
+      "statusFailed": "تعذّر التحقق من حالة النموذج",
+      "loadFailed": "فشل تحميل النموذج",
+      "switchFailed": "فشل تبديل النموذج"
+    }
   },
   "settings": {
     "general": {
@@ -193,7 +200,8 @@
           "restore": "فشل استعادة الاختصار الأصلي",
           "set": "فشل تعيين الاختصار: {{error}}",
           "reset": "فشل إعادة تعيين الاختصار إلى قيمته الأصلية"
-        }
+        },
+        "change": "تغيير الاختصار: {{shortcut}}"
       },
       "language": {
         "title": "اللغة",
@@ -233,6 +241,20 @@
       "volume": {
         "title": "مستوى الصوت",
         "description": "ضبط مستوى صوت تنبيهات الصوت"
+      },
+      "soundTheme": {
+        "label": "سمة الصوت",
+        "description": "اختر سمة صوت لتنبيهات بدء وتوقف التسجيل",
+        "custom": "مخصص",
+        "preview": "معاينة سمة الأصوات (يُشغَّل صوت البدء ثم صوت الإيقاف)"
+      },
+      "alwaysOnMicrophone": {
+        "label": "ميكروفون يعمل دائماً",
+        "description": "إبقاء الميكروفون نشطاً لاستجابة أسرع"
+      },
+      "clamshellMicrophone": {
+        "title": "ميكروفون وضع الإغلاق",
+        "description": "الميكروفون المراد استخدامه عندما يكون غطاء المحمول مغلقاً"
       }
     },
     "advanced": {
@@ -411,7 +433,18 @@
         "createPrompt": "إنشاء مطالبة",
         "cancel": "إلغاء",
         "selectToEdit": ".اختر مطالبة أعلاه لعرض وتعديل تفاصيلها",
-        "createFirst": ".انقر على 'إنشاء مطالبة جديدة' أعلاه لإنشاء أول مطالبة معالجة لاحقة لك"
+        "createFirst": ".انقر على 'إنشاء مطالبة جديدة' أعلاه لإنشاء أول مطالبة معالجة لاحقة لك",
+        "unsavedTitle": "تجاهل التغييرات غير المحفوظة؟",
+        "unsavedText": "لم تُحفظ تعديلاتك على هذه التعليمات.",
+        "discardChanges": "تجاهل التغييرات",
+        "saved": "تم حفظ التعليمات",
+        "deleteConfirmTitle": "حذف هذه التعليمات؟",
+        "deleteConfirmText": "سيتم حذف «{{name}}». لا يمكن التراجع عن ذلك.",
+        "errors": {
+          "create": "تعذّر إنشاء التعليمات",
+          "update": "تعذّر حفظ التعليمات",
+          "delete": "تعذّر حذف التعليمات"
+        }
       },
       "description": "دع نموذج ذكاء اصطناعي ينقّح كل تفريغ نصي أو يعيد تنسيقه أو يترجمه قبل لصقه."
     },
@@ -429,7 +462,13 @@
       "retranscribeError": "فشلت إعادة النسخ. يرجى المحاولة مرة أخرى.",
       "transcribing": "جارٍ النسخ...",
       "transcriptionFailed": "فشل النسخ. يمكنك إعادة النسخ باستخدام أيقونة إعادة المحاولة.",
-      "retentionSettings": "إعدادات السجل"
+      "retentionSettings": "إعدادات السجل",
+      "loadError": "تعذّر تحميل السجل",
+      "loadMoreError": "تعذّر تحميل المزيد من السجل",
+      "saveError": "تعذّر تحديث هذا الإدخال",
+      "deleteConfirmTitle": "حذف هذا النص المفرَّغ؟",
+      "deleteConfirmText": "سيتم حذف النص المفرَّغ وتسجيله الصوتي. لا يمكن التراجع عن ذلك.",
+      "openFolderError": "تعذّر فتح مجلد التسجيلات"
     },
     "debug": {
       "title": "تصحيح الأخطاء",
@@ -444,10 +483,6 @@
       "updateChecks": {
         "label": "التحقق من وجود تحديثات",
         "description": "التحقق تلقائياً من وجود إصدارات جديدة من Fısıltı"
-      },
-      "soundTheme": {
-        "label": "سمة الصوت",
-        "description": "اختر سمة صوت لتنبيهات بدء وتوقف التسجيل"
       },
       "wordCorrectionThreshold": {
         "title": "عتبة تصحيح الكلمات",
@@ -467,14 +502,6 @@
         "weeks2": "بعد أسبوعين",
         "months3": "بعد 3 أشهر",
         "placeholder": "اختر فترة الاحتفاظ..."
-      },
-      "alwaysOnMicrophone": {
-        "label": "ميكروفون يعمل دائماً",
-        "description": "إبقاء الميكروفون نشطاً لاستجابة أسرع"
-      },
-      "clamshellMicrophone": {
-        "title": "ميكروفون وضع الإغلاق",
-        "description": "الميكروفون المراد استخدامه عندما يكون غطاء المحمول مغلقاً"
       },
       "postProcessingToggle": {
         "label": "معالجة لاحقة",
@@ -601,7 +628,14 @@
         "multilingualShort": "متعدد اللغات",
         "english": "الإنجليزية فقط",
         "regional": "لغات محددة"
-      }
+      },
+      "downloadNamed": "تنزيل {{modelName}}",
+      "useNamed": "استخدام {{modelName}}"
+    },
+    "apiKey": {
+      "saving": "جارٍ حفظ المفتاح…",
+      "saved": "تم حفظ المفتاح",
+      "failed": "لم يُحفظ المفتاح"
     }
   },
   "footer": {
@@ -639,7 +673,11 @@
     "yes": "نعم",
     "no": "لا",
     "noOptionsFound": "لم يتم العثور على خيارات",
-    "clear": "مسح"
+    "clear": "مسح",
+    "confirm": "تأكيد",
+    "moreInfo": "مزيد من المعلومات",
+    "copyFailed": "تعذّر النسخ إلى الحافظة",
+    "retry": "إعادة المحاولة"
   },
   "accessibility": {
     "permissionsRequired": "أذونات إمكانية الوصول مطلوبة",
@@ -658,7 +696,27 @@
     },
     "recordingFailed": "فشل في بدء التسجيل: {{error}}",
     "modelLoadFailed": "فشل في تحميل النموذج: {{model}}",
-    "modelLoadFailedUnknown": "نموذج غير معروف"
+    "modelLoadFailedUnknown": "نموذج غير معروف",
+    "settingSaveFailed": "تعذّر حفظ الإعداد",
+    "fetchModelsFailed": "تعذّر جلب قائمة النماذج",
+    "unknown": "خطأ غير معروف",
+    "openFolderFailed": "تعذّر فتح المجلد",
+    "models": {
+      "loadFailed": "تعذّر تحميل قائمة النماذج",
+      "selectFailed": "تعذّر التبديل إلى هذا النموذج",
+      "downloadFailed": "فشل تنزيل النموذج",
+      "cancelFailed": "تعذّر إلغاء التنزيل",
+      "deleteFailed": "تعذّر حذف النموذج",
+      "extractFailed": "تعذّر فك ضغط النموذج الذي تم تنزيله"
+    },
+    "dictation": {
+      "transcription": "فشل التفريغ النصي",
+      "paste": "تعذّر لصق النص",
+      "model_load": "تعذّر تحميل نموذج التفريغ النصي",
+      "no_speech": "لم يُكتشف أي كلام",
+      "recording": "فشل التسجيل",
+      "generic": "فشل الإملاء"
+    }
   },
   "appLanguage": {
     "title": "لغة التطبيق",
@@ -666,7 +724,8 @@
   },
   "overlay": {
     "transcribing": "...جاري التفريغ",
-    "processing": "...جاري المعالجة"
+    "processing": "...جاري المعالجة",
+    "cancel": "إلغاء التسجيل"
   },
   "meeting": {
     "title": "Meeting",
@@ -784,7 +843,8 @@
         "decoding": "Reading audio",
         "transcribing": "Transcribing",
         "summarizing": "Writing title and summary"
-      }
+      },
+      "failed": "تعذّر تفريغ التسجيل: {{error}}"
     },
     "exportDir": {
       "title": "Save as Markdown to a folder",
@@ -797,8 +857,63 @@
       "button": "Transcribe again",
       "hint": "Transcribe this meeting again from its saved audio with the current meeting model.",
       "failedHint": "This transcript looks incomplete. Transcribe it again from the saved audio?",
-      "confirmText": "The current transcript will be replaced (notes and title stay). Continue?"
-    }
+      "confirmText": "The current transcript will be replaced (notes and title stay). Continue?",
+      "confirmTitle": "إعادة تفريغ هذا الاجتماع؟",
+      "cancelling": "جارٍ الإلغاء…"
+    },
+    "transcriptionFailed": "فشل التفريغ النصي، لذا لا يحتوي هذا الاجتماع على نص. تم حفظ الصوت والاحتفاظ بالتسجيل. السبب: {{error}}",
+    "liveTranslateTargetLabel": "الترجمة إلى",
+    "geminiDiarizeToggle": "تمييز المتحدثين",
+    "geminiDiarizeDescription": "وسم كل سطر باسم قائله. له الأولوية على خيار التنقيح أدناه، ويُتخطّى تلقائيًا في التسجيلات التي تزيد على 30 دقيقة لأن الـ API لا يستطيع نسبة الكلام فيها.",
+    "geminiSmartToggle": "تنقيح النص المفرَّغ",
+    "geminiSmartDescription": "حذف كلمات الحشو والبدايات المتعثرة وتطبيق التنسيق بدلًا من تفريغ كل صوت حرفيًا. يُتجاهل عند تفعيل تمييز المتحدثين — لا يستطيع Gemini القيام بالأمرين معًا.",
+    "liveModeLabel": "أثناء الاجتماع",
+    "liveModeOff": "التفريغ عند الانتهاء",
+    "liveModeTranscribe": "تفريغ مباشر",
+    "liveModeTranslate": "ترجمة مباشرة",
+    "liveModeNote": {
+      "off": "لا يُرسَل الصوت إلى Google إلا بعد إيقاف الاجتماع، إذا كان الخيار أعلاه مفعّلًا.",
+      "transcribe": "يظهر النص أثناء حديث المشاركين. أرخص بنحو أربع مرات من الترجمة المباشرة. أبقِ الخيار أعلاه مفعّلًا للحصول على أسماء المتحدثين بعد انتهاء الاجتماع.",
+      "translate": "يظهر النص أثناء حديث المشاركين مع ترجمة أسفل كل سطر. هذا الخيار الأعلى تكلفة، والوحيد الذي لا يمكن أن يتضمن أسماء المتحدثين — فالمعالجة الثانية ستفقد الترجمة."
+    },
+    "transcriptSpeakerUnknown": "متحدث",
+    "subtitlesToggle": "عرض ترجمة مباشرة على الشاشة",
+    "subtitlesDescription": "عرض ما يقوله المشاركون الآخرون بشكل عائم قرب أسفل الشاشة أثناء الاجتماع، لتتمكن من المتابعة دون مغادرة المكالمة. تمر النقرات عبرها، وتكون مخفية عن مشاركة الشاشة والتسجيلات. يتطلب اختيار وضع مباشر أعلاه.",
+    "stillProcessing": "جارٍ التفريغ",
+    "costEstimate": "~${{amount}}",
+    "costTooltip": "تقدير مبني على أعداد الرموز التي أبلغ عنها الـ API، ومُسعَّر وفق لقطة من الأسعار العامة. قد تتغير أسعار الإصدارات التجريبية، ولا تُحتسب الحصة المجانية وخصومات الفوترة، لذا لن يطابق هذا الفاتورة تمامًا. تعني علامة + في النهاية أن أحد النماذج ليس له سعر منشور وأن التكلفة الفعلية أعلى.",
+    "cloudBadge": "تم إرسال الصوت إلى {{providers}}",
+    "notesNotSavedYet": "لم يُحفظ بعد",
+    "notesSaveFailed": "لم يُحفظ",
+    "durationHoursMinutes": "{{hours}} س {{minutes}} د",
+    "recovered": "تمت استعادة الاجتماع",
+    "discardConfirmTitle": "تجاهل هذا الاجتماع؟",
+    "discardConfirmWithAudio": "سيتم حذف الصوت المحفوظ والتفريغ الجزئي. لا يمكن التراجع عن ذلك.",
+    "discardConfirmText": "سيتم حذف التفريغ الجزئي. لا يمكن التراجع عن ذلك.",
+    "recoverTitleUnfinished": "لم تكتمل معالجة هذا الاجتماع",
+    "recoverTitleInterrupted": "تمت مقاطعة هذا الاجتماع",
+    "recoverDescriptionWithAudio": "تم الاحتفاظ بالصوت. استعده لإعادة تفريغ الصوت وحفظه كاجتماع عادي.",
+    "recoverDescriptionPartial": "لم يعد الصوت متاحًا. تحتفظ الاستعادة بالتفريغ الجزئي الذي حُفظ أثناء الاجتماع.",
+    "confirmDeleteText": "سيتم حذف «{{title}}» مع نصه المفرَّغ وملاحظاته وملخصه وصوته. لا يمكن التراجع عن ذلك.",
+    "deleteNamed": "حذف «{{title}}»",
+    "markdownFilter": "Markdown",
+    "exported": "تم تصدير الاجتماع",
+    "errors": {
+      "startFailed": "تعذّر بدء الاجتماع: {{error}}",
+      "stopFailed": "تعذّر إيقاف الاجتماع بشكل سليم: {{error}}",
+      "summaryFailed": "تعذّر إنشاء الملخص: {{error}}",
+      "notesSaveFailed": "تعذّر حفظ ملاحظاتك: {{error}}",
+      "recoverFailed": "تعذّرت استعادة هذا الاجتماع: {{error}}",
+      "discardFailed": "تعذّر تجاهل هذا الاجتماع: {{error}}",
+      "renameFailed": "تعذّرت إعادة تسمية الاجتماع: {{error}}",
+      "retranscribeFailed": "تعذّرت إعادة تفريغ الاجتماع: {{error}}",
+      "audioFailed": "تعذّر تحميل التسجيل",
+      "cancelFailed": "تعذّر الإلغاء",
+      "calendarFailed": "تعذّر الحصول على إذن الوصول إلى التقويم: {{error}}",
+      "folderPickerFailed": "تعذّر فتح نافذة اختيار المجلد: {{error}}",
+      "filePickerFailed": "تعذّر فتح نافذة اختيار الملف: {{error}}"
+    },
+    "settingsLoadError": "تعذّر تحميل إعدادات الاجتماعات"
   },
   "meetingPrompt": {
     "startTitle": "تم اكتشاف اجتماع",
@@ -813,5 +928,10 @@
     "end": "إنهاء الاجتماع",
     "continue": "متابعة التسجيل",
     "autoEndIn": "سيُنهى تلقائيًا خلال {{seconds}} ث"
+  },
+  "audioPlayer": {
+    "play": "تشغيل",
+    "pause": "إيقاف مؤقت",
+    "seek": "موضع التشغيل"
   }
 }

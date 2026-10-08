@@ -29,7 +29,8 @@
     "groups": {
       "features": "Features",
       "system": "System"
-    }
+    },
+    "navigation": "Settings sections"
   },
   "onboarding": {
     "subtitle": "To get started, choose a transcription model",
@@ -106,7 +107,8 @@
     },
     "errors": {
       "loadModels": "Failed to load available models",
-      "downloadModel": "Failed to download model: {{error}}"
+      "downloadModel": "Failed to download model: {{error}}",
+      "selectModel": "Couldn't switch to this model. Please try again."
     },
     "permissions": {
       "title": "Permissions Required",
@@ -159,6 +161,11 @@
       "languageOnly": "{{language}} Only",
       "translation": "Can translate to English",
       "translate": "Translate to English"
+    },
+    "errors": {
+      "statusFailed": "Couldn't check the model status",
+      "loadFailed": "Failed to load model",
+      "switchFailed": "Failed to switch model"
     }
   },
   "settings": {
@@ -197,7 +204,8 @@
           "restore": "Failed to restore original shortcut",
           "set": "Failed to set shortcut: {{error}}",
           "reset": "Failed to reset shortcut to original value"
-        }
+        },
+        "change": "Change shortcut: {{shortcut}}"
       },
       "language": {
         "title": "Language",
@@ -277,7 +285,9 @@
         "english": "English only",
         "regional": "Specific languages",
         "multilingualShort": "Multilingual"
-      }
+      },
+      "downloadNamed": "Download {{modelName}}",
+      "useNamed": "Use {{modelName}}"
     },
     "sound": {
       "title": "Sound",
@@ -300,6 +310,20 @@
       "volume": {
         "title": "Volume",
         "description": "Adjust the volume of audio feedback sounds"
+      },
+      "soundTheme": {
+        "label": "Sound Theme",
+        "description": "Choose a sound theme for recording start and stop feedback",
+        "custom": "Custom",
+        "preview": "Preview sound theme (plays start, then stop)"
+      },
+      "alwaysOnMicrophone": {
+        "label": "Always-On Microphone",
+        "description": "Keep microphone active for faster response"
+      },
+      "clamshellMicrophone": {
+        "title": "Clamshell Microphone",
+        "description": "Microphone to use when laptop lid is closed"
       }
     },
     "advanced": {
@@ -478,7 +502,18 @@
         "createPrompt": "Create Prompt",
         "cancel": "Cancel",
         "selectToEdit": "Select a prompt above to view and edit its details.",
-        "createFirst": "Click 'Create New Prompt' above to create your first post-processing prompt."
+        "createFirst": "Click 'Create New Prompt' above to create your first post-processing prompt.",
+        "unsavedTitle": "Discard unsaved changes?",
+        "unsavedText": "Your edits to this prompt haven't been saved.",
+        "discardChanges": "Discard changes",
+        "saved": "Prompt saved",
+        "deleteConfirmTitle": "Delete this prompt?",
+        "deleteConfirmText": "\"{{name}}\" will be deleted. This can't be undone.",
+        "errors": {
+          "create": "Couldn't create the prompt",
+          "update": "Couldn't save the prompt",
+          "delete": "Couldn't delete the prompt"
+        }
       },
       "description": "Let an AI model clean up, reformat or translate each transcription before it is pasted."
     },
@@ -496,7 +531,13 @@
       "retranscribeError": "Failed to re-transcribe. Please try again.",
       "transcribing": "Transcribing...",
       "transcriptionFailed": "Transcription failed. You can re-transcribe using the retry icon.",
-      "retentionSettings": "History settings"
+      "retentionSettings": "History settings",
+      "loadError": "Couldn't load your history",
+      "loadMoreError": "Couldn't load more history",
+      "saveError": "Couldn't update this entry",
+      "deleteConfirmTitle": "Delete this transcription?",
+      "deleteConfirmText": "The transcription and its recording will be deleted. This can't be undone.",
+      "openFolderError": "Couldn't open the recordings folder"
     },
     "debug": {
       "title": "Debug",
@@ -511,10 +552,6 @@
       "updateChecks": {
         "label": "Check for Updates",
         "description": "Automatically check for new versions of Fisilti"
-      },
-      "soundTheme": {
-        "label": "Sound Theme",
-        "description": "Choose a sound theme for recording start and stop feedback"
       },
       "wordCorrectionThreshold": {
         "title": "Word Correction Threshold",
@@ -534,14 +571,6 @@
         "weeks2": "After 2 weeks",
         "months3": "After 3 months",
         "placeholder": "Select retention period..."
-      },
-      "alwaysOnMicrophone": {
-        "label": "Always-On Microphone",
-        "description": "Keep microphone active for faster response"
-      },
-      "clamshellMicrophone": {
-        "title": "Clamshell Microphone",
-        "description": "Microphone to use when laptop lid is closed"
       },
       "postProcessingToggle": {
         "label": "Post Processing",
@@ -602,6 +631,11 @@
           "details": "Fisilti uses Whisper.cpp for fast, local speech-to-text processing. Thanks to the amazing work by Georgi Gerganov and contributors."
         }
       }
+    },
+    "apiKey": {
+      "saving": "Saving key…",
+      "saved": "Key saved",
+      "failed": "Key not saved"
     }
   },
   "footer": {
@@ -639,7 +673,11 @@
     "yes": "Yes",
     "no": "No",
     "noOptionsFound": "No options found",
-    "clear": "Clear"
+    "clear": "Clear",
+    "confirm": "Confirm",
+    "moreInfo": "More information",
+    "copyFailed": "Couldn't copy to the clipboard",
+    "retry": "Retry"
   },
   "accessibility": {
     "permissionsRequired": "Accessibility Permissions Required",
@@ -658,7 +696,27 @@
     },
     "recordingFailed": "Failed to start recording: {{error}}",
     "modelLoadFailed": "Failed to load model: {{model}}",
-    "modelLoadFailedUnknown": "unknown model"
+    "modelLoadFailedUnknown": "unknown model",
+    "settingSaveFailed": "Couldn't save the setting",
+    "fetchModelsFailed": "Couldn't fetch the model list",
+    "unknown": "Unknown error",
+    "openFolderFailed": "Couldn't open the folder",
+    "models": {
+      "loadFailed": "Couldn't load the model list",
+      "selectFailed": "Couldn't switch to this model",
+      "downloadFailed": "Model download failed",
+      "cancelFailed": "Couldn't cancel the download",
+      "deleteFailed": "Couldn't delete the model",
+      "extractFailed": "Couldn't unpack the downloaded model"
+    },
+    "dictation": {
+      "transcription": "Transcription failed",
+      "paste": "Couldn't paste the text",
+      "model_load": "Couldn't load the transcription model",
+      "no_speech": "No speech detected",
+      "recording": "Recording failed",
+      "generic": "Dictation failed"
+    }
   },
   "appLanguage": {
     "title": "Application Language",
@@ -666,7 +724,8 @@
   },
   "overlay": {
     "transcribing": "Transcribing...",
-    "processing": "Processing..."
+    "processing": "Processing...",
+    "cancel": "Cancel recording"
   },
   "meeting": {
     "title": "Meeting",
@@ -806,7 +865,8 @@
         "decoding": "Reading audio",
         "transcribing": "Transcribing",
         "summarizing": "Writing title and summary"
-      }
+      },
+      "failed": "Couldn't transcribe the recording: {{error}}"
     },
     "exportDir": {
       "title": "Save as Markdown to a folder",
@@ -819,8 +879,41 @@
       "button": "Transcribe again",
       "hint": "Transcribe this meeting again from its saved audio with the current meeting model.",
       "failedHint": "This transcript looks incomplete. Transcribe it again from the saved audio?",
-      "confirmText": "The current transcript will be replaced (notes and title stay). Continue?"
-    }
+      "confirmText": "The current transcript will be replaced (notes and title stay). Continue?",
+      "confirmTitle": "Transcribe this meeting again?",
+      "cancelling": "Cancelling…"
+    },
+    "notesNotSavedYet": "Not saved yet",
+    "notesSaveFailed": "Not saved",
+    "durationHoursMinutes": "{{hours}} h {{minutes}} min",
+    "recovered": "Meeting recovered",
+    "discardConfirmTitle": "Discard this meeting?",
+    "discardConfirmWithAudio": "Its saved audio and partial transcript will be deleted. This can't be undone.",
+    "discardConfirmText": "Its partial transcript will be deleted. This can't be undone.",
+    "recoverTitleUnfinished": "This meeting didn't finish processing",
+    "recoverTitleInterrupted": "This meeting was interrupted",
+    "recoverDescriptionWithAudio": "Its audio was kept. Recover it to transcribe the audio again and save it as a normal meeting.",
+    "recoverDescriptionPartial": "Its audio is no longer available. Recovering keeps the partial transcript that was saved while it ran.",
+    "confirmDeleteText": "\"{{title}}\" and its transcript, notes, summary and audio will be deleted. This can't be undone.",
+    "deleteNamed": "Delete \"{{title}}\"",
+    "markdownFilter": "Markdown",
+    "exported": "Meeting exported",
+    "errors": {
+      "startFailed": "Couldn't start the meeting: {{error}}",
+      "stopFailed": "Couldn't stop the meeting cleanly: {{error}}",
+      "summaryFailed": "Couldn't generate the summary: {{error}}",
+      "notesSaveFailed": "Couldn't save your notes: {{error}}",
+      "recoverFailed": "Couldn't recover this meeting: {{error}}",
+      "discardFailed": "Couldn't discard this meeting: {{error}}",
+      "renameFailed": "Couldn't rename the meeting: {{error}}",
+      "retranscribeFailed": "Couldn't transcribe the meeting again: {{error}}",
+      "audioFailed": "Couldn't load the recording",
+      "cancelFailed": "Couldn't cancel",
+      "calendarFailed": "Couldn't get calendar access: {{error}}",
+      "folderPickerFailed": "Couldn't open the folder picker: {{error}}",
+      "filePickerFailed": "Couldn't open the file picker: {{error}}"
+    },
+    "settingsLoadError": "Couldn't load the meeting settings"
   },
   "meetingPrompt": {
     "startTitle": "Meeting detected",
@@ -835,5 +928,10 @@
     "end": "End meeting",
     "continue": "Keep recording",
     "autoEndIn": "Ending automatically in {{seconds}} s"
+  },
+  "audioPlayer": {
+    "play": "Play",
+    "pause": "Pause",
+    "seek": "Playback position"
   }
 }

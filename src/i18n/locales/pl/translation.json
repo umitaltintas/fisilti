@@ -29,7 +29,8 @@
     "groups": {
       "features": "Funkcje",
       "system": "System"
-    }
+    },
+    "navigation": "Sekcje ustawień"
   },
   "onboarding": {
     "subtitle": "Aby rozpocząć, wybierz model transkrypcji",
@@ -106,7 +107,8 @@
     },
     "errors": {
       "loadModels": "Nie udało się wczytać dostępnych modeli",
-      "downloadModel": "Nie udało się pobrać modelu: {{error}}"
+      "downloadModel": "Nie udało się pobrać modelu: {{error}}",
+      "selectModel": "Nie udało się przełączyć na ten model. Spróbuj ponownie."
     },
     "permissions": {
       "title": "Wymagane uprawnienia",
@@ -159,7 +161,12 @@
     },
     "cancel": "Anuluj",
     "cancelDownload": "Anuluj pobieranie",
-    "cloud": "Chmura"
+    "cloud": "Chmura",
+    "errors": {
+      "statusFailed": "Nie udało się sprawdzić stanu modelu",
+      "loadFailed": "Nie udało się wczytać modelu",
+      "switchFailed": "Nie udało się przełączyć modelu"
+    }
   },
   "settings": {
     "modelSettings": {
@@ -227,7 +234,9 @@
         "multilingualShort": "Wielojęzyczne",
         "english": "Tylko angielski",
         "regional": "Wybrane języki"
-      }
+      },
+      "downloadNamed": "Pobierz {{modelName}}",
+      "useNamed": "Użyj {{modelName}}"
     },
     "general": {
       "title": "Ogólne",
@@ -260,7 +269,8 @@
           "restore": "Nie udało się przywrócić oryginalnego skrótu",
           "set": "Nie udało się ustawić skrótu: {{error}}",
           "reset": "Nie udało się zresetować skrótu do wartości domyślnej"
-        }
+        },
+        "change": "Zmień skrót: {{shortcut}}"
       },
       "language": {
         "title": "Język",
@@ -300,6 +310,20 @@
       "volume": {
         "title": "Głośność",
         "description": "Dostosuj głośność dźwięków informacyjnych"
+      },
+      "soundTheme": {
+        "label": "Motyw dźwiękowy",
+        "description": "Wybierz motyw dźwiękowy dla informacji o rozpoczęciu i zakończeniu nagrywania",
+        "custom": "Własny",
+        "preview": "Odsłuchaj motyw dźwiękowy (start, potem stop)"
+      },
+      "alwaysOnMicrophone": {
+        "label": "Mikrofon zawsze aktywny",
+        "description": "Utrzymuj mikrofon aktywny dla szybszej reakcji"
+      },
+      "clamshellMicrophone": {
+        "title": "Mikrofon przy zamkniętej pokrywie",
+        "description": "Mikrofon używany, gdy pokrywa laptopa jest zamknięta"
       }
     },
     "advanced": {
@@ -478,7 +502,18 @@
         "createPrompt": "Utwórz prompt",
         "cancel": "Anuluj",
         "selectToEdit": "Wybierz prompt powyżej, aby zobaczyć i edytować jego szczegóły.",
-        "createFirst": "Kliknij 'Utwórz nowy prompt' powyżej, aby utworzyć pierwszy prompt postprocessingu."
+        "createFirst": "Kliknij 'Utwórz nowy prompt' powyżej, aby utworzyć pierwszy prompt postprocessingu.",
+        "unsavedTitle": "Odrzucić niezapisane zmiany?",
+        "unsavedText": "Zmiany w tym prompcie nie zostały zapisane.",
+        "discardChanges": "Odrzuć zmiany",
+        "saved": "Prompt zapisany",
+        "deleteConfirmTitle": "Usunąć ten prompt?",
+        "deleteConfirmText": "„{{name}}” zostanie usunięty. Tej operacji nie można cofnąć.",
+        "errors": {
+          "create": "Nie udało się utworzyć promptu",
+          "update": "Nie udało się zapisać promptu",
+          "delete": "Nie udało się usunąć promptu"
+        }
       },
       "description": "Pozwól modelowi AI poprawić, sformatować lub przetłumaczyć każdą transkrypcję przed wklejeniem."
     },
@@ -496,7 +531,13 @@
       "retranscribeError": "Nie udało się ponownie transkrybować. Spróbuj ponownie.",
       "transcribing": "Transkrybuję...",
       "transcriptionFailed": "Transkrypcja nie powiodła się. Możesz transkrybować ponownie za pomocą ikony ponowienia.",
-      "retentionSettings": "Ustawienia historii"
+      "retentionSettings": "Ustawienia historii",
+      "loadError": "Nie udało się wczytać historii",
+      "loadMoreError": "Nie udało się wczytać starszej historii",
+      "saveError": "Nie udało się zaktualizować tego wpisu",
+      "deleteConfirmTitle": "Usunąć tę transkrypcję?",
+      "deleteConfirmText": "Transkrypcja i jej nagranie zostaną usunięte. Tej operacji nie można cofnąć.",
+      "openFolderError": "Nie udało się otworzyć folderu z nagraniami"
     },
     "debug": {
       "title": "Debugowanie",
@@ -511,10 +552,6 @@
       "updateChecks": {
         "label": "Sprawdzaj aktualizacje",
         "description": "Automatycznie sprawdzaj nowe wersje Fısıltı"
-      },
-      "soundTheme": {
-        "label": "Motyw dźwiękowy",
-        "description": "Wybierz motyw dźwiękowy dla informacji o rozpoczęciu i zakończeniu nagrywania"
       },
       "wordCorrectionThreshold": {
         "title": "Próg korekty słów",
@@ -534,14 +571,6 @@
         "weeks2": "Po 2 tygodniach",
         "months3": "Po 3 miesiącach",
         "placeholder": "Wybierz okres retencji..."
-      },
-      "alwaysOnMicrophone": {
-        "label": "Mikrofon zawsze aktywny",
-        "description": "Utrzymuj mikrofon aktywny dla szybszej reakcji"
-      },
-      "clamshellMicrophone": {
-        "title": "Mikrofon przy zamkniętej pokrywie",
-        "description": "Mikrofon używany, gdy pokrywa laptopa jest zamknięta"
       },
       "postProcessingToggle": {
         "label": "Postprocess",
@@ -602,6 +631,11 @@
           "details": "Fısıltı używa Whisper.cpp do szybkiego, lokalnego przetwarzania mowy na tekst. Dzięki niesamowitej pracy Georgi Gerganova i współtwórców."
         }
       }
+    },
+    "apiKey": {
+      "saving": "Zapisywanie klucza…",
+      "saved": "Klucz zapisany",
+      "failed": "Klucz nie został zapisany"
     }
   },
   "footer": {
@@ -639,7 +673,11 @@
     "yes": "Tak",
     "no": "Nie",
     "noOptionsFound": "Nie znaleziono opcji",
-    "clear": "Wyczyść"
+    "clear": "Wyczyść",
+    "confirm": "Potwierdź",
+    "moreInfo": "Więcej informacji",
+    "copyFailed": "Nie udało się skopiować do schowka",
+    "retry": "Ponów"
   },
   "accessibility": {
     "permissionsRequired": "Wymagane uprawnienia dostępności",
@@ -658,7 +696,27 @@
     },
     "recordingFailed": "Nie udało się rozpocząć nagrywania: {{error}}",
     "modelLoadFailed": "Nie udało się załadować modelu: {{model}}",
-    "modelLoadFailedUnknown": "nieznany model"
+    "modelLoadFailedUnknown": "nieznany model",
+    "settingSaveFailed": "Nie udało się zapisać ustawienia",
+    "fetchModelsFailed": "Nie udało się pobrać listy modeli",
+    "unknown": "Nieznany błąd",
+    "openFolderFailed": "Nie udało się otworzyć folderu",
+    "models": {
+      "loadFailed": "Nie udało się wczytać listy modeli",
+      "selectFailed": "Nie udało się przełączyć na ten model",
+      "downloadFailed": "Pobieranie modelu nie powiodło się",
+      "cancelFailed": "Nie udało się anulować pobierania",
+      "deleteFailed": "Nie udało się usunąć modelu",
+      "extractFailed": "Nie udało się rozpakować pobranego modelu"
+    },
+    "dictation": {
+      "transcription": "Transkrypcja nie powiodła się",
+      "paste": "Nie udało się wkleić tekstu",
+      "model_load": "Nie udało się wczytać modelu transkrypcji",
+      "no_speech": "Nie wykryto mowy",
+      "recording": "Nagrywanie nie powiodło się",
+      "generic": "Dyktowanie nie powiodło się"
+    }
   },
   "appLanguage": {
     "title": "Język aplikacji",
@@ -666,7 +724,8 @@
   },
   "overlay": {
     "transcribing": "Transkrypcja...",
-    "processing": "Przetwarzanie..."
+    "processing": "Przetwarzanie...",
+    "cancel": "Anuluj nagrywanie"
   },
   "meeting": {
     "title": "Meeting",
@@ -784,7 +843,8 @@
         "decoding": "Reading audio",
         "transcribing": "Transcribing",
         "summarizing": "Writing title and summary"
-      }
+      },
+      "failed": "Nie udało się przetranskrybować nagrania: {{error}}"
     },
     "exportDir": {
       "title": "Save as Markdown to a folder",
@@ -797,8 +857,63 @@
       "button": "Transcribe again",
       "hint": "Transcribe this meeting again from its saved audio with the current meeting model.",
       "failedHint": "This transcript looks incomplete. Transcribe it again from the saved audio?",
-      "confirmText": "The current transcript will be replaced (notes and title stay). Continue?"
-    }
+      "confirmText": "The current transcript will be replaced (notes and title stay). Continue?",
+      "confirmTitle": "Przetranskrybować to spotkanie ponownie?",
+      "cancelling": "Anulowanie…"
+    },
+    "transcriptionFailed": "Transkrypcja nie powiodła się, więc to spotkanie nie ma tekstu. Dźwięk został zapisany, a nagranie zachowane. Przyczyna: {{error}}",
+    "liveTranslateTargetLabel": "Tłumacz na",
+    "geminiDiarizeToggle": "Rozpoznawaj poszczególnych mówców",
+    "geminiDiarizeDescription": "Oznacza każdą linię informacją, kto ją wypowiedział. Ma pierwszeństwo przed opcją porządkowania poniżej i jest automatycznie pomijane dla nagrań dłuższych niż 30 minut, których API nie potrafi przypisać.",
+    "geminiSmartToggle": "Uporządkuj transkrypcję",
+    "geminiSmartDescription": "Usuwa wtrącenia i urwane zdania oraz stosuje formatowanie zamiast dosłownego zapisu każdego dźwięku. Ignorowane, gdy rozpoznawanie mówców jest włączone — Gemini nie potrafi robić obu rzeczy naraz.",
+    "liveModeLabel": "W trakcie spotkania",
+    "liveModeOff": "Transkrybuj po zakończeniu",
+    "liveModeTranscribe": "Transkrybuj na żywo",
+    "liveModeTranslate": "Tłumacz na żywo",
+    "liveModeNote": {
+      "off": "Dźwięk jest wysyłany do Google dopiero po zatrzymaniu spotkania, jeśli opcja powyżej jest włączona.",
+      "transcribe": "Tekst pojawia się na bieżąco, gdy ludzie mówią. Około cztery razy taniej niż tłumaczenie na żywo. Pozostaw opcję powyżej włączoną, aby po zakończeniu spotkania uzyskać nazwy mówców.",
+      "translate": "Tekst pojawia się na bieżąco, gdy ludzie mówią, z tłumaczeniem pod każdą linią. Najdroższa opcja i jedyna, która nie może mieć nazw mówców — drugie przetwarzanie utraciłoby tłumaczenie."
+    },
+    "transcriptSpeakerUnknown": "Mówca",
+    "subtitlesToggle": "Pokazuj napisy na żywo na ekranie",
+    "subtitlesDescription": "Wyświetla u dołu ekranu to, co mówią pozostali uczestnicy, aby można było czytać na bieżąco bez opuszczania rozmowy. Nie blokuje kliknięć i jest ukryte podczas udostępniania ekranu i w nagraniach. Wymaga trybu na żywo powyżej.",
+    "stillProcessing": "Transkrypcja w toku",
+    "costEstimate": "~${{amount}}",
+    "costTooltip": "Szacunek na podstawie liczby tokenów zgłoszonej przez API, wyceniony według migawki publicznych stawek. Ceny wersji preview się zmieniają, a darmowy limit i rabaty rozliczeniowe nie są uwzględniane, więc kwota nie będzie dokładnie zgodna z fakturą. Końcowy + oznacza, że jeden model nie miał opublikowanej ceny, a rzeczywisty koszt jest wyższy.",
+    "cloudBadge": "Dźwięk wysłany do {{providers}}",
+    "notesNotSavedYet": "Jeszcze nie zapisano",
+    "notesSaveFailed": "Nie zapisano",
+    "durationHoursMinutes": "{{hours}} godz. {{minutes}} min",
+    "recovered": "Spotkanie odzyskane",
+    "discardConfirmTitle": "Odrzucić to spotkanie?",
+    "discardConfirmWithAudio": "Zapisany dźwięk i częściowa transkrypcja zostaną usunięte. Tej operacji nie można cofnąć.",
+    "discardConfirmText": "Częściowa transkrypcja zostanie usunięta. Tej operacji nie można cofnąć.",
+    "recoverTitleUnfinished": "Przetwarzanie tego spotkania nie zostało ukończone",
+    "recoverTitleInterrupted": "To spotkanie zostało przerwane",
+    "recoverDescriptionWithAudio": "Dźwięk został zachowany. Odzyskaj spotkanie, aby ponownie przetranskrybować dźwięk i zapisać je jako zwykłe spotkanie.",
+    "recoverDescriptionPartial": "Dźwięk nie jest już dostępny. Odzyskanie zachowa częściową transkrypcję zapisaną w trakcie spotkania.",
+    "confirmDeleteText": "„{{title}}” wraz z transkrypcją, notatkami, podsumowaniem i dźwiękiem zostanie usunięte. Tej operacji nie można cofnąć.",
+    "deleteNamed": "Usuń „{{title}}”",
+    "markdownFilter": "Markdown",
+    "exported": "Spotkanie wyeksportowane",
+    "errors": {
+      "startFailed": "Nie udało się rozpocząć spotkania: {{error}}",
+      "stopFailed": "Nie udało się poprawnie zatrzymać spotkania: {{error}}",
+      "summaryFailed": "Nie udało się wygenerować podsumowania: {{error}}",
+      "notesSaveFailed": "Nie udało się zapisać notatek: {{error}}",
+      "recoverFailed": "Nie udało się odzyskać tego spotkania: {{error}}",
+      "discardFailed": "Nie udało się odrzucić tego spotkania: {{error}}",
+      "renameFailed": "Nie udało się zmienić nazwy spotkania: {{error}}",
+      "retranscribeFailed": "Nie udało się ponownie przetranskrybować spotkania: {{error}}",
+      "audioFailed": "Nie udało się wczytać nagrania",
+      "cancelFailed": "Nie udało się anulować",
+      "calendarFailed": "Nie udało się uzyskać dostępu do kalendarza: {{error}}",
+      "folderPickerFailed": "Nie udało się otworzyć okna wyboru folderu: {{error}}",
+      "filePickerFailed": "Nie udało się otworzyć okna wyboru pliku: {{error}}"
+    },
+    "settingsLoadError": "Nie udało się wczytać ustawień spotkań"
   },
   "meetingPrompt": {
     "startTitle": "Wykryto spotkanie",
@@ -813,5 +928,10 @@
     "end": "Zakończ spotkanie",
     "continue": "Nagrywaj dalej",
     "autoEndIn": "Automatyczne zakończenie za {{seconds}} s"
+  },
+  "audioPlayer": {
+    "play": "Odtwórz",
+    "pause": "Wstrzymaj",
+    "seek": "Pozycja odtwarzania"
   }
 }

@@ -29,7 +29,8 @@
     "groups": {
       "features": "Funzionalità",
       "system": "Sistema"
-    }
+    },
+    "navigation": "Sezioni delle impostazioni"
   },
   "onboarding": {
     "subtitle": "Per cominciare, scegli un modello di riconoscimento vocale",
@@ -106,7 +107,8 @@
     },
     "errors": {
       "loadModels": "Errore di caricamento dei modelli disponibili",
-      "downloadModel": "Errore nel download del modello: {{error}}"
+      "downloadModel": "Errore nel download del modello: {{error}}",
+      "selectModel": "Impossibile passare a questo modello. Riprova."
     },
     "permissions": {
       "title": "Permessi Richiesti",
@@ -159,7 +161,12 @@
     },
     "cancel": "Annulla",
     "cancelDownload": "Annulla download",
-    "cloud": "Cloud"
+    "cloud": "Cloud",
+    "errors": {
+      "statusFailed": "Impossibile verificare lo stato del modello",
+      "loadFailed": "Caricamento del modello non riuscito",
+      "switchFailed": "Cambio di modello non riuscito"
+    }
   },
   "settings": {
     "modelSettings": {
@@ -227,7 +234,9 @@
         "multilingualShort": "Multilingua",
         "english": "Solo inglese",
         "regional": "Lingue specifiche"
-      }
+      },
+      "downloadNamed": "Scarica {{modelName}}",
+      "useNamed": "Usa {{modelName}}"
     },
     "general": {
       "title": "Generale",
@@ -260,7 +269,8 @@
           "restore": "Errore nel ripristino della scorciatoia originale",
           "set": "Errore nella configurazione della scorciatoia: {{error}}",
           "reset": "Errore nella reinizializzazione della scorciatoia al valore originale"
-        }
+        },
+        "change": "Cambia scorciatoia: {{shortcut}}"
       },
       "language": {
         "title": "Lingua",
@@ -300,6 +310,20 @@
       "volume": {
         "title": "Volume",
         "description": "Regola il volume del feedback audio"
+      },
+      "soundTheme": {
+        "label": "Tema Sonoro",
+        "description": "Scegli un tema sonoro per il feedback di inizio e fine registrazione",
+        "custom": "Personalizzato",
+        "preview": "Ascolta il tema sonoro (riproduce l’avvio, poi l’arresto)"
+      },
+      "alwaysOnMicrophone": {
+        "label": "Microfono Sempre Attivo",
+        "description": "Tieni il microfono attivo per una risposta più rapida"
+      },
+      "clamshellMicrophone": {
+        "title": "Microfono a portatile chiuso",
+        "description": "Microfono da usare quando il portatile è chiuso"
       }
     },
     "advanced": {
@@ -478,7 +502,18 @@
         "createPrompt": "Crea Prompt",
         "cancel": "Annulla",
         "selectToEdit": "Scegli un prompt qui sopra per visualizzare o modificare i dettagli.",
-        "createFirst": "Clicca 'Crea un nuovo prompt' qui sopra per creare il tuo primo prompt di post-elaborazione."
+        "createFirst": "Clicca 'Crea un nuovo prompt' qui sopra per creare il tuo primo prompt di post-elaborazione.",
+        "unsavedTitle": "Annullare le modifiche non salvate?",
+        "unsavedText": "Le modifiche a questo prompt non sono state salvate.",
+        "discardChanges": "Annulla modifiche",
+        "saved": "Prompt salvato",
+        "deleteConfirmTitle": "Eliminare questo prompt?",
+        "deleteConfirmText": "\"{{name}}\" verrà eliminato. L’operazione non può essere annullata.",
+        "errors": {
+          "create": "Impossibile creare il prompt",
+          "update": "Impossibile salvare il prompt",
+          "delete": "Impossibile eliminare il prompt"
+        }
       },
       "description": "Lascia che un modello IA corregga, riformatti o traduca ogni trascrizione prima che venga incollata."
     },
@@ -496,7 +531,13 @@
       "retranscribeError": "Impossibile ri-trascrivere. Riprova.",
       "transcribing": "Trascrizione in corso...",
       "transcriptionFailed": "Trascrizione fallita. Puoi ri-trascrivere usando l'icona di ripetizione.",
-      "retentionSettings": "Impostazioni cronologia"
+      "retentionSettings": "Impostazioni cronologia",
+      "loadError": "Impossibile caricare la cronologia",
+      "loadMoreError": "Impossibile caricare altra cronologia",
+      "saveError": "Impossibile aggiornare questa voce",
+      "deleteConfirmTitle": "Eliminare questa trascrizione?",
+      "deleteConfirmText": "La trascrizione e la relativa registrazione verranno eliminate. L’operazione non può essere annullata.",
+      "openFolderError": "Impossibile aprire la cartella delle registrazioni"
     },
     "debug": {
       "title": "Debug",
@@ -511,10 +552,6 @@
       "updateChecks": {
         "label": "Controlla aggiornamenti",
         "description": "Controlla automaticamente la disponibilità di nuove versioni di Fısıltı"
-      },
-      "soundTheme": {
-        "label": "Tema Sonoro",
-        "description": "Scegli un tema sonoro per il feedback di inizio e fine registrazione"
       },
       "wordCorrectionThreshold": {
         "title": "Soglia di Correzione Parole",
@@ -534,14 +571,6 @@
         "weeks2": "Dopo 2 settimane",
         "months3": "Dopo 3 mesi",
         "placeholder": "Seleziona periodo di conservazione..."
-      },
-      "alwaysOnMicrophone": {
-        "label": "Microfono Sempre Attivo",
-        "description": "Tieni il microfono attivo per una risposta più rapida"
-      },
-      "clamshellMicrophone": {
-        "title": "Microfono a portatile chiuso",
-        "description": "Microfono da usare quando il portatile è chiuso"
       },
       "postProcessingToggle": {
         "label": "Post-Elaborazione",
@@ -602,6 +631,11 @@
           "details": "Fısıltı usa Whisper.cpp per il riconoscimento vocale veloce in locale. Grazie a Georgi Gerganov e collaboratori per il fantastico lavoro."
         }
       }
+    },
+    "apiKey": {
+      "saving": "Salvataggio della chiave…",
+      "saved": "Chiave salvata",
+      "failed": "Chiave non salvata"
     }
   },
   "footer": {
@@ -639,7 +673,11 @@
     "yes": "Sì",
     "no": "No",
     "noOptionsFound": "Nessuna opzione trovata",
-    "clear": "Cancella"
+    "clear": "Cancella",
+    "confirm": "Conferma",
+    "moreInfo": "Ulteriori informazioni",
+    "copyFailed": "Impossibile copiare negli appunti",
+    "retry": "Riprova"
   },
   "accessibility": {
     "permissionsRequired": "Richiesti Permessi di Accessibilità",
@@ -658,7 +696,27 @@
     },
     "recordingFailed": "Impossibile avviare la registrazione: {{error}}",
     "modelLoadFailed": "Impossibile caricare il modello: {{model}}",
-    "modelLoadFailedUnknown": "modello sconosciuto"
+    "modelLoadFailedUnknown": "modello sconosciuto",
+    "settingSaveFailed": "Impossibile salvare l’impostazione",
+    "fetchModelsFailed": "Impossibile ottenere l’elenco dei modelli",
+    "unknown": "Errore sconosciuto",
+    "openFolderFailed": "Impossibile aprire la cartella",
+    "models": {
+      "loadFailed": "Impossibile caricare l’elenco dei modelli",
+      "selectFailed": "Impossibile passare a questo modello",
+      "downloadFailed": "Download del modello non riuscito",
+      "cancelFailed": "Impossibile annullare il download",
+      "deleteFailed": "Impossibile eliminare il modello",
+      "extractFailed": "Impossibile estrarre il modello scaricato"
+    },
+    "dictation": {
+      "transcription": "Trascrizione non riuscita",
+      "paste": "Impossibile incollare il testo",
+      "model_load": "Impossibile caricare il modello di trascrizione",
+      "no_speech": "Nessun parlato rilevato",
+      "recording": "Registrazione non riuscita",
+      "generic": "Dettatura non riuscita"
+    }
   },
   "appLanguage": {
     "title": "Lingua Applicazione",
@@ -666,7 +724,8 @@
   },
   "overlay": {
     "transcribing": "Trascrizione...",
-    "processing": "Elaborazione..."
+    "processing": "Elaborazione...",
+    "cancel": "Annulla registrazione"
   },
   "meeting": {
     "title": "Meeting",
@@ -784,7 +843,8 @@
         "decoding": "Reading audio",
         "transcribing": "Transcribing",
         "summarizing": "Writing title and summary"
-      }
+      },
+      "failed": "Impossibile trascrivere la registrazione: {{error}}"
     },
     "exportDir": {
       "title": "Save as Markdown to a folder",
@@ -797,8 +857,63 @@
       "button": "Transcribe again",
       "hint": "Transcribe this meeting again from its saved audio with the current meeting model.",
       "failedHint": "This transcript looks incomplete. Transcribe it again from the saved audio?",
-      "confirmText": "The current transcript will be replaced (notes and title stay). Continue?"
-    }
+      "confirmText": "The current transcript will be replaced (notes and title stay). Continue?",
+      "confirmTitle": "Trascrivere di nuovo questa riunione?",
+      "cancelling": "Annullamento…"
+    },
+    "transcriptionFailed": "La trascrizione non è riuscita, quindi questa riunione non contiene testo. L’audio è stato salvato e la registrazione conservata. Motivo: {{error}}",
+    "liveTranslateTargetLabel": "Traduci in",
+    "geminiDiarizeToggle": "Identifica i singoli interlocutori",
+    "geminiDiarizeDescription": "Indica chi ha detto ogni riga. Ha la precedenza sull’opzione di pulizia qui sotto e viene saltata automaticamente per le registrazioni più lunghe di 30 minuti, che l’API non riesce ad attribuire.",
+    "geminiSmartToggle": "Pulisci la trascrizione",
+    "geminiSmartDescription": "Rimuove intercalari e false partenze e applica la formattazione, invece di trascrivere ogni suono parola per parola. Ignorata se l’identificazione degli interlocutori è attiva: Gemini non può fare entrambe le cose insieme.",
+    "liveModeLabel": "Durante la riunione",
+    "liveModeOff": "Trascrivi al termine",
+    "liveModeTranscribe": "Trascrivi in diretta",
+    "liveModeTranslate": "Traduci in diretta",
+    "liveModeNote": {
+      "off": "L’audio viene inviato a Google solo dopo aver interrotto la riunione, se l’opzione qui sopra è attiva.",
+      "transcribe": "Il testo compare mentre si parla. Circa quattro volte più economico della traduzione in diretta. Lascia attiva l’opzione qui sopra per avere i nomi degli interlocutori al termine della riunione.",
+      "translate": "Il testo compare mentre si parla, con una traduzione sotto ogni riga. L’opzione più costosa e l’unica che non può avere i nomi degli interlocutori: un secondo passaggio perderebbe la traduzione."
+    },
+    "transcriptSpeakerUnknown": "Interlocutore",
+    "subtitlesToggle": "Mostra i sottotitoli in diretta sullo schermo",
+    "subtitlesDescription": "Mostra ciò che dicono gli altri partecipanti nella parte inferiore dello schermo durante la riunione, così puoi seguire senza lasciare la chiamata. Non intercetta i clic ed è nascosto durante la condivisione dello schermo e nelle registrazioni. Richiede una modalità in diretta qui sopra.",
+    "stillProcessing": "Trascrizione in corso",
+    "costEstimate": "~${{amount}}",
+    "costTooltip": "Stima basata sul numero di token riportato dall’API, con prezzi tratti da un’istantanea delle tariffe pubbliche. I prezzi delle versioni preview cambiano e non si tiene conto della quota gratuita né degli sconti di fatturazione, quindi l’importo non corrisponderà esattamente a una fattura. Un + finale indica che un modello non aveva un prezzo pubblicato e che il costo reale è più alto.",
+    "cloudBadge": "Audio inviato a {{providers}}",
+    "notesNotSavedYet": "Non ancora salvato",
+    "notesSaveFailed": "Non salvato",
+    "durationHoursMinutes": "{{hours}} h {{minutes}} min",
+    "recovered": "Riunione recuperata",
+    "discardConfirmTitle": "Scartare questa riunione?",
+    "discardConfirmWithAudio": "L’audio salvato e la trascrizione parziale verranno eliminati. L’operazione non può essere annullata.",
+    "discardConfirmText": "La trascrizione parziale verrà eliminata. L’operazione non può essere annullata.",
+    "recoverTitleUnfinished": "L’elaborazione di questa riunione non è stata completata",
+    "recoverTitleInterrupted": "Questa riunione è stata interrotta",
+    "recoverDescriptionWithAudio": "L’audio è stato conservato. Recuperala per trascrivere di nuovo l’audio e salvarla come una normale riunione.",
+    "recoverDescriptionPartial": "L’audio non è più disponibile. Il recupero conserva la trascrizione parziale salvata durante la riunione.",
+    "confirmDeleteText": "\"{{title}}\" e la relativa trascrizione, note, riepilogo e audio verranno eliminati. L’operazione non può essere annullata.",
+    "deleteNamed": "Elimina \"{{title}}\"",
+    "markdownFilter": "Markdown",
+    "exported": "Riunione esportata",
+    "errors": {
+      "startFailed": "Impossibile avviare la riunione: {{error}}",
+      "stopFailed": "Impossibile interrompere correttamente la riunione: {{error}}",
+      "summaryFailed": "Impossibile generare il riepilogo: {{error}}",
+      "notesSaveFailed": "Impossibile salvare le note: {{error}}",
+      "recoverFailed": "Impossibile recuperare questa riunione: {{error}}",
+      "discardFailed": "Impossibile scartare questa riunione: {{error}}",
+      "renameFailed": "Impossibile rinominare la riunione: {{error}}",
+      "retranscribeFailed": "Impossibile trascrivere di nuovo la riunione: {{error}}",
+      "audioFailed": "Impossibile caricare la registrazione",
+      "cancelFailed": "Impossibile annullare",
+      "calendarFailed": "Impossibile accedere al calendario: {{error}}",
+      "folderPickerFailed": "Impossibile aprire il selettore di cartelle: {{error}}",
+      "filePickerFailed": "Impossibile aprire il selettore di file: {{error}}"
+    },
+    "settingsLoadError": "Impossibile caricare le impostazioni delle riunioni"
   },
   "meetingPrompt": {
     "startTitle": "Riunione rilevata",
@@ -813,5 +928,10 @@
     "end": "Termina riunione",
     "continue": "Continua a registrare",
     "autoEndIn": "Termine automatico tra {{seconds}} s"
+  },
+  "audioPlayer": {
+    "play": "Riproduci",
+    "pause": "Pausa",
+    "seek": "Posizione di riproduzione"
   }
 }

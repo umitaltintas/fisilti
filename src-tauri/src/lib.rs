@@ -593,6 +593,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
 }
 
 /// Write the TypeScript bindings for every command and event to `src/bindings.ts`.
+#[cfg(debug_assertions)]
 fn export_bindings(builder: &Builder<tauri::Wry>) {
     builder
         .export(

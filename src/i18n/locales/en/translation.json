@@ -25,7 +25,7 @@
     "history": "Dictation history",
     "debug": "Debug",
     "about": "About",
-    "meeting": "Meeting",
+    "meeting": "Meetings",
     "groups": {
       "features": "Features",
       "system": "System"
@@ -742,8 +742,8 @@
   "meeting": {
     "title": "Meeting",
     "recording": "Recording",
-    "startMeeting": "Start Meeting",
-    "stopMeeting": "Stop Meeting",
+    "startMeeting": "Start meeting",
+    "stopMeeting": "Stop",
     "transcript": "Transcript",
     "transcriptEmpty": "No transcript yet. Start a meeting to capture live audio.",
     "transcriptionFailed": "Transcription failed, so this meeting has no text. The audio was saved and the recording was kept. Reason: {{error}}",

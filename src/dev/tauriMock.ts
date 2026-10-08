@@ -11,6 +11,7 @@ const lang = params.get("lang") ?? "tr";
 const recording = params.get("state") === "recording";
 const firstRun = params.get("state") === "empty";
 
+const en = lang === "en";
 const now = Date.now();
 const day = 86_400_000;
 
@@ -52,10 +53,31 @@ const model = (
 });
 
 const models = [
-  model("large-v3-turbo", "Whisper Large v3 Turbo", "Fast and accurate, 99 languages.", "Whisper", 1600, true),
-  model("parakeet-v3", "Parakeet V3", "Very fast, 25 European languages.", "Parakeet", 480, false),
+  model(
+    "large-v3-turbo",
+    "Whisper Large v3 Turbo",
+    "Fast and accurate, 99 languages.",
+    "Whisper",
+    1600,
+    true,
+  ),
+  model(
+    "parakeet-v3",
+    "Parakeet V3",
+    "Very fast, 25 European languages.",
+    "Parakeet",
+    480,
+    false,
+  ),
   model("small", "Whisper Small", "Light and quick.", "Whisper", 487, false),
-  model("openrouter-asr-gpt-4o-mini-transcribe", "GPT-4o mini Transcribe", "Cloud, via OpenRouter.", "OpenRouterAsr", 0, true),
+  model(
+    "openrouter-asr-gpt-4o-mini-transcribe",
+    "GPT-4o mini Transcribe",
+    "Cloud, via OpenRouter.",
+    "OpenRouterAsr",
+    0,
+    true,
+  ),
 ];
 
 const meetings = firstRun
@@ -66,9 +88,11 @@ const meetings = firstRun
         started_at: now - 2 * 3600_000,
         ended_at: now - 3600_000 - 18 * 60_000,
         duration_ms: 42 * 60_000,
-        title: "Q4 ürün yol haritası",
+        title: en ? "Q4 product roadmap" : "Q4 ürün yol haritası",
         has_summary: true,
-        transcript_preview: "Fiyatlandırmayı ekim sonuna kadar netleştirmemiz lazım, kurumsal tarafta üç seviye…",
+        transcript_preview: en
+          ? "We need pricing settled by the end of October — three tiers on the enterprise side…"
+          : "Fiyatlandırmayı ekim sonuna kadar netleştirmemiz lazım, kurumsal tarafta üç seviye…",
         status: "completed",
       },
       {
@@ -76,9 +100,13 @@ const meetings = firstRun
         started_at: now - day - 5 * 3600_000,
         ended_at: now - day - 4 * 3600_000,
         duration_ms: 38 * 60_000,
-        title: "Müşteri görüşmesi — pilot kapsamı",
+        title: en
+          ? "Customer call — pilot scope"
+          : "Müşteri görüşmesi — pilot kapsamı",
         has_summary: true,
-        transcript_preview: "Entegrasyon takvimi ve pilotun ilk iki haftası üzerinde anlaştık.",
+        transcript_preview: en
+          ? "Agreed on the integration timeline and the first two weeks of the pilot."
+          : "Entegrasyon takvimi ve pilotun ilk iki haftası üzerinde anlaştık.",
         status: "completed",
       },
       {
@@ -86,9 +114,11 @@ const meetings = firstRun
         started_at: now - 3 * day,
         ended_at: now - 3 * day + 25 * 60_000,
         duration_ms: 25 * 60_000,
-        title: "1:1 — Mehmet",
+        title: en ? "1:1 — Maya" : "1:1 — Mehmet",
         has_summary: false,
-        transcript_preview: "Kariyer hedefleri, Q4 öncelikleri ve izin planı.",
+        transcript_preview: en
+          ? "Career goals, Q4 priorities and the holiday plan."
+          : "Kariyer hedefleri, Q4 öncelikleri ve izin planı.",
         status: "completed",
       },
     ];
@@ -102,8 +132,9 @@ const history = firstRun
         timestamp: Math.floor((now - 20 * 60_000) / 1000),
         saved: false,
         title: "",
-        transcription_text:
-          "Toplantı notlarını yarın sabaha kadar ekiple paylaşıyorum, eksik bir şey varsa haber verin.",
+        transcription_text: en
+          ? "I'll share the meeting notes with the team by tomorrow morning — shout if anything's missing."
+          : "Toplantı notlarını yarın sabaha kadar ekiple paylaşıyorum, eksik bir şey varsa haber verin.",
         post_processed_text: null,
         post_process_prompt: null,
         post_process_requested: false,
@@ -114,7 +145,9 @@ const history = firstRun
         timestamp: Math.floor((now - 3 * 3600_000) / 1000),
         saved: false,
         title: "",
-        transcription_text: "Fiyat teklifini pazartesiye kadar gözden geçirelim.",
+        transcription_text: en
+          ? "Let's review the pricing proposal before Monday."
+          : "Fiyat teklifini pazartesiye kadar gözden geçirelim.",
         post_processed_text: null,
         post_process_prompt: null,
         post_process_requested: false,
@@ -123,9 +156,27 @@ const history = firstRun
 
 const segments = recording
   ? [
-      { text: "Kurumsal tarafta üç seviye düşünüyoruz, giriş seviyesi çok ucuz kalmasın.", timestamp_ms: 12_000, source: "others" },
-      { text: "Özetler bence Pro'da kalmalı, asıl değer orada.", timestamp_ms: 30_000, source: "mic" },
-      { text: "Mantıklı. Mobil tarafı o zaman bir çeyrek kaydırıyoruz.", timestamp_ms: 48_000, source: "others" },
+      {
+        text: en
+          ? "We're thinking three enterprise tiers — just don't make the entry one too cheap."
+          : "Kurumsal tarafta üç seviye düşünüyoruz, giriş seviyesi çok ucuz kalmasın.",
+        timestamp_ms: 12_000,
+        source: "others",
+      },
+      {
+        text: en
+          ? "Summaries should stay in Pro — that's where the value is."
+          : "Özetler bence Pro'da kalmalı, asıl değer orada.",
+        timestamp_ms: 30_000,
+        source: "mic",
+      },
+      {
+        text: en
+          ? "Makes sense. Then mobile moves out a quarter."
+          : "Mantıklı. Mobil tarafı o zaman bir çeyrek kaydırıyoruz.",
+        timestamp_ms: 48_000,
+        source: "others",
+      },
     ]
   : [];
 
@@ -141,12 +192,17 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
   has_any_models_available: () => true,
   has_any_models_or_downloads: () => true,
   get_transcription_model_status: () => settings.selected_model,
-  get_model_load_status: () => ({ is_loaded: true, current_model: settings.selected_model }),
+  get_model_load_status: () => ({
+    is_loaded: true,
+    current_model: settings.selected_model,
+  }),
   get_available_microphones: () => [
     { index: "0", name: "Default", is_default: true },
     { index: "1", name: "MacBook Pro Mikrofonu", is_default: false },
   ],
-  get_available_output_devices: () => [{ index: "0", name: "Default", is_default: true }],
+  get_available_output_devices: () => [
+    { index: "0", name: "Default", is_default: true },
+  ],
   get_selected_microphone: () => "Default",
   get_selected_output_device: () => "Default",
   check_custom_sounds: () => ({ start: false, stop: false }),
@@ -175,15 +231,16 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
 
 function installTauriMock() {
   // plugin-os reads these synchronously.
-  (window as unknown as Record<string, unknown>).__TAURI_OS_PLUGIN_INTERNALS__ = {
-    platform: "macos",
-    os_type: "macos",
-    family: "unix",
-    arch: "aarch64",
-    version: "15.0",
-    eol: "\n",
-    exe_extension: "",
-  };
+  (window as unknown as Record<string, unknown>).__TAURI_OS_PLUGIN_INTERNALS__ =
+    {
+      platform: "macos",
+      os_type: "macos",
+      family: "unix",
+      arch: "aarch64",
+      version: "15.0",
+      eol: "\n",
+      exe_extension: "",
+    };
   mockWindows("main");
   mockIPC(
     (cmd, payload) => {
@@ -199,3 +256,16 @@ function installTauriMock() {
 }
 
 installTauriMock();
+
+// A live meeting in the preview gets a real-looking title, as the calendar
+// lookup would give it a few seconds in.
+if (recording) {
+  void import("@tauri-apps/api/event").then(({ emit }) =>
+    setTimeout(() => {
+      void emit("meeting-title-update", {
+        id: 4,
+        title: en ? "Q4 product roadmap" : "Q4 ürün yol haritası",
+      });
+    }, 600),
+  );
+}

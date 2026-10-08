@@ -29,13 +29,20 @@ for (const scheme of ["light", "dark"] as const) {
       deviceScaleFactor: 2,
       locale: LANG === "tr" ? "tr-TR" : "en-US",
     });
-    page.on("pageerror", (e) => console.error(`[${scheme}/${state}] pageerror`, e.message));
+    page.on("pageerror", (e) =>
+      console.error(`[${scheme}/${state}] pageerror`, e.message),
+    );
     await page.goto(`${BASE}/?lang=${LANG}&state=${state}`);
     await page.waitForTimeout(1200);
     for (const [name, label] of sections) {
-      if (state === "recording" && !["home", "meetings"].includes(name)) continue;
+      if (state === "recording" && !["home", "meetings"].includes(name))
+        continue;
       if (only && !only.includes(name)) continue;
-      await page.getByRole("navigation").getByRole("button", { name: label }).first().click();
+      await page
+        .getByRole("navigation")
+        .getByRole("button", { name: label })
+        .first()
+        .click();
       await page.waitForTimeout(500);
       const file = `${out}/${name}-${state}-${scheme}.png`;
       await page.screenshot({ path: file });

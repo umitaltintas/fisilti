@@ -3,7 +3,9 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Fısıltı — private, local-first dictation &amp; meeting notes for macOS</title>
+    <title>
+      Fısıltı — private, local-first dictation &amp; meeting notes for macOS
+    </title>
     <meta
       name="description"
       content="Fısıltı is a privacy-first macOS app for push-to-talk dictation and AI meeting notes. Speech recognition runs entirely on your Mac — nothing is sent anywhere to be heard."
@@ -24,20 +26,26 @@
     />
     <style>
       :root {
-        --bg: #0d1014;
-        --bg-raise: #151a21;
-        --bg-well: #0a0c10;
-        --line: rgba(235, 238, 245, 0.09);
-        --line-strong: rgba(235, 238, 245, 0.16);
-        --text: #e9e7e2;
-        --muted: #99a1ad;
-        --faint: #6b7280;
-        --live: #ff9f0a; /* macOS mic-in-use indicator orange */
-        --action: #8b7cf8; /* the app's own button violet */
-        --action-hover: #a89dff;
+        /* The app's dark palette: warm charcoal paper, violet for emphasis,
+           red only for "recording". */
+        --bg: #1c1a17;
+        --bg-raise: #272420;
+        --bg-well: #151311;
+        --line: rgba(241, 237, 230, 0.09);
+        --line-strong: rgba(241, 237, 230, 0.16);
+        --text: #f1ede6;
+        --muted: #aaa398;
+        --faint: #7b756c;
+        --accent: #a78bfa; /* brand violet, for type accents */
+        --accent-rgb: 167, 139, 250;
+        --live: #ff5a5f; /* recording */
+        --others: #f0a54a; /* the other side of the call */
+        --action: #8b5cf6; /* the app's own button violet */
+        --action-hover: #9b6dff;
         --serif: "Instrument Serif", "Iowan Old Style", Georgia, serif;
-        --body: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI",
-          Roboto, "Helvetica Neue", sans-serif;
+        --body:
+          -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto,
+          "Helvetica Neue", sans-serif;
         --mono: "Fragment Mono", "SF Mono", ui-monospace, Menlo, monospace;
       }
 
@@ -62,7 +70,7 @@
       }
 
       ::selection {
-        background: rgba(255, 159, 10, 0.25);
+        background: rgba(var(--accent-rgb), 0.25);
       }
 
       a {
@@ -105,7 +113,11 @@
         height: 8px;
         border-radius: 50%;
         background: var(--live);
-        box-shadow: 0 0 10px rgba(255, 159, 10, 0.55);
+        box-shadow: 0 0 10px rgba(255, 90, 95, 0.55);
+      }
+      .brand-dot {
+        background: var(--accent);
+        box-shadow: 0 0 10px rgba(var(--accent-rgb), 0.55);
       }
 
       .nav-links {
@@ -157,8 +169,8 @@
       }
 
       .hero h1 .dot {
-        color: var(--live);
-        text-shadow: 0 0 26px rgba(255, 159, 10, 0.5);
+        color: var(--accent);
+        text-shadow: 0 0 26px rgba(var(--accent-rgb), 0.5);
       }
 
       .wave-band {
@@ -279,7 +291,7 @@
         font-size: 12.5px;
         text-transform: uppercase;
         letter-spacing: 0.14em;
-        color: var(--live);
+        color: var(--accent);
         margin-bottom: 14px;
       }
 
@@ -463,7 +475,7 @@
       }
 
       .t-them .t-who {
-        color: var(--live);
+        color: var(--others);
       }
 
       .t-line p {
@@ -519,11 +531,26 @@
         animation: bar 1.1s ease-in-out infinite;
       }
 
-      .overlay-bars i:nth-child(1) { height: 40%; animation-delay: 0s; }
-      .overlay-bars i:nth-child(2) { height: 90%; animation-delay: 0.15s; }
-      .overlay-bars i:nth-child(3) { height: 60%; animation-delay: 0.3s; }
-      .overlay-bars i:nth-child(4) { height: 100%; animation-delay: 0.45s; }
-      .overlay-bars i:nth-child(5) { height: 50%; animation-delay: 0.6s; }
+      .overlay-bars i:nth-child(1) {
+        height: 40%;
+        animation-delay: 0s;
+      }
+      .overlay-bars i:nth-child(2) {
+        height: 90%;
+        animation-delay: 0.15s;
+      }
+      .overlay-bars i:nth-child(3) {
+        height: 60%;
+        animation-delay: 0.3s;
+      }
+      .overlay-bars i:nth-child(4) {
+        height: 100%;
+        animation-delay: 0.45s;
+      }
+      .overlay-bars i:nth-child(5) {
+        height: 50%;
+        animation-delay: 0.6s;
+      }
 
       @keyframes bar {
         50% {
@@ -567,12 +594,11 @@
         margin-top: 112px;
         border-top: 1px solid var(--line);
         border-bottom: 1px solid var(--line);
-        background:
-          radial-gradient(
-            60% 120% at 50% 0%,
-            rgba(255, 159, 10, 0.05),
-            transparent 70%
-          );
+        background: radial-gradient(
+          60% 120% at 50% 0%,
+          rgba(var(--accent-rgb), 0.05),
+          transparent 70%
+        );
         text-align: center;
         padding: 96px 0;
       }
@@ -588,7 +614,7 @@
 
       .privacy h2 em {
         font-style: italic;
-        color: var(--live);
+        color: var(--accent);
       }
 
       .privacy p {
@@ -721,6 +747,76 @@
         color: var(--faint);
       }
 
+      /* ---------- product showcase: the real app, both themes ---------- */
+      .showcase {
+        position: relative;
+        padding: 72px 0 40px;
+      }
+      .shot {
+        border-radius: 12px;
+        overflow: hidden;
+        background: var(--bg-raise);
+        box-shadow:
+          0 0 0 1px var(--line-strong),
+          0 30px 80px -20px rgba(0, 0, 0, 0.65);
+      }
+      .shot .chrome {
+        display: flex;
+        gap: 7px;
+        padding: 11px 13px;
+        background: rgba(255, 255, 255, 0.03);
+        border-bottom: 1px solid var(--line);
+      }
+      .shot .chrome i {
+        width: 11px;
+        height: 11px;
+        border-radius: 50%;
+        background: #ff5f57;
+      }
+      .shot .chrome i:nth-child(2) {
+        background: #febc2e;
+      }
+      .shot .chrome i:nth-child(3) {
+        background: #28c840;
+      }
+      .shot.light .chrome {
+        background: #efede8;
+        border-bottom-color: #e6e3dc;
+      }
+      .shot img {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+      .shot-back {
+        width: 74%;
+      }
+      .shot-front {
+        width: 62%;
+        margin: -34% 0 0 auto;
+        position: relative;
+      }
+      .showcase figcaption {
+        margin-top: 22px;
+        text-align: right;
+        font-family: var(--mono);
+        font-size: 12.5px;
+        color: var(--faint);
+      }
+      @media (max-width: 760px) {
+        .shot-back,
+        .shot-front {
+          width: 100%;
+          margin: 0;
+        }
+        .shot-front {
+          margin-top: 18px;
+        }
+        .showcase figcaption {
+          text-align: left;
+        }
+      }
+
       /* ---------- reveal on scroll ---------- */
       .reveal {
         opacity: 0;
@@ -787,7 +883,7 @@
     <div class="wrap">
       <header class="nav">
         <a class="wordmark" href="#"
-          >Fısıltı <span class="live-dot" aria-hidden="true"></span
+          >Fısıltı <span class="live-dot brand-dot" aria-hidden="true"></span
         ></a>
         <nav class="nav-links" aria-label="Site">
           <a href="#dictation">Dictation</a>
@@ -815,12 +911,20 @@
           stays there.
         </p>
         <div class="cta-row">
-          <a class="btn btn-primary" href="https://github.com/umitaltintas/fisilti/releases/latest">Download for Mac</a>
-          <a class="btn btn-ghost" href="https://github.com/umitaltintas/fisilti"
+          <a
+            class="btn btn-primary"
+            href="https://github.com/umitaltintas/fisilti/releases/latest"
+            >Download for Mac</a
+          >
+          <a
+            class="btn btn-ghost"
+            href="https://github.com/umitaltintas/fisilti"
             >View on GitHub</a
           >
         </div>
-        <p class="hero-meta">macOS 14.4+ · Whisper &amp; Parakeet, on-device · MIT</p>
+        <p class="hero-meta">
+          macOS 14.4+ · Whisper &amp; Parakeet, on-device · MIT
+        </p>
       </section>
 
       <div class="claims">
@@ -851,6 +955,32 @@
           </div>
         </div>
       </div>
+
+      <section class="showcase wrap" aria-label="The app">
+        <figure class="reveal">
+          <div class="shot shot-back">
+            <div class="chrome" aria-hidden="true"><i></i><i></i><i></i></div>
+            <img
+              src="screens/home-dark.webp"
+              width="1760"
+              height="1200"
+              loading="lazy"
+              alt="Fısıltı's home screen in dark mode: start a meeting, the dictation shortcut, and your recent meetings and dictations."
+            />
+          </div>
+          <div class="shot shot-front light">
+            <div class="chrome" aria-hidden="true"><i></i><i></i><i></i></div>
+            <img
+              src="screens/meeting-light.webp"
+              width="1760"
+              height="1200"
+              loading="lazy"
+              alt="A live meeting in light mode: your notes on a serif page, the transcript running beside them, recording controls floating below."
+            />
+          </div>
+          <figcaption>Home in dark · a live meeting in light</figcaption>
+        </figure>
+      </section>
 
       <section class="section wrap" id="dictation">
         <p class="eyebrow">Dictation</p>
@@ -892,8 +1022,10 @@
             </div>
             <div class="window typed">
               <p class="typed-label">anywhere a cursor blinks</p>
-              …and that's exactly why the quiet path is the fast
-              path.<span class="caret" aria-hidden="true"></span>
+              …and that's exactly why the quiet path is the fast path.<span
+                class="caret"
+                aria-hidden="true"
+              ></span>
             </div>
           </div>
         </div>
@@ -906,7 +1038,9 @@
           <div class="mock-stage reveal">
             <div class="window prompt-card">
               <h4>Meeting detected</h4>
-              <p class="q">Zoom appears to be in a meeting. Start transcription?</p>
+              <p class="q">
+                Zoom appears to be in a meeting. Start transcription?
+              </p>
               <div class="prompt-actions" aria-hidden="true">
                 <span class="prompt-start">Start</span>
                 <span class="prompt-ignore">Ignore</span>
@@ -940,13 +1074,13 @@
           <div class="feature-copy reveal">
             <p>
               When Zoom, Meet, Teams — or a browser tab — starts using the
-              microphone, Fısıltı quietly offers to take notes. One click and
-              it captures <strong>your mic and the system audio together</strong>,
+              microphone, Fısıltı quietly offers to take notes. One click and it
+              captures <strong>your mic and the system audio together</strong>,
               transcribing live with per-speaker labels.
             </p>
             <p>
-              And when the room goes quiet, it asks whether the meeting is
-              over — then wraps up on its own if you've already left.
+              And when the room goes quiet, it asks whether the meeting is over
+              — then wraps up on its own if you've already left.
             </p>
             <p>
               Recorded the talk on your phone instead? Drop the voice memo on
@@ -993,8 +1127,8 @@
               </li>
               <li>
                 <span
-                  ><b>Transcribe a recording</b> — m4a, mp3, wav, flac, ogg
-                  from any phone or recorder.</span
+                  ><b>Transcribe a recording</b> — m4a, mp3, wav, flac, ogg from
+                  any phone or recorder.</span
                 >
               </li>
               <li>
@@ -1020,9 +1154,7 @@
               only if you switch it on, only with your own API key, and never
               without saying so on screen.
             </p>
-            <p>
-              Every meeting shows what it cost, next to how long it ran.
-            </p>
+            <p>Every meeting shows what it cost, next to how long it ran.</p>
             <ul class="feature-list">
               <li>
                 <span
@@ -1093,10 +1225,12 @@
           <div>
             <b>Signed &amp; notarized</b>
             Grab the DMG from
-            <a href="https://github.com/umitaltintas/fisilti/releases/latest">Releases</a> — <code>aarch64</code> for Apple
-            Silicon, <code>x64</code> for Intel — and drag Fısıltı into
-            Applications. Rather read every line first? The commands above
-            build the same app from source; you need
+            <a href="https://github.com/umitaltintas/fisilti/releases/latest"
+              >Releases</a
+            >
+            — <code>aarch64</code> for Apple Silicon, <code>x64</code> for Intel
+            — and drag Fısıltı into Applications. Rather read every line first?
+            The commands above build the same app from source; you need
             <a href="https://rustup.rs/">Rust</a> and
             <a href="https://bun.sh/">Bun</a>.
           </div>
@@ -1115,8 +1249,8 @@
     <footer>
       <div class="wrap foot-row">
         <p>
-          Built on <a href="https://github.com/cjpais/Handy">Handy</a> by
-          cjpais · MIT license ·
+          Built on <a href="https://github.com/cjpais/Handy">Handy</a> by cjpais
+          · MIT license ·
           <a href="https://github.com/umitaltintas/fisilti">Source on GitHub</a>
         </p>
         <p class="foot-etym">fısıltı is Turkish for whisper.</p>
@@ -1176,17 +1310,17 @@
           ctx.stroke();
 
           // the travelling mic-live dot
-          const px = (t * 0.045) % (w + 120) - 60;
+          const px = ((t * 0.045) % (w + 120)) - 60;
           if (px > 0 && px < w) {
             const py = y(px, t);
             const glow = ctx.createRadialGradient(px, py, 0, px, py, 26);
-            glow.addColorStop(0, "rgba(255, 159, 10, 0.35)");
-            glow.addColorStop(1, "rgba(255, 159, 10, 0)");
+            glow.addColorStop(0, "rgba(167, 139, 250, 0.35)");
+            glow.addColorStop(1, "rgba(167, 139, 250, 0)");
             ctx.fillStyle = glow;
             ctx.fillRect(px - 26, py - 26, 52, 52);
             ctx.beginPath();
             ctx.arc(px, py, 3, 0, Math.PI * 2);
-            ctx.fillStyle = "#ff9f0a";
+            ctx.fillStyle = "#a78bfa";
             ctx.fill();
           }
 

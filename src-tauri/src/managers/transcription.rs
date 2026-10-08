@@ -168,6 +168,41 @@ impl MeetingTranscribeOpts {
     }
 }
 
+/// Lock a std mutex, recovering the data if a previous holder panicked. Every
+/// value guarded in this module stays consistent across a panic (flags, ids,
+/// the engine slot), so refusing to continue would only turn one failed
+/// transcription into a permanently dead app.
+fn lock_or_recover<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Best-effort text of a caught panic payload.
+fn panic_message(payload: &Box<dyn std::any::Any + Send>) -> String {
+    if let Some(s) = payload.downcast_ref::<&str>() {
+        s.to_string()
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "unknown panic".to_string()
+    }
+}
+
+/// The transcription failed because no usable engine was resident. Lets the
+/// dictation pipeline tell "the model failed to load" apart from "the model
+/// ran and failed".
+#[derive(Debug)]
+pub struct ModelNotLoadedError(pub String);
+
+impl std::fmt::Display for ModelNotLoadedError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for ModelNotLoadedError {}
+
 /// RAII guard that clears the `is_loading` flag and notifies waiters on drop.
 /// Ensures the loading flag is always reset, even on early returns or panics.
 pub struct LoadingGuard {
@@ -177,18 +212,82 @@ pub struct LoadingGuard {
 
 impl Drop for LoadingGuard {
     fn drop(&mut self) {
-        let mut is_loading = self.is_loading.lock().unwrap();
+        let mut is_loading = lock_or_recover(&self.is_loading);
         *is_loading = false;
         self.loading_condvar.notify_all();
     }
 }
 
+/// The resident engine plus the bookkeeping that lets a transcription borrow
+/// it without holding the lock for the whole (seconds-long) call.
+#[derive(Default)]
+struct EngineSlot {
+    engine: Option<LoadedEngine>,
+    /// Bumped by every load and unload. A transcription that checked the
+    /// engine out puts it back only if this is unchanged — otherwise a model
+    /// loaded (or unloaded) meanwhile would be silently overwritten by the
+    /// stale engine.
+    generation: u64,
+    /// The engine is out on loan to a running transcription. It is still
+    /// loaded as far as everyone else is concerned.
+    checked_out: bool,
+}
+
+impl EngineSlot {
+    fn is_loaded(&self) -> bool {
+        self.engine.is_some() || self.checked_out
+    }
+
+    /// Replace the resident engine (`None` unloads), invalidating any loan.
+    fn install(&mut self, engine: Option<LoadedEngine>) {
+        self.engine = engine;
+        self.generation = self.generation.wrapping_add(1);
+        self.checked_out = false;
+    }
+
+    /// Borrow the engine for one transcription. Returns it with the
+    /// generation to hand back to [`Self::check_in`].
+    fn check_out(&mut self) -> Option<(LoadedEngine, u64)> {
+        let engine = self.engine.take()?;
+        self.checked_out = true;
+        Some((engine, self.generation))
+    }
+
+    /// Return a borrowed engine. Dropped instead when the slot was reloaded
+    /// or unloaded while it was out. Returns whether it was put back.
+    fn check_in(&mut self, engine: LoadedEngine, generation: u64) -> bool {
+        if self.generation != generation {
+            return false;
+        }
+        self.engine = Some(engine);
+        self.checked_out = false;
+        true
+    }
+
+    /// The borrowed engine panicked and is being dropped. Marks the slot
+    /// unloaded unless it was already replaced. Returns whether it was.
+    fn abandon(&mut self, generation: u64) -> bool {
+        if self.generation != generation {
+            return false;
+        }
+        self.install(None);
+        true
+    }
+}
+
 #[derive(Clone)]
 pub struct TranscriptionManager {
-    engine: Arc<Mutex<Option<LoadedEngine>>>,
+    engine: Arc<Mutex<EngineSlot>>,
+    /// Serializes local-engine transcriptions. Without it a second caller
+    /// (dictation during a meeting, two finalize windows) would find the slot
+    /// empty while the first had the engine checked out and fail with "model
+    /// not loaded". Waiters queue instead.
+    transcribe_lock: Arc<Mutex<()>>,
     model_manager: Arc<ModelManager>,
     app_handle: AppHandle,
     current_model_id: Arc<Mutex<Option<String>>>,
+    /// Why the most recent load failed, for the error shown to the user.
+    last_load_error: Arc<Mutex<Option<String>>>,
     last_activity: Arc<AtomicU64>,
     shutdown_signal: Arc<AtomicBool>,
     watcher_handle: Arc<Mutex<Option<thread::JoinHandle<()>>>>,
@@ -199,10 +298,12 @@ pub struct TranscriptionManager {
 impl TranscriptionManager {
     pub fn new(app_handle: &AppHandle, model_manager: Arc<ModelManager>) -> Result<Self> {
         let manager = Self {
-            engine: Arc::new(Mutex::new(None)),
+            engine: Arc::new(Mutex::new(EngineSlot::default())),
+            transcribe_lock: Arc::new(Mutex::new(())),
             model_manager,
             app_handle: app_handle.clone(),
             current_model_id: Arc::new(Mutex::new(None)),
+            last_load_error: Arc::new(Mutex::new(None)),
             last_activity: Arc::new(AtomicU64::new(Self::now_ms())),
             shutdown_signal: Arc::new(AtomicBool::new(false)),
             watcher_handle: Arc::new(Mutex::new(None)),
@@ -299,23 +400,19 @@ impl TranscriptionManager {
                 }
                 debug!("Idle watcher thread shutting down gracefully");
             });
-            *manager.watcher_handle.lock().unwrap() = Some(handle);
+            *lock_or_recover(&manager.watcher_handle) = Some(handle);
         }
 
         Ok(manager)
     }
 
-    /// Lock the engine mutex, recovering from poison if a previous transcription panicked.
-    fn lock_engine(&self) -> MutexGuard<'_, Option<LoadedEngine>> {
-        self.engine.lock().unwrap_or_else(|poisoned| {
-            warn!("Engine mutex was poisoned by a previous panic, recovering");
-            poisoned.into_inner()
-        })
+    /// Lock the engine slot, recovering from poison if a previous holder panicked.
+    fn lock_engine(&self) -> MutexGuard<'_, EngineSlot> {
+        lock_or_recover(&self.engine)
     }
 
     pub fn is_model_loaded(&self) -> bool {
-        let engine = self.lock_engine();
-        engine.is_some()
+        self.lock_engine().is_loaded()
     }
 
     /// Atomically check whether a model load is in progress and, if not, mark
@@ -323,7 +420,7 @@ impl TranscriptionManager {
     /// clear the flag and wake waiters. Returns `None` if a load is already in
     /// progress.
     pub fn try_start_loading(&self) -> Option<LoadingGuard> {
-        let mut is_loading = self.is_loading.lock().unwrap();
+        let mut is_loading = lock_or_recover(&self.is_loading);
         if *is_loading {
             return None;
         }
@@ -338,13 +435,11 @@ impl TranscriptionManager {
         let unload_start = std::time::Instant::now();
         debug!("Starting to unload model");
 
+        // Dropping the engine frees all resources. A transcription that has
+        // it checked out right now drops it when it finishes instead.
+        self.lock_engine().install(None);
         {
-            let mut engine = self.lock_engine();
-            // Dropping the engine frees all resources
-            *engine = None;
-        }
-        {
-            let mut current_model = self.current_model_id.lock().unwrap();
+            let mut current_model = lock_or_recover(&self.current_model_id);
             *current_model = None;
         }
 
@@ -386,6 +481,11 @@ impl TranscriptionManager {
         if self.current_model_is_cloud() {
             return;
         }
+        // The meeting owns the engine; a dictation finishing (or being
+        // cancelled) mid-meeting must not pull it out from under it.
+        if self.meeting_is_running() {
+            return;
+        }
         let settings = get_settings(&self.app_handle);
         if settings.model_unload_timeout == ModelUnloadTimeout::Immediately
             && self.is_model_loaded()
@@ -397,10 +497,12 @@ impl TranscriptionManager {
         }
     }
 
+    /// Load `model_id` as the resident engine.
+    ///
+    /// Every failure, however early, emits `loading_failed` — the UI's
+    /// "loading" spinner is only ever cleared by an event, so a silent early
+    /// return would leave it spinning forever.
     pub fn load_model(&self, model_id: &str) -> Result<()> {
-        let load_start = std::time::Instant::now();
-        debug!("Starting to load model: {}", model_id);
-
         // Emit loading started event
         let _ = self.app_handle.emit(
             "model-state-changed",
@@ -412,23 +514,45 @@ impl TranscriptionManager {
             },
         );
 
+        let result = catch_unwind(AssertUnwindSafe(|| self.load_model_inner(model_id)))
+            .unwrap_or_else(|panic| {
+                Err(anyhow::anyhow!(
+                    "Loading model {} panicked: {}",
+                    model_id,
+                    panic_message(&panic)
+                ))
+            });
+
+        match &result {
+            Ok(()) => *lock_or_recover(&self.last_load_error) = None,
+            Err(e) => {
+                let error_msg = e.to_string();
+                *lock_or_recover(&self.last_load_error) = Some(error_msg.clone());
+                let _ = self.app_handle.emit(
+                    "model-state-changed",
+                    ModelStateEvent {
+                        event_type: "loading_failed".to_string(),
+                        model_id: Some(model_id.to_string()),
+                        model_name: self.model_manager.get_model_info(model_id).map(|m| m.name),
+                        error: Some(error_msg),
+                    },
+                );
+            }
+        }
+        result
+    }
+
+    fn load_model_inner(&self, model_id: &str) -> Result<()> {
+        let load_start = std::time::Instant::now();
+        debug!("Starting to load model: {}", model_id);
+
         let model_info = self
             .model_manager
             .get_model_info(model_id)
             .ok_or_else(|| anyhow::anyhow!("Model not found: {}", model_id))?;
 
         if !model_info.is_downloaded {
-            let error_msg = "Model not downloaded";
-            let _ = self.app_handle.emit(
-                "model-state-changed",
-                ModelStateEvent {
-                    event_type: "loading_failed".to_string(),
-                    model_id: Some(model_id.to_string()),
-                    model_name: Some(model_info.name.clone()),
-                    error: Some(error_msg.to_string()),
-                },
-            );
-            return Err(anyhow::anyhow!(error_msg));
+            return Err(anyhow::anyhow!("Model not downloaded"));
         }
 
         // Cloud models (OpenRouter) have no file to load. Register a lightweight
@@ -436,14 +560,8 @@ impl TranscriptionManager {
         // is_model_loaded) treats them like any loaded model. The API key and
         // request happen later in `transcribe_via_cloud`.
         if model_info.engine_type.is_cloud() {
-            {
-                let mut engine = self.lock_engine();
-                *engine = Some(LoadedEngine::OpenRouter);
-            }
-            {
-                let mut current_model = self.current_model_id.lock().unwrap();
-                *current_model = Some(model_id.to_string());
-            }
+            self.lock_engine().install(Some(LoadedEngine::OpenRouter));
+            *lock_or_recover(&self.current_model_id) = Some(model_id.to_string());
             self.touch_activity();
             let _ = self.app_handle.emit(
                 "model-state-changed",
@@ -464,88 +582,52 @@ impl TranscriptionManager {
 
         let model_path = self.model_manager.get_model_path(model_id)?;
 
-        // Create appropriate engine based on model type
-        let emit_loading_failed = |error_msg: &str| {
-            let _ = self.app_handle.emit(
-                "model-state-changed",
-                ModelStateEvent {
-                    event_type: "loading_failed".to_string(),
-                    model_id: Some(model_id.to_string()),
-                    model_name: Some(model_info.name.clone()),
-                    error: Some(error_msg.to_string()),
-                },
-            );
-        };
-
+        // Create appropriate engine based on model type. Failures are
+        // reported (event + last_load_error) by `load_model`.
         let loaded_engine = match model_info.engine_type {
             EngineType::Whisper => {
-                let engine = WhisperEngine::load(&model_path).map_err(|e| {
-                    let error_msg = format!("Failed to load whisper model {}: {}", model_id, e);
-                    emit_loading_failed(&error_msg);
-                    anyhow::anyhow!(error_msg)
-                })?;
-                LoadedEngine::Whisper(engine)
+                LoadedEngine::Whisper(WhisperEngine::load(&model_path).map_err(|e| {
+                    anyhow::anyhow!("Failed to load whisper model {}: {}", model_id, e)
+                })?)
             }
-            EngineType::Parakeet => {
-                let engine =
-                    ParakeetModel::load(&model_path, &Quantization::Int8).map_err(|e| {
-                        let error_msg =
-                            format!("Failed to load parakeet model {}: {}", model_id, e);
-                        emit_loading_failed(&error_msg);
-                        anyhow::anyhow!(error_msg)
-                    })?;
-                LoadedEngine::Parakeet(engine)
-            }
-            EngineType::Moonshine => {
-                let engine = MoonshineModel::load(
+            EngineType::Parakeet => LoadedEngine::Parakeet(
+                ParakeetModel::load(&model_path, &Quantization::Int8).map_err(|e| {
+                    anyhow::anyhow!("Failed to load parakeet model {}: {}", model_id, e)
+                })?,
+            ),
+            EngineType::Moonshine => LoadedEngine::Moonshine(
+                MoonshineModel::load(
                     &model_path,
                     MoonshineVariant::Base,
                     &Quantization::default(),
                 )
                 .map_err(|e| {
-                    let error_msg = format!("Failed to load moonshine model {}: {}", model_id, e);
-                    emit_loading_failed(&error_msg);
-                    anyhow::anyhow!(error_msg)
-                })?;
-                LoadedEngine::Moonshine(engine)
-            }
-            EngineType::MoonshineStreaming => {
-                let engine = StreamingModel::load(&model_path, 0, &Quantization::default())
-                    .map_err(|e| {
-                        let error_msg = format!(
-                            "Failed to load moonshine streaming model {}: {}",
-                            model_id, e
-                        );
-                        emit_loading_failed(&error_msg);
-                        anyhow::anyhow!(error_msg)
-                    })?;
-                LoadedEngine::MoonshineStreaming(engine)
-            }
-            EngineType::SenseVoice => {
-                let engine =
-                    SenseVoiceModel::load(&model_path, &Quantization::Int8).map_err(|e| {
-                        let error_msg =
-                            format!("Failed to load SenseVoice model {}: {}", model_id, e);
-                        emit_loading_failed(&error_msg);
-                        anyhow::anyhow!(error_msg)
-                    })?;
-                LoadedEngine::SenseVoice(engine)
-            }
+                    anyhow::anyhow!("Failed to load moonshine model {}: {}", model_id, e)
+                })?,
+            ),
+            EngineType::MoonshineStreaming => LoadedEngine::MoonshineStreaming(
+                StreamingModel::load(&model_path, 0, &Quantization::default()).map_err(|e| {
+                    anyhow::anyhow!(
+                        "Failed to load moonshine streaming model {}: {}",
+                        model_id,
+                        e
+                    )
+                })?,
+            ),
+            EngineType::SenseVoice => LoadedEngine::SenseVoice(
+                SenseVoiceModel::load(&model_path, &Quantization::Int8).map_err(|e| {
+                    anyhow::anyhow!("Failed to load SenseVoice model {}: {}", model_id, e)
+                })?,
+            ),
             EngineType::GigaAM => {
-                let engine = GigaAMModel::load(&model_path, &Quantization::Int8).map_err(|e| {
-                    let error_msg = format!("Failed to load gigaam model {}: {}", model_id, e);
-                    emit_loading_failed(&error_msg);
-                    anyhow::anyhow!(error_msg)
-                })?;
-                LoadedEngine::GigaAM(engine)
+                LoadedEngine::GigaAM(GigaAMModel::load(&model_path, &Quantization::Int8).map_err(
+                    |e| anyhow::anyhow!("Failed to load gigaam model {}: {}", model_id, e),
+                )?)
             }
             EngineType::Canary => {
-                let engine = CanaryModel::load(&model_path, &Quantization::Int8).map_err(|e| {
-                    let error_msg = format!("Failed to load canary model {}: {}", model_id, e);
-                    emit_loading_failed(&error_msg);
-                    anyhow::anyhow!(error_msg)
-                })?;
-                LoadedEngine::Canary(engine)
+                LoadedEngine::Canary(CanaryModel::load(&model_path, &Quantization::Int8).map_err(
+                    |e| anyhow::anyhow!("Failed to load canary model {}: {}", model_id, e),
+                )?)
             }
             EngineType::OpenRouter
             | EngineType::OpenRouterAsr
@@ -553,21 +635,15 @@ impl TranscriptionManager {
             | EngineType::GeminiLive => {
                 // Unreachable: cloud models return early above. Kept for match
                 // exhaustiveness.
-                let error_msg = "internal error: cloud model reached engine dispatch";
-                emit_loading_failed(error_msg);
-                return Err(anyhow::anyhow!(error_msg));
+                return Err(anyhow::anyhow!(
+                    "internal error: cloud model reached engine dispatch"
+                ));
             }
         };
 
         // Update the current engine and model ID
-        {
-            let mut engine = self.lock_engine();
-            *engine = Some(loaded_engine);
-        }
-        {
-            let mut current_model = self.current_model_id.lock().unwrap();
-            *current_model = Some(model_id.to_string());
-        }
+        self.lock_engine().install(Some(loaded_engine));
+        *lock_or_recover(&self.current_model_id) = Some(model_id.to_string());
 
         // Reset idle timer so the watcher doesn't immediately unload a just-loaded model
         self.touch_activity();
@@ -592,8 +668,7 @@ impl TranscriptionManager {
         Ok(())
     }
 
-    /// Kicks off the model loading in a background thread if it's not already loaded
-    /// Background-load the DICTATION model.
+    /// Background-load the DICTATION model if it is not already resident.
     ///
     /// Skipped entirely while a meeting is running: only one engine is resident
     /// at a time, and the meeting owns it for the duration. Without this a
@@ -608,8 +683,10 @@ impl TranscriptionManager {
         self.initiate_model_load_for(&settings.selected_model);
     }
 
-    /// Whether a meeting session is currently capturing.
-    fn meeting_is_running(&self) -> bool {
+    /// Whether a meeting session is active (capturing, finalizing or
+    /// importing). While it is, the meeting owns the resident engine: nothing
+    /// else may load, swap or unload it.
+    pub fn meeting_is_running(&self) -> bool {
         self.app_handle
             .try_state::<Arc<crate::meeting::MeetingManager>>()
             .map_or(false, |m| m.is_active())
@@ -624,30 +701,33 @@ impl TranscriptionManager {
     /// meeting transcribe with the dictation engine while every metadata lookup
     /// (cloud routing, language validation, slug) described the meeting model.
     pub fn initiate_model_load_for(&self, model_id: &str) {
-        let mut is_loading = self.is_loading.lock().unwrap();
-        if *is_loading {
-            return;
-        }
         if self.is_model_loaded() && self.get_current_model().as_deref() == Some(model_id) {
             return;
         }
-
-        *is_loading = true;
+        // The guard travels into the loader thread and clears the flag when
+        // that thread ends, however it ends. A bare flag reset at the end of
+        // the closure was skipped by a panic, leaving every later
+        // transcription waiting on the condvar forever.
+        let Some(guard) = self.try_start_loading() else {
+            return;
+        };
         let self_clone = self.clone();
         let model_id = model_id.to_string();
         thread::spawn(move || {
+            let _guard = guard;
             if let Err(e) = self_clone.load_model(&model_id) {
                 error!("Failed to load model: {}", e);
             }
-            let mut is_loading = self_clone.is_loading.lock().unwrap();
-            *is_loading = false;
-            self_clone.loading_condvar.notify_all();
         });
     }
 
     pub fn get_current_model(&self) -> Option<String> {
-        let current_model = self.current_model_id.lock().unwrap();
-        current_model.clone()
+        lock_or_recover(&self.current_model_id).clone()
+    }
+
+    /// Why the most recent load failed, if it did.
+    pub fn last_load_error(&self) -> Option<String> {
+        lock_or_recover(&self.last_load_error).clone()
     }
 
     /// Whether the currently selected model is a cloud (OpenRouter) model.
@@ -660,10 +740,43 @@ impl TranscriptionManager {
             .map_or(false, |m| m.engine_type.is_cloud())
     }
 
-    /// Dictation transcription entry point. Behavior is unchanged: it delegates
-    /// to the shared `transcribe_with_opts` with default (dictation) options.
+    /// Dictation transcription entry point: the shared `transcribe_with_opts`
+    /// with default (dictation) options.
+    ///
+    /// **Dictation during a meeting** is allowed, but it never swaps the
+    /// engine: the meeting owns it. The dictation runs on whatever model the
+    /// meeting has resident (and every metadata lookup — cloud routing,
+    /// language validation — follows that model, not `selected_model`, so the
+    /// two cannot disagree). When nothing usable is resident and the dictation
+    /// model is a local one, it fails with a clear message instead.
     pub fn transcribe(&self, audio: Vec<f32>) -> Result<String> {
-        self.transcribe_with_opts(audio, MeetingTranscribeOpts::dictation())
+        let mut opts = MeetingTranscribeOpts::dictation();
+        if self.meeting_is_running() {
+            let selected = get_settings(&self.app_handle).selected_model;
+            match self.get_current_model() {
+                Some(resident) => {
+                    if resident != selected {
+                        info!(
+                            "Dictation during a meeting: using the meeting's resident model '{}' instead of '{}'",
+                            resident, selected
+                        );
+                    }
+                    opts.model_override = Some(resident);
+                }
+                None => {
+                    let selected_is_cloud = self
+                        .model_manager
+                        .get_model_info(&selected)
+                        .is_some_and(|m| m.engine_type.is_cloud());
+                    if !selected_is_cloud {
+                        return Err(anyhow::Error::new(ModelNotLoadedError(
+                            "Dictation is unavailable right now: the running meeting is using the transcription engine.".to_string(),
+                        )));
+                    }
+                }
+            }
+        }
+        self.transcribe_with_opts(audio, opts)
     }
 
     /// Meeting-mode transcription entry point (ADDITIVE; does not affect
@@ -845,19 +958,33 @@ impl TranscriptionManager {
             .as_ref()
             .map_or(false, |m| m.engine_type.is_cloud());
 
-        // For local engines, ensure a model is loaded before continuing.
-        if !is_cloud {
-            // If the model is loading, wait for it to complete.
-            let mut is_loading = self.is_loading.lock().unwrap();
-            while *is_loading {
-                is_loading = self.loading_condvar.wait(is_loading).unwrap();
-            }
+        // For local engines, queue behind any transcription already using the
+        // engine, then make sure a model is loaded. Held until this call ends.
+        let _serial = if is_cloud {
+            None
+        } else {
+            let serial = lock_or_recover(&self.transcribe_lock);
 
-            let engine_guard = self.lock_engine();
-            if engine_guard.is_none() {
-                return Err(anyhow::anyhow!("Model is not loaded for transcription."));
+            // If the model is loading, wait for it to complete.
+            let mut is_loading = lock_or_recover(&self.is_loading);
+            while *is_loading {
+                is_loading = self
+                    .loading_condvar
+                    .wait(is_loading)
+                    .unwrap_or_else(|e| e.into_inner());
             }
-        }
+            drop(is_loading);
+
+            if !self.lock_engine().is_loaded() {
+                let reason = self
+                    .last_load_error()
+                    .unwrap_or_else(|| "no model is loaded".to_string());
+                return Err(anyhow::Error::new(ModelNotLoadedError(format!(
+                    "The transcription model could not be loaded: {reason}"
+                ))));
+            }
+            Some(serial)
+        };
 
         // Meeting mode can force a specific language (default "tr"); otherwise
         // dictation uses the user's `selected_language`. This keeps dictation's
@@ -897,6 +1024,7 @@ impl TranscriptionManager {
         // out over HTTP; local engines run in-process under catch_unwind to
         // prevent engine panics from poisoning the mutex (which would make the
         // app hang indefinitely on subsequent operations).
+        let mut ran_whisper = false;
         let result_text: String = if is_cloud {
             // Preset cloud models carry their OpenRouter slug in `filename`. The
             // "Custom OpenRouter model" entry has an empty filename, so its slug
@@ -937,22 +1065,18 @@ impl TranscriptionManager {
             }
         } else {
             let result = {
-                let mut engine_guard = self.lock_engine();
-
-                // Take the engine out so we own it during transcription.
-                // If the engine panics, we simply don't put it back (effectively unloading it)
-                // instead of poisoning the mutex.
-                let mut engine = match engine_guard.take() {
-                    Some(e) => e,
+                // Check the engine out so no mutex is held during the engine
+                // call. It is returned afterwards unless a load/unload replaced
+                // it meanwhile; if the engine panics it is dropped (effectively
+                // unloading it) instead of poisoning the mutex.
+                let (mut engine, generation) = match self.lock_engine().check_out() {
+                    Some(loan) => loan,
                     None => {
-                        return Err(anyhow::anyhow!(
-                        "Model failed to load after auto-load attempt. Please check your model settings."
-                    ));
+                        return Err(anyhow::Error::new(ModelNotLoadedError(
+                            "The model was unloaded before transcription could start.".to_string(),
+                        )));
                     }
                 };
-
-                // Release the lock before transcribing — no mutex held during the engine call
-                drop(engine_guard);
 
                 let transcribe_result = catch_unwind(AssertUnwindSafe(
                     || -> Result<transcribe_rs::TranscriptionResult> {
@@ -1073,35 +1197,34 @@ impl TranscriptionManager {
                     },
                 ));
 
+                ran_whisper = matches!(engine, LoadedEngine::Whisper(_));
+
                 match transcribe_result {
                     Ok(inner_result) => {
-                        // Success or normal error — put the engine back
-                        let mut engine_guard = self.lock_engine();
-                        *engine_guard = Some(engine);
+                        // Success or normal error — put the engine back, unless
+                        // a load/unload replaced it while it was out.
+                        if !self.lock_engine().check_in(engine, generation) {
+                            debug!(
+                                "Engine was replaced during transcription; dropping the old one"
+                            );
+                        }
                         inner_result?
                     }
                     Err(panic_payload) => {
                         // Engine panicked — do NOT put it back (it's in an unknown state).
                         // The engine is dropped here, effectively unloading it.
-                        let panic_msg = if let Some(s) = panic_payload.downcast_ref::<&str>() {
-                            s.to_string()
-                        } else if let Some(s) = panic_payload.downcast_ref::<String>() {
-                            s.clone()
-                        } else {
-                            "unknown panic".to_string()
-                        };
+                        drop(engine);
+                        let panic_msg = panic_message(&panic_payload);
                         error!(
                             "Transcription engine panicked: {}. Model has been unloaded.",
                             panic_msg
                         );
 
-                        // Clear the model ID so it will be reloaded on next attempt
-                        {
-                            let mut current_model = self
-                                .current_model_id
-                                .lock()
-                                .unwrap_or_else(|e| e.into_inner());
-                            *current_model = None;
+                        // Mark the slot unloaded and clear the model ID so it
+                        // reloads on the next attempt — unless a newer model
+                        // was installed meanwhile, which must be left alone.
+                        if self.lock_engine().abandon(generation) {
+                            *lock_or_recover(&self.current_model_id) = None;
                         }
 
                         let _ = self.app_handle.emit(
@@ -1124,15 +1247,11 @@ impl TranscriptionManager {
             result.text
         };
 
-        // Apply word correction if custom words are configured.
-        // Skip for Whisper models since custom words are already passed as initial_prompt.
-        let is_whisper = self
-            .model_manager
-            .get_model_info(&settings.selected_model)
-            .map(|info| matches!(info.engine_type, EngineType::Whisper))
-            .unwrap_or(false);
-
-        let corrected_result = if !settings.custom_words.is_empty() && !is_whisper {
+        // Apply word correction if custom words are configured. Skip when the
+        // engine that actually ran was Whisper, since custom words were already
+        // passed as its initial_prompt. (Reading `selected_model` here was
+        // wrong for meetings and for dictation during a meeting.)
+        let corrected_result = if !settings.custom_words.is_empty() && !ran_whisper {
             apply_custom_words(
                 &result_text,
                 &settings.custom_words,
@@ -1240,12 +1359,80 @@ impl Drop for TranscriptionManager {
         self.shutdown_signal.store(true, Ordering::Relaxed);
 
         // Wait for the thread to finish gracefully
-        if let Some(handle) = self.watcher_handle.lock().unwrap().take() {
+        if let Some(handle) = lock_or_recover(&self.watcher_handle).take() {
             if let Err(e) = handle.join() {
                 warn!("Failed to join idle watcher thread: {:?}", e);
             } else {
                 debug!("Idle watcher thread joined successfully");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod engine_slot_tests {
+    use super::*;
+
+    fn marker() -> LoadedEngine {
+        LoadedEngine::OpenRouter
+    }
+
+    #[test]
+    fn a_checked_out_engine_still_counts_as_loaded() {
+        let mut slot = EngineSlot::default();
+        slot.install(Some(marker()));
+        let (engine, gen) = slot.check_out().unwrap();
+        assert!(slot.is_loaded());
+        assert!(slot.check_in(engine, gen));
+        assert!(slot.is_loaded());
+        assert!(slot.engine.is_some());
+    }
+
+    #[test]
+    fn a_load_during_transcription_is_not_overwritten_by_the_stale_engine() {
+        let mut slot = EngineSlot::default();
+        slot.install(Some(marker()));
+        let (old, gen) = slot.check_out().unwrap();
+
+        // A model switch lands while the old engine is out on loan.
+        slot.install(Some(marker()));
+        let new_gen = slot.generation;
+
+        assert!(!slot.check_in(old, gen));
+        assert_eq!(slot.generation, new_gen);
+        assert!(slot.engine.is_some());
+    }
+
+    #[test]
+    fn an_unload_during_transcription_stays_unloaded() {
+        let mut slot = EngineSlot::default();
+        slot.install(Some(marker()));
+        let (old, gen) = slot.check_out().unwrap();
+        slot.install(None);
+        assert!(!slot.is_loaded());
+        assert!(!slot.check_in(old, gen));
+        assert!(!slot.is_loaded());
+    }
+
+    #[test]
+    fn a_panicked_engine_unloads_only_its_own_generation() {
+        let mut slot = EngineSlot::default();
+        slot.install(Some(marker()));
+        let (_, gen) = slot.check_out().unwrap();
+        assert!(slot.abandon(gen));
+        assert!(!slot.is_loaded());
+
+        slot.install(Some(marker()));
+        let (_, gen) = slot.check_out().unwrap();
+        slot.install(Some(marker()));
+        assert!(!slot.abandon(gen), "a newer engine must survive");
+        assert!(slot.is_loaded());
+    }
+
+    #[test]
+    fn nothing_to_check_out_when_unloaded() {
+        let mut slot = EngineSlot::default();
+        assert!(slot.check_out().is_none());
+        assert!(!slot.is_loaded());
     }
 }

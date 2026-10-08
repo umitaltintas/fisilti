@@ -3,77 +3,180 @@ use crate::input::{self, EnigoState};
 use crate::settings::TypingTool;
 use crate::settings::{get_settings, AutoSubmitKey, ClipboardHandling, PasteMethod};
 use enigo::{Direction, Enigo, Key, Keyboard};
-use log::info;
+use log::{info, warn};
 use std::process::Command;
 use std::time::Duration;
+use tauri::image::Image;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
 #[cfg(target_os = "linux")]
 use crate::utils::{is_kde_wayland, is_wayland};
 
-/// Pastes text using the clipboard: saves current content, writes text, sends paste keystroke, restores clipboard.
+/// Minimum wait between sending the paste keystroke and restoring the
+/// previous clipboard. The target app reads the clipboard asynchronously after
+/// the keystroke; slow apps (Electron editors, remote desktops) were still
+/// reading when the old fixed 50 ms restore swapped the content back, and
+/// pasted the OLD clipboard. The user's `paste_delay_ms` raises it further.
+const CLIPBOARD_RESTORE_DELAY_MS: u64 = 200;
+
+/// Longest an external paste script may run before it is killed.
+const EXTERNAL_SCRIPT_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Longest a keystroke step may wait for the main thread.
+const MAIN_THREAD_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// The clipboard as it was before we borrowed it.
+enum SavedClipboard {
+    Text(String),
+    Image(Image<'static>),
+    /// Empty, or something we cannot read back (file references, rich
+    /// formats only). Restoring is skipped: writing "" would wipe it.
+    Unrestorable,
+}
+
+impl SavedClipboard {
+    fn capture(app: &AppHandle) -> Self {
+        let clipboard = app.clipboard();
+        if let Ok(text) = clipboard.read_text() {
+            return SavedClipboard::Text(text);
+        }
+        if let Ok(image) = clipboard.read_image() {
+            let owned = Image::new_owned(image.rgba().to_vec(), image.width(), image.height());
+            return SavedClipboard::Image(owned);
+        }
+        SavedClipboard::Unrestorable
+    }
+}
+
+/// Puts the saved clipboard back when dropped — on success, on a failed
+/// keystroke, on a panic. Before, a `?` on the key combo returned early and
+/// left the transcript on the clipboard for good.
+struct ClipboardRestore<'a> {
+    app: &'a AppHandle,
+    saved: Option<SavedClipboard>,
+    /// What we wrote. If the clipboard no longer holds it when restoring, the
+    /// user copied something new meanwhile and that must not be overwritten.
+    written: String,
+    delay: Duration,
+}
+
+impl Drop for ClipboardRestore<'_> {
+    fn drop(&mut self) {
+        let Some(saved) = self.saved.take() else {
+            return;
+        };
+        std::thread::sleep(self.delay);
+
+        let clipboard = self.app.clipboard();
+        if clipboard
+            .read_text()
+            .is_ok_and(|current| current != self.written)
+        {
+            info!("Clipboard changed during paste; not restoring the old content");
+            return;
+        }
+
+        let result = match &saved {
+            SavedClipboard::Text(text) => write_clipboard_text(self.app, text),
+            SavedClipboard::Image(image) => clipboard
+                .write_image(image)
+                .map_err(|e| format!("Failed to restore clipboard image: {}", e)),
+            SavedClipboard::Unrestorable => {
+                info!("Previous clipboard content was not text or an image; leaving the transcript on it");
+                Ok(())
+            }
+        };
+        if let Err(e) = result {
+            warn!("Failed to restore clipboard: {}", e);
+        }
+    }
+}
+
+/// Write text to the clipboard, via wl-copy on Wayland when available (better
+/// compatibility, especially with umlauts).
+fn write_clipboard_text(app_handle: &AppHandle, text: &str) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    if is_wayland() && is_wl_copy_available() {
+        info!("Using wl-copy for clipboard write on Wayland");
+        return write_clipboard_via_wl_copy(text);
+    }
+
+    app_handle
+        .clipboard()
+        .write_text(text)
+        .map_err(|e| format!("Failed to write to clipboard: {}", e))
+}
+
+/// Run `f` with the managed Enigo on the main thread and wait for its result.
+///
+/// Only the keystrokes need the main thread (macOS input APIs); the waits
+/// around them must not run there, or the whole UI freezes for their duration.
+/// Must not be called FROM the main thread.
+fn with_enigo_on_main<T, F>(app_handle: &AppHandle, f: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce(&mut Enigo) -> Result<T, String> + Send + 'static,
+{
+    let (tx, rx) = std::sync::mpsc::channel();
+    let app = app_handle.clone();
+    app_handle
+        .run_on_main_thread(move || {
+            let result = (|| {
+                let enigo_state = app
+                    .try_state::<EnigoState>()
+                    .ok_or("Enigo state not initialized")?;
+                let mut enigo = enigo_state
+                    .0
+                    .lock()
+                    .map_err(|e| format!("Failed to lock Enigo: {}", e))?;
+                f(&mut enigo)
+            })();
+            let _ = tx.send(result);
+        })
+        .map_err(|e| format!("Failed to reach the main thread: {}", e))?;
+    rx.recv_timeout(MAIN_THREAD_TIMEOUT)
+        .map_err(|_| "Timed out waiting for the main thread to send keystrokes".to_string())?
+}
+
+/// Pastes text using the clipboard: saves current content, writes text, sends
+/// paste keystroke, restores clipboard (see [`ClipboardRestore`]).
 fn paste_via_clipboard(
-    enigo: &mut Enigo,
     text: &str,
     app_handle: &AppHandle,
-    paste_method: &PasteMethod,
+    paste_method: PasteMethod,
     paste_delay_ms: u64,
 ) -> Result<(), String> {
-    let clipboard = app_handle.clipboard();
-    let clipboard_content = clipboard.read_text().unwrap_or_default();
+    let saved = SavedClipboard::capture(app_handle);
 
-    // Write text to clipboard first
-    // On Wayland, prefer wl-copy for better compatibility (especially with umlauts)
-    #[cfg(target_os = "linux")]
-    let write_result = if is_wayland() && is_wl_copy_available() {
-        info!("Using wl-copy for clipboard write on Wayland");
-        write_clipboard_via_wl_copy(text)
-    } else {
-        clipboard
-            .write_text(text)
-            .map_err(|e| format!("Failed to write to clipboard: {}", e))
+    write_clipboard_text(app_handle, text)?;
+
+    // From here on the original comes back whatever happens.
+    let _restore = ClipboardRestore {
+        app: app_handle,
+        saved: Some(saved),
+        written: text.to_string(),
+        delay: Duration::from_millis(paste_delay_ms.max(CLIPBOARD_RESTORE_DELAY_MS)),
     };
-
-    #[cfg(not(target_os = "linux"))]
-    let write_result = clipboard
-        .write_text(text)
-        .map_err(|e| format!("Failed to write to clipboard: {}", e));
-
-    write_result?;
 
     std::thread::sleep(Duration::from_millis(paste_delay_ms));
 
     // Send paste key combo
     #[cfg(target_os = "linux")]
-    let key_combo_sent = try_send_key_combo_linux(paste_method)?;
+    let key_combo_sent = try_send_key_combo_linux(&paste_method)?;
 
     #[cfg(not(target_os = "linux"))]
     let key_combo_sent = false;
 
     // Fall back to enigo if no native tool handled it
     if !key_combo_sent {
-        match paste_method {
-            PasteMethod::CtrlV => input::send_paste_ctrl_v(enigo)?,
-            PasteMethod::CtrlShiftV => input::send_paste_ctrl_shift_v(enigo)?,
-            PasteMethod::ShiftInsert => input::send_paste_shift_insert(enigo)?,
-            _ => return Err("Invalid paste method for clipboard paste".into()),
-        }
+        with_enigo_on_main(app_handle, move |enigo| match paste_method {
+            PasteMethod::CtrlV => input::send_paste_ctrl_v(enigo),
+            PasteMethod::CtrlShiftV => input::send_paste_ctrl_shift_v(enigo),
+            PasteMethod::ShiftInsert => input::send_paste_shift_insert(enigo),
+            _ => Err("Invalid paste method for clipboard paste".into()),
+        })?;
     }
-
-    std::thread::sleep(std::time::Duration::from_millis(50));
-
-    // Restore original clipboard content
-    // On Wayland, prefer wl-copy for better compatibility
-    #[cfg(target_os = "linux")]
-    if is_wayland() && is_wl_copy_available() {
-        let _ = write_clipboard_via_wl_copy(&clipboard_content);
-    } else {
-        let _ = clipboard.write_text(&clipboard_content);
-    }
-
-    #[cfg(not(target_os = "linux"))]
-    let _ = clipboard.write_text(&clipboard_content);
 
     Ok(())
 }
@@ -500,22 +603,78 @@ fn send_key_combo_via_xdotool(paste_method: &PasteMethod) -> Result<(), String> 
 }
 
 /// Pastes text by invoking an external script.
-/// The script receives the text to paste as a single argument.
+/// The script receives the text to paste as a single argument. It is killed
+/// after [`EXTERNAL_SCRIPT_TIMEOUT`]: a script that hangs (waiting on input, a
+/// stuck tool) used to block the paste — and the main thread — forever.
 fn paste_via_external_script(text: &str, script_path: &str) -> Result<(), String> {
+    use std::io::Read;
+    use std::process::Stdio;
+
     info!("Pasting via external script: {}", script_path);
 
-    let output = Command::new(script_path)
+    let mut child = Command::new(script_path)
         .arg(text)
-        .output()
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .map_err(|e| format!("Failed to execute external script '{}': {}", script_path, e))?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
+    // Drain the pipes on their own threads so a chatty script cannot block on
+    // a full pipe while we wait for it to exit.
+    let drain = |pipe: Option<Box<dyn Read + Send>>| {
+        std::thread::spawn(move || {
+            let mut buf = String::new();
+            if let Some(mut pipe) = pipe {
+                let _ = pipe.read_to_string(&mut buf);
+            }
+            buf
+        })
+    };
+    let stdout = drain(
+        child
+            .stdout
+            .take()
+            .map(|p| Box::new(p) as Box<dyn Read + Send>),
+    );
+    let stderr = drain(
+        child
+            .stderr
+            .take()
+            .map(|p| Box::new(p) as Box<dyn Read + Send>),
+    );
+
+    let deadline = std::time::Instant::now() + EXTERNAL_SCRIPT_TIMEOUT;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if std::time::Instant::now() >= deadline => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!(
+                    "External script '{}' did not finish within {}s and was stopped",
+                    script_path,
+                    EXTERNAL_SCRIPT_TIMEOUT.as_secs()
+                ));
+            }
+            Ok(None) => std::thread::sleep(Duration::from_millis(20)),
+            Err(e) => {
+                let _ = child.kill();
+                return Err(format!(
+                    "Failed to wait for external script '{}': {}",
+                    script_path, e
+                ));
+            }
+        }
+    };
+
+    if !status.success() {
+        let stdout = stdout.join().unwrap_or_default();
+        let stderr = stderr.join().unwrap_or_default();
         return Err(format!(
             "External script '{}' failed with exit code {:?}. stderr: {}, stdout: {}",
             script_path,
-            output.status.code(),
+            status.code(),
             stderr.trim(),
             stdout.trim()
         ));
@@ -526,7 +685,7 @@ fn paste_via_external_script(text: &str, script_path: &str) -> Result<(), String
 
 /// Types text directly by simulating individual key presses.
 fn paste_direct(
-    enigo: &mut Enigo,
+    app_handle: &AppHandle,
     text: &str,
     #[cfg(target_os = "linux")] typing_tool: TypingTool,
 ) -> Result<(), String> {
@@ -538,7 +697,10 @@ fn paste_direct(
         info!("Falling back to enigo for direct text input");
     }
 
-    input::paste_text_direct(enigo, text)
+    let text = text.to_string();
+    with_enigo_on_main(app_handle, move |enigo| {
+        input::paste_text_direct(enigo, &text)
+    })
 }
 
 fn send_return_key(enigo: &mut Enigo, key_type: AutoSubmitKey) -> Result<(), String> {
@@ -588,6 +750,12 @@ fn should_send_auto_submit(auto_submit: bool, paste_method: PasteMethod) -> bool
     auto_submit && paste_method != PasteMethod::None
 }
 
+/// Insert `text` into the focused app using the configured paste method.
+///
+/// Call from a background thread, never the main thread: the waits around
+/// the keystrokes (paste delay, clipboard restore, external script) run on the
+/// calling thread, and only the keystrokes themselves are hopped onto the main
+/// thread.
 pub fn paste(text: String, app_handle: AppHandle) -> Result<(), String> {
     let settings = get_settings(&app_handle);
     let paste_method = settings.paste_method;
@@ -605,15 +773,6 @@ pub fn paste(text: String, app_handle: AppHandle) -> Result<(), String> {
         paste_method, paste_delay_ms
     );
 
-    // Get the managed Enigo instance
-    let enigo_state = app_handle
-        .try_state::<EnigoState>()
-        .ok_or("Enigo state not initialized")?;
-    let mut enigo = enigo_state
-        .0
-        .lock()
-        .map_err(|e| format!("Failed to lock Enigo: {}", e))?;
-
     // Perform the paste operation
     match paste_method {
         PasteMethod::None => {
@@ -621,20 +780,14 @@ pub fn paste(text: String, app_handle: AppHandle) -> Result<(), String> {
         }
         PasteMethod::Direct => {
             paste_direct(
-                &mut enigo,
+                &app_handle,
                 &text,
                 #[cfg(target_os = "linux")]
                 settings.typing_tool,
             )?;
         }
         PasteMethod::CtrlV | PasteMethod::CtrlShiftV | PasteMethod::ShiftInsert => {
-            paste_via_clipboard(
-                &mut enigo,
-                &text,
-                &app_handle,
-                &paste_method,
-                paste_delay_ms,
-            )?
+            paste_via_clipboard(&text, &app_handle, paste_method, paste_delay_ms)?
         }
         PasteMethod::ExternalScript => {
             let script_path = settings
@@ -648,7 +801,8 @@ pub fn paste(text: String, app_handle: AppHandle) -> Result<(), String> {
 
     if should_send_auto_submit(settings.auto_submit, paste_method) {
         std::thread::sleep(Duration::from_millis(50));
-        send_return_key(&mut enigo, settings.auto_submit_key)?;
+        let key = settings.auto_submit_key;
+        with_enigo_on_main(&app_handle, move |enigo| send_return_key(enigo, key))?;
     }
 
     // After pasting, optionally copy to clipboard based on settings

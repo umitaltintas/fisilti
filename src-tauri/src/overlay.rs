@@ -1,6 +1,7 @@
 use crate::input;
 use crate::settings;
 use crate::settings::OverlayPosition;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize};
 
 #[cfg(not(target_os = "macos"))]
@@ -313,7 +314,19 @@ pub fn create_recording_overlay(app_handle: &AppHandle) {
     }
 }
 
+/// Bumped by every show and hide. A delayed hide only fires if nothing was
+/// shown since it was scheduled — otherwise the fade-out of one dictation
+/// would hide the overlay of the next one, started within the 300 ms window.
+static OVERLAY_GENERATION: AtomicU64 = AtomicU64::new(0);
+
+/// Whether a hide scheduled at `scheduled` is still current at `now`.
+fn hide_is_current(scheduled: u64, now: u64) -> bool {
+    scheduled == now
+}
+
 fn show_overlay_state(app_handle: &AppHandle, state: &str) {
+    OVERLAY_GENERATION.fetch_add(1, Ordering::SeqCst);
+
     // Check if overlay should be shown based on position setting
     let settings = settings::get_settings(app_handle);
     if settings.overlay_position == OverlayPosition::None {
@@ -370,11 +383,15 @@ pub fn hide_recording_overlay(app_handle: &AppHandle) {
     if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
         // Emit event to trigger fade-out animation
         let _ = overlay_window.emit("hide-overlay", ());
-        // Hide the window after a short delay to allow animation to complete
+        // Hide the window after a short delay to allow animation to complete,
+        // unless the overlay was shown again in the meantime.
+        let generation = OVERLAY_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
         let window_clone = overlay_window.clone();
         std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_millis(300));
-            let _ = window_clone.hide();
+            if hide_is_current(generation, OVERLAY_GENERATION.load(Ordering::SeqCst)) {
+                let _ = window_clone.hide();
+            }
         });
     }
 }
@@ -386,5 +403,18 @@ pub fn emit_levels(app_handle: &AppHandle, levels: &Vec<f32>) {
     // also emit to the recording overlay if it's open
     if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
         let _ = overlay_window.emit("mic-level", levels);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_hide_is_cancelled_by_a_later_show() {
+        let scheduled = 7;
+        assert!(hide_is_current(scheduled, 7));
+        // show (or another hide) bumped the generation after scheduling
+        assert!(!hide_is_current(scheduled, 8));
     }
 }

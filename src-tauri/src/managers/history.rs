@@ -112,6 +112,7 @@ pub struct HistoryManager {
     app_handle: AppHandle,
     recordings_dir: PathBuf,
     db_path: PathBuf,
+    init_error: Option<String>,
 }
 
 impl HistoryManager {
@@ -131,12 +132,28 @@ impl HistoryManager {
             app_handle: app_handle.clone(),
             recordings_dir,
             db_path,
+            init_error: None,
         };
 
-        // Initialize database and run migrations synchronously
-        manager.init_database()?;
+        // Initialize database and run migrations synchronously. A failure
+        // here (corrupt file, disk full, a migration that cannot apply) must
+        // not take the whole app down: dictation works without history. The
+        // error is kept for the caller to show; every history operation opens
+        // its own connection and reports its own error from then on.
+        if let Err(e) = manager.init_database() {
+            log::error!("History database could not be initialized: {e:#}");
+            return Ok(Self {
+                init_error: Some(format!("{e:#}")),
+                ..manager
+            });
+        }
 
         Ok(manager)
+    }
+
+    /// Why the history database failed to initialize at startup, if it did.
+    pub fn init_error(&self) -> Option<&str> {
+        self.init_error.as_deref()
     }
 
     fn init_database(&self) -> Result<()> {

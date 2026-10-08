@@ -146,24 +146,72 @@ fn should_force_show_permissions_window(app: &AppHandle) -> bool {
     false
 }
 
-fn initialize_core_logic(app_handle: &AppHandle) {
+/// Show a non-fatal startup problem in a native dialog (non-blocking).
+fn show_startup_warning(app_handle: &AppHandle, message: &str) {
+    use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+    log::error!("Startup warning: {message}");
+    app_handle
+        .dialog()
+        .message(message)
+        .title("Fısıltı")
+        .kind(MessageDialogKind::Warning)
+        .show(|_| {});
+}
+
+/// A manager the app cannot run without failed to start: explain it in a
+/// native dialog, then quit cleanly instead of panicking.
+///
+/// Returns `false` so `initialize_core_logic` can hand it straight back.
+fn fatal_startup_error(app_handle: &AppHandle, what: &str, error: &anyhow::Error) -> bool {
+    use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+    log::error!("Failed to initialize {what}: {error:#}");
+    let app = app_handle.clone();
+    app_handle
+        .dialog()
+        .message(format!(
+            "Fısıltı could not start because {what} failed to initialize.\n\n{error:#}"
+        ))
+        .title("Fısıltı")
+        .kind(MessageDialogKind::Error)
+        .show(move |_| app.exit(1));
+    false
+}
+
+/// Returns `false` when a manager the app cannot run without failed to start;
+/// the user has then been told, and the app quits when they dismiss it.
+fn initialize_core_logic(app_handle: &AppHandle) -> bool {
     // Note: Enigo (keyboard/mouse simulation) is NOT initialized here.
     // The frontend is responsible for calling the `initialize_enigo` command
     // after onboarding completes. This avoids triggering permission dialogs
     // on macOS before the user is ready.
 
-    // Initialize the managers
-    let recording_manager = Arc::new(
-        AudioRecordingManager::new(app_handle).expect("Failed to initialize recording manager"),
-    );
-    let model_manager =
-        Arc::new(ModelManager::new(app_handle).expect("Failed to initialize model manager"));
-    let transcription_manager = Arc::new(
-        TranscriptionManager::new(app_handle, model_manager.clone())
-            .expect("Failed to initialize transcription manager"),
-    );
-    let history_manager =
-        Arc::new(HistoryManager::new(app_handle).expect("Failed to initialize history manager"));
+    // Initialize the managers. None of these may panic: a panic here is a
+    // crash on every launch with nothing on screen. The recording manager
+    // cannot fail (a microphone that will not open is reported and retried on
+    // the next recording); the others only fail when the app data directory
+    // itself is unusable, which is reported in a dialog before quitting.
+    let recording_manager = Arc::new(AudioRecordingManager::new(app_handle));
+    let model_manager = match ModelManager::new(app_handle) {
+        Ok(manager) => Arc::new(manager),
+        Err(e) => return fatal_startup_error(app_handle, "the model manager", &e),
+    };
+    let transcription_manager = match TranscriptionManager::new(app_handle, model_manager.clone()) {
+        Ok(manager) => Arc::new(manager),
+        Err(e) => return fatal_startup_error(app_handle, "the transcription manager", &e),
+    };
+    let history_manager = match HistoryManager::new(app_handle) {
+        Ok(manager) => Arc::new(manager),
+        Err(e) => return fatal_startup_error(app_handle, "dictation history", &e),
+    };
+    if let Some(reason) = history_manager.init_error() {
+        // Dictation keeps working; only history is affected. Say so once.
+        show_startup_warning(
+            app_handle,
+            &format!(
+                "Dictation history could not be opened, so new dictations will not be saved to it.\n\n{reason}"
+            ),
+        );
+    }
 
     // Meeting mode (Step 3): continuous meeting session manager. Reuses the
     // transcription manager but is otherwise isolated from the dictation flow.
@@ -275,6 +323,10 @@ fn initialize_core_logic(app_handle: &AppHandle) {
             }
             "unload_model" => {
                 let transcription_manager = app.state::<Arc<TranscriptionManager>>();
+                if transcription_manager.meeting_is_running() {
+                    log::warn!("Not unloading the model: the running meeting is using it.");
+                    return;
+                }
                 if !transcription_manager.is_model_loaded() {
                     log::warn!("No model is currently loaded.");
                     return;
@@ -361,6 +413,8 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     // off: a hidden panel costs nothing, and it means the first subtitle of a
     // meeting is not waiting on window creation.
     subtitle_overlay::create_subtitle_overlay(app_handle);
+
+    true
 }
 
 #[tauri::command]
@@ -653,7 +707,11 @@ pub fn run(cli_args: CliArgs) {
             let app_handle = app.handle().clone();
             app.manage(TranscriptionCoordinator::new(app_handle.clone()));
 
-            initialize_core_logic(&app_handle);
+            if !initialize_core_logic(&app_handle) {
+                // Managed state is incomplete: keep every window closed and
+                // let the error dialog quit the app.
+                return Ok(());
+            }
 
             // Hide tray icon if --no-tray was passed
             if cli_args.no_tray {

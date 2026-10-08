@@ -99,11 +99,11 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={description ? descriptionId : undefined}
-        className="w-full max-w-sm rounded-lg border border-mid-gray/20 bg-background p-5 shadow-xl space-y-4"
+        className="w-full max-w-sm rounded-lg border border-line bg-background p-5 shadow-xl space-y-4"
       >
         <div className="flex items-start gap-3">
           {destructive && (
-            <div className="shrink-0 rounded-full bg-red-500/15 p-2 text-red-400">
+            <div className="shrink-0 rounded-full bg-rec/15 p-2 text-rec">
               <AlertTriangle width={16} height={16} aria-hidden />
             </div>
           )}
@@ -114,7 +114,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
             {description && (
               <p
                 id={descriptionId}
-                className="text-sm text-text/70 whitespace-pre-wrap break-words"
+                className="text-sm text-sub whitespace-pre-wrap break-words"
               >
                 {description}
               </p>

@@ -183,8 +183,8 @@ export const ModelsSettings: React.FC = () => {
   );
 
   const listShell = (children: React.ReactNode) => (
-    <div className="overflow-hidden rounded-lg border border-mid-gray/20 bg-background">
-      <div className="divide-y divide-mid-gray/20">{children}</div>
+    <div className="overflow-hidden rounded-lg border border-line bg-background">
+      <div className="divide-y divide-line">{children}</div>
     </div>
   );
 
@@ -212,7 +212,7 @@ export const ModelsSettings: React.FC = () => {
           </h2>
           <div className="relative w-64">
             <Search
-              className="pointer-events-none absolute start-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-text/40"
+              className="pointer-events-none absolute start-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-faint"
               aria-hidden
             />
             <input
@@ -228,7 +228,7 @@ export const ModelsSettings: React.FC = () => {
                 type="button"
                 onClick={() => setQuery("")}
                 aria-label={t("common.clear")}
-                className="absolute end-2 top-1/2 -translate-y-1/2 text-text/40 hover:text-text cursor-pointer"
+                className="absolute end-2 top-1/2 -translate-y-1/2 text-faint hover:text-text cursor-pointer"
               >
                 <X className="h-3.5 w-3.5" />
               </button>
@@ -237,7 +237,7 @@ export const ModelsSettings: React.FC = () => {
         </div>
 
         {matches.length === 0 && (
-          <div className="py-8 text-center text-sm text-text/50">
+          <div className="py-8 text-center text-sm text-sub">
             {t("settings.models.noModelsMatch")}
           </div>
         )}

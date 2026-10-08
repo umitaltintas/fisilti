@@ -244,7 +244,7 @@ export const HistorySettings: React.FC = () => {
   if (loading) {
     content = (
       <div
-        className="px-4 py-6 flex items-center justify-center gap-2 text-sm text-text/60"
+        className="px-4 py-6 flex items-center justify-center gap-2 text-sm text-sub"
         role="status"
       >
         <Loader2 width={14} height={14} className="animate-spin" />
@@ -254,7 +254,7 @@ export const HistorySettings: React.FC = () => {
   } else if (loadError !== null) {
     content = (
       <div className="px-4 py-6 flex flex-col items-center gap-3 text-center">
-        <p role="alert" className="text-sm text-red-400 break-words">
+        <p role="alert" className="text-sm text-rec break-words">
           {t("settings.history.loadError")} ({loadError})
         </p>
         <Button variant="secondary" size="sm" onClick={() => void loadPage()}>
@@ -264,14 +264,14 @@ export const HistorySettings: React.FC = () => {
     );
   } else if (entries.length === 0) {
     content = (
-      <div className="px-4 py-8 text-center text-sm text-text/60">
+      <div className="px-4 py-8 text-center text-sm text-sub">
         {t("settings.history.empty")}
       </div>
     );
   } else {
     content = (
       <>
-        <div className="divide-y divide-mid-gray/20">
+        <div className="divide-y divide-line">
           {entries.map((entry) => (
             <HistoryEntryComponent
               key={entry.id}
@@ -296,9 +296,9 @@ export const HistorySettings: React.FC = () => {
           sections away from the list it governs. */}
       <CollapsibleGroup title={t("settings.history.retentionSettings")}>
         <SettingsGroup>
-          <HistoryLimit descriptionMode="tooltip" grouped={true} />
+          <HistoryLimit descriptionMode="inline" grouped={true} />
           <RecordingRetentionPeriodSelector
-            descriptionMode="tooltip"
+            descriptionMode="inline"
             grouped={true}
           />
         </SettingsGroup>
@@ -316,9 +316,7 @@ export const HistorySettings: React.FC = () => {
             label={t("settings.history.openFolder")}
           />
         </div>
-        <div className="bg-background border border-mid-gray/20 rounded-lg overflow-visible">
-          {content}
-        </div>
+        <div className="card overflow-visible">{content}</div>
       </div>
     </div>
   );
@@ -446,7 +444,7 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
             ? ""
             : hasTranscription
               ? "text-text/90 select-text cursor-text whitespace-pre-wrap break-words"
-              : "text-text/40"
+              : "text-faint"
         }`}
         style={
           retrying

@@ -38,7 +38,7 @@ const ModelDropdown: React.FC<ModelDropdownProps> = ({
   ].filter((section) => section.items.length > 0);
 
   return (
-    <div className="absolute bottom-full start-0 mb-2 w-72 max-h-[60vh] overflow-y-auto bg-background border border-mid-gray/20 rounded-lg shadow-lg py-1 z-50">
+    <div className="absolute bottom-full start-0 mb-2 w-72 max-h-[60vh] overflow-y-auto card shadow-lg py-1 z-50">
       {sections.length > 0 ? (
         sections.map((section) => (
           <div key={section.id}>
@@ -68,7 +68,7 @@ const ModelDropdown: React.FC<ModelDropdownProps> = ({
                       <Cloud className="h-3 w-3 shrink-0 text-text/35" />
                     )}
                     {model.is_custom && (
-                      <span className="text-[10px] font-medium uppercase text-text/40">
+                      <span className="text-[10px] font-medium uppercase text-faint">
                         {t("modelSelector.custom")}
                       </span>
                     )}
@@ -76,7 +76,7 @@ const ModelDropdown: React.FC<ModelDropdownProps> = ({
                       <Check className="ms-auto h-3.5 w-3.5 shrink-0 text-logo-primary" />
                     )}
                   </div>
-                  <div className="truncate text-xs text-text/40">
+                  <div className="truncate text-xs text-faint">
                     {getTranslatedModelDescription(model, t)}
                   </div>
                 </button>
@@ -85,7 +85,7 @@ const ModelDropdown: React.FC<ModelDropdownProps> = ({
           </div>
         ))
       ) : (
-        <div className="px-3 py-2 text-sm text-text/60">
+        <div className="px-3 py-2 text-sm text-sub">
           {t("modelSelector.noModelsAvailable")}
         </div>
       )}

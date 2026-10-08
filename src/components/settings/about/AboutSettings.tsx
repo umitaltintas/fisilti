@@ -69,7 +69,7 @@ export const AboutSettings: React.FC = () => {
           </Button>
         </SettingContainer>
 
-        <AppDataDirectory descriptionMode="tooltip" grouped={true} />
+        <AppDataDirectory descriptionMode="inline" grouped={true} />
       </SettingsGroup>
 
       <SettingsGroup title={t("settings.about.acknowledgments.title")}>

@@ -192,15 +192,13 @@ const UpdateChecker: React.FC<UpdateCheckerProps> = ({ className = "" }) => {
           className={`transition-colors disabled:opacity-50 tabular-nums ${
             updateAvailable
               ? "text-logo-primary hover:text-logo-primary/80 font-medium"
-              : "text-text/60 hover:text-text/80"
+              : "text-sub hover:text-text/80"
           }`}
         >
           {getUpdateStatusText()}
         </button>
       ) : (
-        <span className="text-text/60 tabular-nums">
-          {getUpdateStatusText()}
-        </span>
+        <span className="text-sub tabular-nums">{getUpdateStatusText()}</span>
       )}
 
       {isInstalling && downloadProgress > 0 && downloadProgress < 100 && (

@@ -143,12 +143,12 @@ export const ModelRow: React.FC<ModelRowProps> = ({
               />
             )}
             {model.is_custom && (
-              <span className="rounded-full bg-mid-gray/20 px-2 py-0.5 text-[10px] text-text/60">
+              <span className="rounded-full bg-mid-gray/20 px-2 py-0.5 text-[10px] text-sub">
                 {t("modelSelector.custom")}
               </span>
             )}
           </div>
-          <p className="truncate text-xs text-text/50">
+          <p className="truncate text-xs text-sub">
             {getTranslatedModelDescription(model, t)}
           </p>
           {status === "downloading" && downloadProgress !== undefined && (
@@ -159,7 +159,7 @@ export const ModelRow: React.FC<ModelRowProps> = ({
                   style={{ width: `${downloadProgress}%` }}
                 />
               </div>
-              <span className="tabular-nums text-[10px] text-text/50">
+              <span className="tabular-nums text-[10px] text-sub">
                 {Math.round(downloadProgress)}%
                 {downloadSpeed !== undefined && downloadSpeed > 0
                   ? ` · ${t("modelSelector.downloadSpeed", { speed: downloadSpeed.toFixed(1) })}`
@@ -171,7 +171,7 @@ export const ModelRow: React.FC<ModelRowProps> = ({
 
         <div className="hidden shrink-0 items-center gap-3 md:flex">
           {model.supported_languages.length > 0 && (
-            <span className="text-xs text-text/40">
+            <span className="text-xs text-faint">
               {languageSummary(model, t)}
             </span>
           )}
@@ -186,19 +186,19 @@ export const ModelRow: React.FC<ModelRowProps> = ({
 
       <div className="flex w-24 shrink-0 items-center justify-end gap-1">
         {status === "downloadable" && (
-          <span className="flex items-center gap-1 text-xs text-text/50">
+          <span className="flex items-center gap-1 text-xs text-sub">
             <Download className="h-3.5 w-3.5" aria-hidden />
             {formatModelSize(Number(model.size_mb))}
           </span>
         )}
         {status === "switching" && (
           <Loader2
-            className="h-4 w-4 animate-spin text-text/40"
+            className="h-4 w-4 animate-spin text-faint"
             aria-label={t("modelSelector.switching")}
           />
         )}
         {(status === "verifying" || status === "extracting") && (
-          <span className="text-xs text-text/50">
+          <span className="text-xs text-sub">
             {status === "verifying"
               ? t("modelSelector.verifyingGeneric")
               : t("modelSelector.extractingGeneric")}

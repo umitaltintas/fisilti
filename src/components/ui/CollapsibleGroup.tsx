@@ -35,7 +35,7 @@ export const CollapsibleGroup: React.FC<CollapsibleGroupProps> = ({
         className="group flex w-full items-center gap-2 px-1 py-1 text-start cursor-pointer"
       >
         <ChevronDown
-          className={`w-4 h-4 shrink-0 text-text/40 transition-transform ${
+          className={`w-4 h-4 shrink-0 text-faint transition-transform ${
             open ? "" : "-rotate-90"
           }`}
         />
@@ -43,11 +43,11 @@ export const CollapsibleGroup: React.FC<CollapsibleGroupProps> = ({
           {title}
         </h2>
         {count !== undefined && (
-          <span className="text-xs text-text/40 tabular-nums">{count}</span>
+          <span className="text-xs text-faint tabular-nums">{count}</span>
         )}
       </button>
       {description && open && (
-        <p className="px-1 text-xs text-text/50">{description}</p>
+        <p className="px-1 text-xs text-sub">{description}</p>
       )}
       {open && (
         <div id={contentId} className="space-y-2">

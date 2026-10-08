@@ -9,7 +9,7 @@ interface PushToTalkProps {
 }
 
 export const PushToTalk: React.FC<PushToTalkProps> = React.memo(
-  ({ descriptionMode = "tooltip", grouped = false }) => {
+  ({ descriptionMode = "inline", grouped = false }) => {
     const { t } = useTranslation();
     const { getSetting, updateSetting, isUpdating } = useSettings();
 

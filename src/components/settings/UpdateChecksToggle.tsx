@@ -9,7 +9,7 @@ interface UpdateChecksToggleProps {
 }
 
 export const UpdateChecksToggle: React.FC<UpdateChecksToggleProps> = ({
-  descriptionMode = "tooltip",
+  descriptionMode = "inline",
   grouped = false,
 }) => {
   const { t } = useTranslation();

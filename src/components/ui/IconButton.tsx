@@ -35,8 +35,8 @@ export const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
     ref,
   ) => {
     const toneClasses = {
-      default: "text-text/50 hover:text-logo-primary",
-      danger: "text-text/50 hover:text-red-400",
+      default: "text-sub hover:text-logo-primary",
+      danger: "text-sub hover:text-rec",
       active: "text-logo-primary hover:text-logo-primary/80",
     }[tone];
     const sizeClasses = size === "sm" ? "p-1" : "p-1.5";

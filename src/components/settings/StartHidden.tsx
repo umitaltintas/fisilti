@@ -9,7 +9,7 @@ interface StartHiddenProps {
 }
 
 export const StartHidden: React.FC<StartHiddenProps> = React.memo(
-  ({ descriptionMode = "tooltip", grouped = false }) => {
+  ({ descriptionMode = "inline", grouped = false }) => {
     const { t } = useTranslation();
     const { getSetting, updateSetting, isUpdating } = useSettings();
 

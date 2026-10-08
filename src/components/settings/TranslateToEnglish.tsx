@@ -9,7 +9,7 @@ interface TranslateToEnglishProps {
 }
 
 export const TranslateToEnglish: React.FC<TranslateToEnglishProps> = React.memo(
-  ({ descriptionMode = "tooltip", grouped = false }) => {
+  ({ descriptionMode = "inline", grouped = false }) => {
     const { t } = useTranslation();
     const { getSetting, updateSetting, isUpdating } = useSettings();
 

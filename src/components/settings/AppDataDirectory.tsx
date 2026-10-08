@@ -64,7 +64,7 @@ export const AppDataDirectory: React.FC<AppDataDirectoryProps> = ({
   if (error) {
     return (
       <div className="px-4 py-2">
-        <p role="alert" className="text-red-400 text-sm break-words">
+        <p role="alert" className="text-rec text-sm break-words">
           {t("errors.loadDirectory", { error })}
         </p>
       </div>

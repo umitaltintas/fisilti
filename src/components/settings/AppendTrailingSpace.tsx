@@ -9,7 +9,7 @@ interface AppendTrailingSpaceProps {
 }
 
 export const AppendTrailingSpace: React.FC<AppendTrailingSpaceProps> =
-  React.memo(({ descriptionMode = "tooltip", grouped = false }) => {
+  React.memo(({ descriptionMode = "inline", grouped = false }) => {
     const { t } = useTranslation();
     const { getSetting, updateSetting, isUpdating } = useSettings();
 

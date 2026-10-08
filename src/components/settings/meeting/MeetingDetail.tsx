@@ -11,6 +11,7 @@ import {
   Loader2,
   Pencil,
   RefreshCw,
+  Sparkles,
   X,
 } from "lucide-react";
 
@@ -370,14 +371,14 @@ export const MeetingDetail: React.FC<MeetingDetailProps> = ({
         <button
           type="button"
           onClick={onBack}
-          className="flex items-center gap-1.5 rounded text-sm text-text/70 hover:text-logo-primary transition-colors cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-logo-primary"
+          className="flex items-center gap-1.5 rounded text-sm text-sub hover:text-logo-primary transition-colors cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-logo-primary"
         >
           <ArrowLeft width={16} height={16} className="rtl:rotate-180" />
           <span>{t("meeting.back")}</span>
         </button>
         <div className="flex items-center gap-2 min-w-0">
           {detail && (
-            <div className="flex items-center gap-2 text-xs text-text/50 min-w-0">
+            <div className="flex items-center gap-2 text-xs text-sub min-w-0">
               <span className="truncate">
                 {formatMeetingDate(detail.started_at, locale)}
               </span>
@@ -425,12 +426,9 @@ export const MeetingDetail: React.FC<MeetingDetailProps> = ({
         </div>
       </div>
 
-      <div className="bg-background border border-mid-gray/20 rounded-lg p-4 space-y-5">
+      <div className="space-y-6">
         {loading && !detail && (
-          <p
-            className="flex items-center gap-2 text-sm text-text/60"
-            role="status"
-          >
+          <p className="flex items-center gap-2 text-sm text-sub" role="status">
             <Loader2 width={14} height={14} className="animate-spin" />
             {t("meeting.loading")}
           </p>
@@ -475,7 +473,7 @@ export const MeetingDetail: React.FC<MeetingDetailProps> = ({
                       if (e.key === "Enter") void handleSaveTitle();
                       if (e.key === "Escape") setEditingTitle(false);
                     }}
-                    className="flex-1 rounded-md border border-mid-gray/20 bg-mid-gray/5 px-2 py-1 text-base text-text focus:border-logo-primary focus:outline-none focus:ring-1 focus:ring-logo-primary"
+                    className="flex-1 rounded-md border border-line bg-surface px-2 py-1 font-serif text-xl text-text focus:border-logo-primary focus:ring-2 focus:ring-logo-primary/30 focus:outline-none"
                   />
                   <Button
                     onClick={() => void handleSaveTitle()}
@@ -498,9 +496,9 @@ export const MeetingDetail: React.FC<MeetingDetailProps> = ({
               </div>
             ) : (
               <div className="flex items-center gap-2">
-                <h3 className="text-base font-medium text-text break-words">
+                <h2 className="font-serif text-[26px] leading-tight font-semibold tracking-tight break-words">
                   {title}
-                </h3>
+                </h2>
                 <IconButton
                   onClick={startEditingTitle}
                   label={t("meeting.renameTitle")}
@@ -511,70 +509,13 @@ export const MeetingDetail: React.FC<MeetingDetailProps> = ({
               </div>
             )}
 
-            <section className="space-y-2">
-              <div className="flex items-center justify-between">
-                <SectionHeading>{t("meeting.transcript")}</SectionHeading>
-                <CopyButton
-                  text={plainTranscriptText(labeledSegments, detail.transcript)}
-                  disabled={!hasTranscript}
-                  label={t("meeting.copyTranscript")}
-                />
-              </div>
-              {labeledSegments.length > 0 ? (
-                <PlainTranscript segments={labeledSegments} />
-              ) : hasTranscript ? (
-                <p className="text-sm text-text/90 whitespace-pre-wrap break-words select-text">
-                  {detail.transcript}
-                </p>
-              ) : (
-                <p className="text-sm text-text/40">
-                  {t("meeting.transcriptEmpty")}
-                </p>
-              )}
-            </section>
-
-            <section className="space-y-2">
-              <SectionHeading>{t("meeting.audio")}</SectionHeading>
-              {hasAudio ? (
-                <AudioPlayer onLoadRequest={loadAudio} className="w-full" />
-              ) : (
-                <p className="text-sm text-text/40">{t("meeting.noAudio")}</p>
-              )}
-            </section>
-
-            {/* Editable user notes */}
-            <section className="space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <SectionHeading id={`${notesId}-heading`}>
-                  {t("meeting.myNotes")}
-                </SectionHeading>
-                <div className="flex items-center gap-2">
-                  <NotesSaveIndicator state={notesSave} error={notesError} />
-                  <CopyButton
-                    text={notes}
-                    disabled={notes.trim().length === 0}
-                    label={t("meeting.copyMyNotes")}
-                  />
-                </div>
-              </div>
-              <textarea
-                aria-labelledby={`${notesId}-heading`}
-                value={notes}
-                onChange={(e) => handleNotesChange(e.target.value)}
-                placeholder={t("meeting.myNotesPlaceholder")}
-                className="w-full min-h-[6rem] resize-y rounded-md border border-mid-gray/20 bg-mid-gray/5 p-2 text-sm text-text/90 placeholder:text-text/40 focus:border-logo-primary focus:outline-none focus:ring-1 focus:ring-logo-primary"
-              />
-              {notesSave === "error" && notesError && (
-                <InlineError className="text-xs">
-                  {t("meeting.errors.notesSaveFailed", { error: notesError })}
-                </InlineError>
-              )}
-            </section>
-
             {/* AI summary + regenerate */}
-            <section className="space-y-2">
+            <section className="card space-y-3 p-4">
               <div className="flex items-center justify-between">
-                <SectionHeading>{t("meeting.summary")}</SectionHeading>
+                <h3 className="flex items-center gap-1.5 text-xs font-semibold text-brand-text">
+                  <Sparkles width={13} height={13} aria-hidden />
+                  {t("meeting.summary")}
+                </h3>
                 {summary.length > 0 && (
                   <CopyButton text={summary} label={t("meeting.copySummary")} />
                 )}
@@ -618,7 +559,66 @@ export const MeetingDetail: React.FC<MeetingDetailProps> = ({
               {summary.length > 0 ? (
                 <Markdown>{summary}</Markdown>
               ) : (
-                <p className="text-sm text-text/40">{t("meeting.noSummary")}</p>
+                <p className="text-sm text-faint">{t("meeting.noSummary")}</p>
+              )}
+            </section>
+            {/* Editable user notes */}
+            <section className="space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <SectionHeading id={`${notesId}-heading`}>
+                  {t("meeting.myNotes")}
+                </SectionHeading>
+                <div className="flex items-center gap-2">
+                  <NotesSaveIndicator state={notesSave} error={notesError} />
+                  <CopyButton
+                    text={notes}
+                    disabled={notes.trim().length === 0}
+                    label={t("meeting.copyMyNotes")}
+                  />
+                </div>
+              </div>
+              <textarea
+                aria-labelledby={`${notesId}-heading`}
+                value={notes}
+                onChange={(e) => handleNotesChange(e.target.value)}
+                placeholder={t("meeting.myNotesPlaceholder")}
+                className="min-h-[6rem] w-full resize-y border-s-2 border-line bg-transparent ps-3.5 font-serif text-[14.5px] leading-relaxed text-text placeholder:text-faint focus:border-logo-primary focus:outline-none"
+              />
+              {notesSave === "error" && notesError && (
+                <InlineError className="text-xs">
+                  {t("meeting.errors.notesSaveFailed", { error: notesError })}
+                </InlineError>
+              )}
+            </section>
+
+            <section className="space-y-2">
+              <SectionHeading>{t("meeting.audio")}</SectionHeading>
+              {hasAudio ? (
+                <AudioPlayer onLoadRequest={loadAudio} className="w-full" />
+              ) : (
+                <p className="text-sm text-faint">{t("meeting.noAudio")}</p>
+              )}
+            </section>
+
+            <section className="space-y-2">
+              <div className="flex items-center justify-between">
+                <SectionHeading>{t("meeting.transcript")}</SectionHeading>
+                <CopyButton
+                  text={plainTranscriptText(labeledSegments, detail.transcript)}
+                  disabled={!hasTranscript}
+                  label={t("meeting.copyTranscript")}
+                />
+              </div>
+              {labeledSegments.length > 0 ? (
+                <PlainTranscript segments={labeledSegments} compact />
+              ) : hasTranscript ? (
+                <p className="text-sm text-text/90 whitespace-pre-wrap break-words select-text">
+                  {detail.transcript}
+                </p>
+              ) : (
+                <p className="text-sm text-faint">
+                  {t("meeting.transcriptEmpty")}
+                </p>
               )}
             </section>
           </>
@@ -659,7 +659,7 @@ const RetranscribePanel: React.FC<RetranscribePanelProps> = ({
       className={`rounded-md px-3 py-2 space-y-1 ${
         looksFailed
           ? "border border-logo-primary/40 bg-logo-primary/10"
-          : "border border-mid-gray/20 bg-mid-gray/5"
+          : "border border-line bg-mid-gray/5"
       }`}
     >
       <div className="flex items-center gap-3">
@@ -674,12 +674,12 @@ const RetranscribePanel: React.FC<RetranscribePanelProps> = ({
           <AudioLines
             width={15}
             height={15}
-            className="shrink-0 text-text/50"
+            className="shrink-0 text-sub"
             aria-hidden
           />
         )}
         <p
-          className="flex-1 min-w-0 text-xs text-text/70"
+          className="flex-1 min-w-0 text-xs text-sub"
           role={running ? "status" : undefined}
         >
           {running

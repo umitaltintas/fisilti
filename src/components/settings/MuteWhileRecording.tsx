@@ -9,7 +9,7 @@ interface MuteWhileRecordingToggleProps {
 }
 
 export const MuteWhileRecording: React.FC<MuteWhileRecordingToggleProps> =
-  React.memo(({ descriptionMode = "tooltip", grouped = false }) => {
+  React.memo(({ descriptionMode = "inline", grouped = false }) => {
     const { t } = useTranslation();
     const { getSetting, updateSetting, isUpdating } = useSettings();
 

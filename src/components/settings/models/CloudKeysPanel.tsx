@@ -36,7 +36,7 @@ const ApiKeyRow: React.FC<ApiKeyRowProps> = ({
     <SettingContainer
       title={title}
       description={description}
-      descriptionMode="tooltip"
+      descriptionMode="inline"
       layout="horizontal"
       grouped
     >
@@ -86,7 +86,7 @@ export const CloudKeysPanel: React.FC = () => {
         <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-logo-primary/15 text-logo-primary">
           <KeyRound className="h-4 w-4" />
         </div>
-        <p className="text-xs text-text/60">
+        <p className="text-xs text-sub">
           {t("settings.models.keys.description")}
         </p>
       </div>

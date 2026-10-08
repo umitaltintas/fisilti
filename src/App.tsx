@@ -23,10 +23,22 @@ import { getLanguageDirection, initializeRTL } from "@/lib/utils/rtl";
 
 type OnboardingStep = "accessibility" | "model" | "done";
 
-const renderSettingsContent = (section: SidebarSection) => {
-  const ActiveComponent =
-    SECTIONS_CONFIG[section]?.component || SECTIONS_CONFIG.general.component;
-  return <ActiveComponent />;
+const renderSettingsContent = (
+  section: SidebarSection,
+  t: (key: string) => string,
+) => {
+  const config = SECTIONS_CONFIG[section] ?? SECTIONS_CONFIG.home;
+  const ActiveComponent = config.component;
+  // Home has its own greeting; every other page gets its name as a title.
+  if (section === "home") return <ActiveComponent />;
+  return (
+    <>
+      <h1 className="mx-auto w-full max-w-3xl text-xl font-bold tracking-tight">
+        {t(config.labelKey)}
+      </h1>
+      <ActiveComponent />
+    </>
+  );
 };
 
 /** Mounted once for the whole app, so toasts raised during onboarding (or
@@ -54,8 +66,7 @@ function App() {
   // Track if this is a returning user who just needs to grant permissions
   // (vs a new user who needs full onboarding including model selection)
   const [isReturningUser, setIsReturningUser] = useState(false);
-  const [currentSection, setCurrentSection] =
-    useState<SidebarSection>("home");
+  const [currentSection, setCurrentSection] = useState<SidebarSection>("home");
   // Narrow selectors: App re-renders for these values only, not for every
   // settings change anywhere in the app.
   const debugMode = useSettingsStore((s) => s.settings?.debug_mode ?? false);
@@ -288,7 +299,7 @@ function App() {
             <div className="flex-1 overflow-y-auto">
               <div className="flex flex-col items-center gap-4 px-7 pt-5 pb-8">
                 <AccessibilityPermissions />
-                {renderSettingsContent(currentSection)}
+                {renderSettingsContent(currentSection, t)}
               </div>
             </div>
           </main>

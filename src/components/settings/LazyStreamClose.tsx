@@ -9,7 +9,7 @@ interface LazyStreamCloseProps {
 }
 
 export const LazyStreamClose: React.FC<LazyStreamCloseProps> = React.memo(
-  ({ descriptionMode = "tooltip", grouped = false }) => {
+  ({ descriptionMode = "inline", grouped = false }) => {
     const { t } = useTranslation();
     const { getSetting, updateSetting, isUpdating } = useSettings();
 

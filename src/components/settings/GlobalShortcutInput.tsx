@@ -21,7 +21,7 @@ interface GlobalShortcutInputProps {
 }
 
 export const GlobalShortcutInput: React.FC<GlobalShortcutInputProps> = ({
-  descriptionMode = "tooltip",
+  descriptionMode = "inline",
   grouped = false,
   shortcutId,
   disabled = false,

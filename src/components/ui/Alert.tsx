@@ -16,9 +16,9 @@ const variantStyles: Record<
   { container: string; icon: string; text: string }
 > = {
   error: {
-    container: "bg-red-500/10",
+    container: "bg-rec/10",
     icon: "text-red-500",
-    text: "text-red-400",
+    text: "text-rec",
   },
   warning: {
     container: "bg-yellow-500/10",

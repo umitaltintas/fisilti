@@ -10,7 +10,7 @@ interface WordCorrectionThresholdProps {
 
 export const WordCorrectionThreshold: React.FC<
   WordCorrectionThresholdProps
-> = ({ descriptionMode = "tooltip", grouped = false }) => {
+> = ({ descriptionMode = "inline", grouped = false }) => {
   const { t } = useTranslation();
   const { settings, updateSetting } = useSettings();
 

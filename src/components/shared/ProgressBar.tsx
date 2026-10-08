@@ -47,7 +47,7 @@ const ProgressBar: React.FC<ProgressBarProps> = ({
           className={`${progressClasses} [&::-webkit-progress-bar]:rounded-full [&::-webkit-progress-bar]:bg-mid-gray/20 [&::-webkit-progress-value]:rounded-full [&::-webkit-progress-value]:bg-logo-primary`}
         />
         {(showSpeed || showLabel) && (
-          <div className="text-xs text-text/60 tabular-nums min-w-fit">
+          <div className="text-xs text-sub tabular-nums min-w-fit">
             {showLabel && item.label && (
               <span className="me-2">{item.label}</span>
             )}
@@ -80,7 +80,7 @@ const ProgressBar: React.FC<ProgressBarProps> = ({
           );
         })}
       </div>
-      <div className="text-xs text-text/60 min-w-fit">
+      <div className="text-xs text-sub min-w-fit">
         {progress.length} downloading...
       </div>
     </div>

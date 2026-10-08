@@ -32,33 +32,33 @@ export const AdvancedSettings: React.FC = () => {
   return (
     <div className="mx-auto w-full max-w-3xl space-y-6">
       <SettingsGroup title={t("settings.advanced.groups.output")}>
-        <PasteMethodSetting descriptionMode="tooltip" grouped={true} />
-        <TypingToolSetting descriptionMode="tooltip" grouped={true} />
-        <ClipboardHandlingSetting descriptionMode="tooltip" grouped={true} />
-        <AutoSubmit descriptionMode="tooltip" grouped={true} />
-        <AppendTrailingSpace descriptionMode="tooltip" grouped={true} />
+        <PasteMethodSetting descriptionMode="inline" grouped={true} />
+        <TypingToolSetting descriptionMode="inline" grouped={true} />
+        <ClipboardHandlingSetting descriptionMode="inline" grouped={true} />
+        <AutoSubmit descriptionMode="inline" grouped={true} />
+        <AppendTrailingSpace descriptionMode="inline" grouped={true} />
       </SettingsGroup>
 
       <SettingsGroup title={t("settings.advanced.groups.transcription")}>
-        <CustomWords descriptionMode="tooltip" grouped />
-        <WordCorrectionThreshold descriptionMode="tooltip" grouped={true} />
-        <ModelUnloadTimeoutSetting descriptionMode="tooltip" grouped={true} />
+        <CustomWords descriptionMode="inline" grouped />
+        <WordCorrectionThreshold descriptionMode="inline" grouped={true} />
+        <ModelUnloadTimeoutSetting descriptionMode="inline" grouped={true} />
         {/* A real latency/privacy trade-off, not a debugging aid: it used to
             sit in the debug-only Developer group, invisible to almost
             everyone. */}
-        <AlwaysOnMicrophone descriptionMode="tooltip" grouped={true} />
+        <AlwaysOnMicrophone descriptionMode="inline" grouped={true} />
       </SettingsGroup>
 
       <SettingsGroup title={t("settings.advanced.groups.experimental")}>
-        <ExperimentalToggle descriptionMode="tooltip" grouped={true} />
+        <ExperimentalToggle descriptionMode="inline" grouped={true} />
         {experimentalEnabled && (
           <>
             <KeyboardImplementationSelector
-              descriptionMode="tooltip"
+              descriptionMode="inline"
               grouped={true}
             />
-            <AccelerationSelector descriptionMode="tooltip" grouped={true} />
-            <LazyStreamClose descriptionMode="tooltip" grouped={true} />
+            <AccelerationSelector descriptionMode="inline" grouped={true} />
+            <LazyStreamClose descriptionMode="inline" grouped={true} />
           </>
         )}
       </SettingsGroup>
@@ -66,8 +66,8 @@ export const AdvancedSettings: React.FC = () => {
       {debugEnabled && (
         <SettingsGroup title={t("settings.advanced.groups.developer")}>
           <LogLevelSelector grouped={true} />
-          <PasteDelay descriptionMode="tooltip" grouped={true} />
-          <RecordingBuffer descriptionMode="tooltip" grouped={true} />
+          <PasteDelay descriptionMode="inline" grouped={true} />
+          <RecordingBuffer descriptionMode="inline" grouped={true} />
           <LogDirectory grouped={true} />
         </SettingsGroup>
       )}

@@ -19,7 +19,7 @@ interface LogLevelSelectorProps {
 }
 
 export const LogLevelSelector: React.FC<LogLevelSelectorProps> = ({
-  descriptionMode = "tooltip",
+  descriptionMode = "inline",
   grouped = false,
 }) => {
   const { t } = useTranslation();

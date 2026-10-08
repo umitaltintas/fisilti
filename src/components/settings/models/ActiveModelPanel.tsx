@@ -55,7 +55,7 @@ export const ActiveModelPanel: React.FC<ActiveModelPanelProps> = ({
           <p className="truncate text-sm font-semibold">
             {getTranslatedModelName(model, t)}
           </p>
-          <p className="text-xs text-text/50">
+          <p className="text-xs text-sub">
             {isCloud
               ? t("settings.models.badges.cloud")
               : t("settings.models.badges.local")}
@@ -65,20 +65,20 @@ export const ActiveModelPanel: React.FC<ActiveModelPanelProps> = ({
 
       {model.supports_language_selection && (
         <LanguageSelector
-          descriptionMode="tooltip"
+          descriptionMode="inline"
           grouped={true}
           supportedLanguages={model.supported_languages}
         />
       )}
       {model.supports_translation && (
-        <TranslateToEnglish descriptionMode="tooltip" grouped={true} />
+        <TranslateToEnglish descriptionMode="inline" grouped={true} />
       )}
 
       {/* Only the slug lives here: it identifies THIS model. The API key is
           account-level and lives in the credentials panel below. */}
       {isCustomCloud && (
         <div className="space-y-1 px-4 py-3">
-          <label className="text-xs font-medium text-text/70">
+          <label className="text-xs font-medium text-sub">
             {t("settings.models.cloud.modelLabel")}
           </label>
           <div className="flex flex-wrap items-center gap-2">

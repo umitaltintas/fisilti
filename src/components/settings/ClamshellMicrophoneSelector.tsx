@@ -12,7 +12,7 @@ interface ClamshellMicrophoneSelectorProps {
 }
 
 export const ClamshellMicrophoneSelector: React.FC<ClamshellMicrophoneSelectorProps> =
-  React.memo(({ descriptionMode = "tooltip", grouped = false }) => {
+  React.memo(({ descriptionMode = "inline", grouped = false }) => {
     const { t } = useTranslation();
     const {
       getSetting,

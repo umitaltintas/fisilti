@@ -11,7 +11,7 @@ interface ShowOverlayProps {
 }
 
 export const ShowOverlay: React.FC<ShowOverlayProps> = React.memo(
-  ({ descriptionMode = "tooltip", grouped = false }) => {
+  ({ descriptionMode = "inline", grouped = false }) => {
     const { t } = useTranslation();
     const { getSetting, updateSetting, isUpdating } = useSettings();
 

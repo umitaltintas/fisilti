@@ -20,7 +20,7 @@ export const ToggleSwitch: React.FC<ToggleSwitchProps> = ({
   isUpdating = false,
   label,
   description,
-  descriptionMode = "tooltip",
+  descriptionMode = "inline",
   grouped = false,
   tooltipPosition = "top",
 }) => {

@@ -123,7 +123,7 @@ export const MeetingSettings: React.FC = () => {
       <div
         role="tablist"
         aria-label={t("sidebar.meeting")}
-        className="flex items-center gap-1 rounded-lg border border-mid-gray/20 bg-mid-gray/5 p-1"
+        className="flex items-center gap-1 border-b border-line"
       >
         {tabs.map(({ id, label, Icon }) => {
           const selected = tab === id;
@@ -141,19 +141,16 @@ export const MeetingSettings: React.FC = () => {
               tabIndex={selected ? 0 : -1}
               onClick={() => selectTab(id)}
               onKeyDown={handleTabKeyDown}
-              className={`flex-1 flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm transition-colors cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-logo-primary ${
+              className={`-mb-px flex cursor-pointer items-center gap-1.5 border-b-2 px-2.5 pt-1 pb-2 text-[13px] font-medium transition-colors focus:outline-none focus-visible:rounded focus-visible:ring-2 focus-visible:ring-logo-primary/50 ${
                 selected
-                  ? "bg-background text-text border border-mid-gray/20 shadow-sm"
-                  : "border border-transparent text-text/60 hover:text-text"
+                  ? "border-text text-text"
+                  : "border-transparent text-sub hover:text-text"
               }`}
             >
-              <Icon width={15} height={15} aria-hidden />
+              <Icon width={14} height={14} aria-hidden className="opacity-70" />
               <span>{label}</span>
               {id === "session" && status === "running" && (
-                <span className="relative flex h-2 w-2" aria-hidden>
-                  <span className="absolute inline-flex h-full w-full rounded-full bg-red-500/70 animate-ping" />
-                  <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
-                </span>
+                <span className="rec-dot" aria-hidden />
               )}
             </button>
           );

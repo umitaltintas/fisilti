@@ -9,7 +9,7 @@ interface PasteDelayProps {
 }
 
 export const PasteDelay: React.FC<PasteDelayProps> = ({
-  descriptionMode = "tooltip",
+  descriptionMode = "inline",
   grouped = false,
 }) => {
   const { t } = useTranslation();

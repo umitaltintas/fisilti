@@ -14,7 +14,7 @@ interface AutoSubmitProps {
 type AutoSubmitOptionValue = AutoSubmitKey | "off";
 
 export const AutoSubmit: React.FC<AutoSubmitProps> = React.memo(
-  ({ descriptionMode = "tooltip", grouped = false }) => {
+  ({ descriptionMode = "inline", grouped = false }) => {
     const { t } = useTranslation();
     const osType = useOsType();
     const { getSetting, updateSetting, isUpdating } = useSettings();

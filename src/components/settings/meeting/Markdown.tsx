@@ -10,17 +10,17 @@ import remarkGfm from "remark-gfm";
 // (text/mid-gray/logo-primary) rather than relying on a prose plugin.
 const components: Components = {
   h1: ({ children }) => (
-    <h1 className="text-base font-semibold text-text mt-3 mb-1.5 first:mt-0 break-words">
+    <h1 className="font-serif text-[17px] font-semibold text-text mt-3 mb-1.5 first:mt-0 break-words">
       {children}
     </h1>
   ),
   h2: ({ children }) => (
-    <h2 className="text-sm font-semibold text-text mt-3 mb-1.5 first:mt-0 break-words">
+    <h2 className="font-serif text-[15.5px] font-semibold text-text mt-3 mb-1.5 first:mt-0 break-words">
       {children}
     </h2>
   ),
   h3: ({ children }) => (
-    <h3 className="text-sm font-medium text-text/90 mt-2.5 mb-1 first:mt-0 break-words">
+    <h3 className="font-serif text-[15px] font-semibold text-text mt-2.5 mb-1 first:mt-0 break-words">
       {children}
     </h3>
   ),
@@ -30,17 +30,17 @@ const components: Components = {
     </h4>
   ),
   p: ({ children }) => (
-    <p className="text-sm text-text/90 leading-relaxed my-1.5 break-words">
+    <p className="font-serif text-[14.5px] text-text leading-relaxed my-1.5 break-words">
       {children}
     </p>
   ),
   ul: ({ children }) => (
-    <ul className="list-disc pl-5 my-1.5 space-y-1 text-sm text-text/90 marker:text-logo-primary">
+    <ul className="list-disc pl-5 my-1.5 space-y-1 font-serif text-[14.5px] text-text marker:text-faint">
       {children}
     </ul>
   ),
   ol: ({ children }) => (
-    <ol className="list-decimal pl-5 my-1.5 space-y-1 text-sm text-text/90 marker:text-logo-primary">
+    <ol className="list-decimal pl-5 my-1.5 space-y-1 font-serif text-[14.5px] text-text marker:text-faint">
       {children}
     </ol>
   ),
@@ -69,7 +69,7 @@ const components: Components = {
   ),
   em: ({ children }) => <em className="italic">{children}</em>,
   blockquote: ({ children }) => (
-    <blockquote className="border-l-2 border-logo-primary/40 pl-3 my-2 text-sm text-text/70 italic">
+    <blockquote className="border-l-2 border-logo-primary/40 pl-3 my-2 text-sm text-sub italic">
       {children}
     </blockquote>
   ),
@@ -83,19 +83,19 @@ const components: Components = {
       {children}
     </pre>
   ),
-  hr: () => <hr className="my-3 border-mid-gray/20" />,
+  hr: () => <hr className="my-3 border-line" />,
   table: ({ children }) => (
     <div className="my-2 overflow-x-auto">
       <table className="w-full border-collapse text-sm">{children}</table>
     </div>
   ),
   th: ({ children }) => (
-    <th className="border border-mid-gray/20 bg-mid-gray/10 px-2 py-1 text-left font-medium text-text">
+    <th className="border border-line bg-mid-gray/10 px-2 py-1 text-left font-medium text-text">
       {children}
     </th>
   ),
   td: ({ children }) => (
-    <td className="border border-mid-gray/20 px-2 py-1 text-text/90 align-top">
+    <td className="border border-line px-2 py-1 text-text/90 align-top">
       {children}
     </td>
   ),

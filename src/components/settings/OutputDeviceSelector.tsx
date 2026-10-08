@@ -14,7 +14,7 @@ interface OutputDeviceSelectorProps {
 
 export const OutputDeviceSelector: React.FC<OutputDeviceSelectorProps> =
   React.memo(
-    ({ descriptionMode = "tooltip", grouped = false, disabled = false }) => {
+    ({ descriptionMode = "inline", grouped = false, disabled = false }) => {
       const { t } = useTranslation();
       const {
         getSetting,

@@ -58,7 +58,7 @@ export const NotesSaveIndicator: React.FC<{
     "inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide";
   if (state === "saving") {
     return (
-      <span className={`${base} text-text/40`} role="status">
+      <span className={`${base} text-faint`} role="status">
         <Loader2 width={10} height={10} className="animate-spin" aria-hidden />
         {t("meeting.notesSaving")}
       </span>
@@ -66,7 +66,7 @@ export const NotesSaveIndicator: React.FC<{
   }
   if (state === "saved") {
     return (
-      <span className={`${base} text-text/40`} role="status">
+      <span className={`${base} text-faint`} role="status">
         <Check width={10} height={10} aria-hidden />
         {t("meeting.notesSaved")}
       </span>
@@ -81,7 +81,7 @@ export const NotesSaveIndicator: React.FC<{
   }
   return (
     <span
-      className={`${base} text-red-400`}
+      className={`${base} text-rec`}
       role="alert"
       title={error ?? undefined}
     >
@@ -100,8 +100,12 @@ export const NotesSaveIndicator: React.FC<{
 // transcript without doubled lines.
 export const PlainTranscript: React.FC<{
   segments: TranscriptSegment[];
-}> = ({ segments }) => (
-  <div className="space-y-2">
+  /** Small secondary text, for the live transcript rail. */
+  compact?: boolean;
+}> = ({ segments, compact = false }) => (
+  <div
+    className={`${compact ? "space-y-2.5 [&_p]:text-xs [&_p]:leading-relaxed" : "space-y-2"}`}
+  >
     {segments.map((seg, i) => (
       <div key={i} className="space-y-0.5">
         {/* Only the Gemini finalize pass can attribute speech, so most
@@ -169,7 +173,7 @@ export const OnDeviceBadge: React.FC = () => {
 
   if (cloudProviders.length > 0) {
     return (
-      <span className="inline-flex items-center gap-1.5 rounded-full bg-mid-gray/15 px-2.5 py-1 text-[11px] font-medium text-text/60">
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-mid-gray/15 px-2.5 py-1 text-[11px] font-medium text-sub">
         <Cloud width={12} height={12} aria-hidden />
         {t("meeting.cloudBadge", { providers: cloudProviders.join(", ") })}
       </span>
@@ -192,9 +196,7 @@ export const SummaryLocationNote: React.FC<{
   if (!info) return null;
   if (info.location === "none") {
     return (
-      <p className="text-[11px] text-text/40">
-        {t("meeting.summaryNoProvider")}
-      </p>
+      <p className="text-[11px] text-faint">{t("meeting.summaryNoProvider")}</p>
     );
   }
   if (info.location === "local") {
@@ -218,10 +220,7 @@ export const SectionHeading: React.FC<{
   className?: string;
   id?: string;
 }> = ({ children, className = "", id }) => (
-  <h2
-    id={id}
-    className={`text-xs font-medium text-mid-gray uppercase tracking-wide ${className}`}
-  >
+  <h2 id={id} className={`text-xs font-semibold text-sub ${className}`}>
     {children}
   </h2>
 );
@@ -233,7 +232,7 @@ export const InlineError: React.FC<{
 }> = ({ children, className = "" }) => (
   <p
     role="alert"
-    className={`text-sm text-red-400 whitespace-pre-wrap break-words ${className}`}
+    className={`text-sm text-rec whitespace-pre-wrap break-words ${className}`}
   >
     {children}
   </p>
@@ -328,7 +327,7 @@ export const SummaryControls: React.FC<SummaryControlsProps> = ({
   const promptId = useId();
   return (
     <details className="group">
-      <summary className="flex items-center gap-1 cursor-pointer list-none text-xs text-text/50 hover:text-logo-primary transition-colors select-none">
+      <summary className="flex items-center gap-1 cursor-pointer list-none text-xs text-sub hover:text-logo-primary transition-colors select-none">
         <ChevronRight
           width={14}
           height={14}
@@ -364,7 +363,7 @@ export const SummaryControls: React.FC<SummaryControlsProps> = ({
             onChange={(e) => onCustomPromptChange(e.target.value)}
             placeholder={t("meeting.customPromptPlaceholder")}
             disabled={disabled}
-            className="w-full min-h-[3rem] resize-y rounded-md border border-mid-gray/20 bg-mid-gray/5 p-2 text-sm text-text/90 placeholder:text-text/40 focus:border-logo-primary focus:outline-none focus:ring-1 focus:ring-logo-primary disabled:opacity-50"
+            className="w-full min-h-[3rem] resize-y rounded-md border border-line bg-mid-gray/5 p-2 text-sm text-text/90 placeholder:text-faint focus:border-logo-primary focus:outline-none focus:ring-1 focus:ring-logo-primary disabled:opacity-50"
           />
         </div>
       </div>

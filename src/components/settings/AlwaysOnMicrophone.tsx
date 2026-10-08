@@ -9,7 +9,7 @@ interface AlwaysOnMicrophoneProps {
 }
 
 export const AlwaysOnMicrophone: React.FC<AlwaysOnMicrophoneProps> = React.memo(
-  ({ descriptionMode = "tooltip", grouped = false }) => {
+  ({ descriptionMode = "inline", grouped = false }) => {
     const { t } = useTranslation();
     const { getSetting, updateSetting, isUpdating } = useSettings();
 

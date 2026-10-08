@@ -71,7 +71,7 @@ export const MeetingPreferences: React.FC = () => {
       return <div className="h-48" />;
     }
     return (
-      <div className="flex flex-col items-center gap-3 rounded-lg border border-mid-gray/20 px-4 py-8 text-center">
+      <div className="flex flex-col items-center gap-3 rounded-lg border border-line px-4 py-8 text-center">
         <InlineError>
           {t("meeting.settingsLoadError")}
           {loadError ? ` (${loadError})` : ""}
@@ -184,7 +184,7 @@ export const MeetingPreferences: React.FC = () => {
             the window. Unbound by default; mirrors the tray quick-start. */}
         <ShortcutInput
           shortcutId="toggle_meeting"
-          descriptionMode="tooltip"
+          descriptionMode="inline"
           grouped
         />
 
@@ -216,13 +216,13 @@ export const MeetingPreferences: React.FC = () => {
         <SettingContainer
           title={t("meeting.exportDir.title")}
           description={t("meeting.exportDir.description")}
-          descriptionMode="tooltip"
+          descriptionMode="inline"
           grouped
         >
           <div className="flex items-center gap-2 min-w-0">
             {exportDir && (
               <span
-                className="max-w-56 truncate text-xs font-mono text-text/60"
+                className="max-w-56 truncate text-xs font-mono text-sub"
                 title={exportDir}
                 dir="rtl"
               >
@@ -302,7 +302,7 @@ export const MeetingPreferences: React.FC = () => {
           <SettingContainer
             title={t("meeting.liveModeLabel")}
             description={t(`meeting.liveModeNote.${liveMode}`)}
-            descriptionMode="tooltip"
+            descriptionMode="inline"
             grouped
           >
             <Dropdown
@@ -330,7 +330,7 @@ export const MeetingPreferences: React.FC = () => {
             <SettingContainer
               title={t("meeting.liveTranslateTargetLabel")}
               description={t("meeting.liveTranslateTargetDescription")}
-              descriptionMode="tooltip"
+              descriptionMode="inline"
               grouped
             >
               <Dropdown
@@ -384,7 +384,7 @@ export const MeetingPreferences: React.FC = () => {
           <SettingContainer
             title={t("meeting.silenceTimeoutLabel")}
             description={t("meeting.silenceTimeoutDescription")}
-            descriptionMode="tooltip"
+            descriptionMode="inline"
             grouped
             disabled={!autoEnd}
           >
@@ -400,7 +400,7 @@ export const MeetingPreferences: React.FC = () => {
           <SettingContainer
             title={t("meeting.autoEndGraceLabel")}
             description={t("meeting.autoEndGraceDescription")}
-            descriptionMode="tooltip"
+            descriptionMode="inline"
             grouped
             disabled={!autoEnd}
           >

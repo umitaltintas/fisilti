@@ -12,7 +12,7 @@ interface LogDirectoryProps {
 }
 
 export const LogDirectory: React.FC<LogDirectoryProps> = ({
-  descriptionMode = "tooltip",
+  descriptionMode = "inline",
   grouped = false,
 }) => {
   const { t } = useTranslation();
@@ -65,7 +65,7 @@ export const LogDirectory: React.FC<LogDirectoryProps> = ({
           <div className="h-8 bg-mid-gray/10 rounded" />
         </div>
       ) : error ? (
-        <div role="alert" className="text-xs text-red-400 break-words">
+        <div role="alert" className="text-xs text-rec break-words">
           {t("errors.loadDirectory", { error })}
         </div>
       ) : (

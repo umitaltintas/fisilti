@@ -170,7 +170,7 @@ export const ImportRecording: React.FC<ImportRecordingProps> = ({
     const pct =
       progress.progress != null ? Math.round(progress.progress * 100) : null;
     return (
-      <div className="bg-background border border-mid-gray/20 rounded-lg px-4 py-3 space-y-2">
+      <div className="card px-4 py-3 space-y-2">
         <div className="flex items-center gap-3">
           <Loader2
             width={16}
@@ -181,7 +181,7 @@ export const ImportRecording: React.FC<ImportRecordingProps> = ({
             <p className="text-sm font-medium text-text truncate">
               {progress.file_name}
             </p>
-            <p className="text-xs text-text/50">
+            <p className="text-xs text-sub">
               {t(`meeting.import.stage.${progress.stage}`)}
               {pct != null && ` · ${pct}%`}
             </p>
@@ -217,12 +217,12 @@ export const ImportRecording: React.FC<ImportRecordingProps> = ({
           : "border-mid-gray/30 bg-mid-gray/5"
       }`}
     >
-      <FileAudio width={18} height={18} className="shrink-0 text-text/50" />
+      <FileAudio width={18} height={18} className="shrink-0 text-sub" />
       <div className="flex-1 min-w-0">
         <p className="text-sm text-text">
           {dragging ? t("meeting.import.dropHere") : t("meeting.import.title")}
         </p>
-        <p className="text-xs text-text/50">
+        <p className="text-xs text-sub">
           {disabled
             ? t("meeting.import.busyMeeting")
             : t("meeting.import.description")}

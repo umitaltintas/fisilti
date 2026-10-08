@@ -11,7 +11,7 @@ interface RecordingRetentionPeriodProps {
 }
 
 export const RecordingRetentionPeriodSelector: React.FC<RecordingRetentionPeriodProps> =
-  React.memo(({ descriptionMode = "tooltip", grouped = false }) => {
+  React.memo(({ descriptionMode = "inline", grouped = false }) => {
     const { t } = useTranslation();
     const { getSetting, updateSetting, isUpdating } = useSettings();
 

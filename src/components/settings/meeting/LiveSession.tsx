@@ -115,13 +115,14 @@ export const LiveSession: React.FC<LiveSessionProps> = (props) => {
       )}
 
       {isRunning || finalizing ? (
-        <div className="space-y-4">
-          {/* Status bar: everything needed mid-meeting, nothing else. */}
-          <div className="bg-background border border-mid-gray/20 rounded-lg px-4 py-3 flex items-center gap-4">
-            <div
-              className="flex items-center gap-2 text-sm text-text/80 shrink-0"
-              role="status"
-            >
+        <div className="relative">
+          <SessionHeader />
+          {errorLine}
+          <Workspace selectedIsCloud={props.selectedIsCloud} />
+
+          {/* Recording controls float over the page, out of the notes' way. */}
+          <div className="sticky bottom-3 z-10 mx-auto mt-4 flex w-fit items-center gap-3 rounded-full bg-surface py-1.5 ps-4 pe-1.5 shadow-[0_0_0_1px_var(--color-line),0_8px_24px_-6px_rgb(0_0_0/0.18)]">
+            <div className="flex items-center gap-2" role="status">
               {finalizing ? (
                 <>
                   <Loader2
@@ -130,39 +131,35 @@ export const LiveSession: React.FC<LiveSessionProps> = (props) => {
                     className="animate-spin text-logo-primary"
                     aria-hidden
                   />
-                  <span>{t("meeting.finalizing")}</span>
+                  <span className="text-[13px] text-sub">
+                    {t("meeting.finalizing")}
+                  </span>
                 </>
               ) : (
                 <>
-                  <span className="relative flex h-2.5 w-2.5" aria-hidden>
-                    <span className="absolute inline-flex h-full w-full rounded-full bg-red-500/70 animate-ping" />
-                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
-                  </span>
-                  <span>{t("meeting.recording")}</span>
-                  <span className="tabular-nums font-medium">
+                  <span className="rec-dot" aria-hidden />
+                  <span className="sr-only">{t("meeting.recording")}</span>
+                  <span className="text-[13px] font-semibold tabular-nums">
                     {formatElapsed(elapsed)}
                   </span>
                 </>
               )}
             </div>
-            <div className="flex-1 min-w-0">
-              <MeetingSignal active={isRunning} variant="compact" />
-            </div>
-            <Button
+            {isRunning && (
+              <div className="w-20">
+                <MeetingSignal active={isRunning} variant="compact" />
+              </div>
+            )}
+            <button
+              type="button"
               onClick={() => void session.stop()}
-              variant="danger"
-              size="md"
               disabled={session.busy || finalizing}
-              className="flex items-center gap-2 shrink-0"
+              className="flex cursor-pointer items-center gap-1.5 rounded-full bg-text px-3.5 py-1.5 text-[13px] font-medium text-background transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-logo-primary/50 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <Square width={16} height={16} aria-hidden />
+              <Square width={11} height={11} fill="currentColor" aria-hidden />
               <span>{t("meeting.stopMeeting")}</span>
-            </Button>
+            </button>
           </div>
-
-          {errorLine}
-
-          <Workspace selectedIsCloud={props.selectedIsCloud} />
         </div>
       ) : hasSession ? (
         <div className="space-y-4">
@@ -185,6 +182,7 @@ export const LiveSession: React.FC<LiveSessionProps> = (props) => {
 
           {errorLine}
 
+          <SessionHeader />
           <Workspace selectedIsCloud={props.selectedIsCloud} />
           <SummaryPanel
             templates={props.templates}
@@ -194,7 +192,7 @@ export const LiveSession: React.FC<LiveSessionProps> = (props) => {
       ) : (
         <div className="space-y-6">
           {/* Idle hero: one clear action. */}
-          <div className="bg-background border border-mid-gray/20 rounded-lg px-6 py-10 flex flex-col items-center text-center gap-4">
+          <div className="card px-6 py-10 flex flex-col items-center text-center gap-4">
             <div className="flex h-14 w-14 items-center justify-center rounded-full bg-logo-primary/10">
               <Mic
                 width={26}
@@ -207,7 +205,7 @@ export const LiveSession: React.FC<LiveSessionProps> = (props) => {
               <h3 className="text-base font-medium text-text">
                 {t("meeting.idleTitle")}
               </h3>
-              <p className="text-sm text-text/50 max-w-sm">
+              <p className="text-sm text-sub max-w-sm">
                 {t("meeting.idleDescription")}
               </p>
             </div>
@@ -243,7 +241,7 @@ export const LiveSession: React.FC<LiveSessionProps> = (props) => {
                 <button
                   type="button"
                   onClick={props.onViewAllMeetings}
-                  className="flex items-center gap-0.5 rounded text-xs text-text/50 hover:text-logo-primary transition-colors cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-logo-primary"
+                  className="flex items-center gap-0.5 rounded text-xs text-sub hover:text-logo-primary transition-colors cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-logo-primary"
                 >
                   <span>{t("meeting.viewAllMeetings")}</span>
                   <ChevronRight
@@ -254,7 +252,7 @@ export const LiveSession: React.FC<LiveSessionProps> = (props) => {
                   />
                 </button>
               </div>
-              <div className="bg-background border border-mid-gray/20 rounded-lg divide-y divide-mid-gray/20">
+              <div className="card divide-y divide-line">
                 {session.meetings.slice(0, RECENT_MEETINGS_COUNT).map((m) => (
                   <button
                     type="button"
@@ -275,7 +273,7 @@ export const LiveSession: React.FC<LiveSessionProps> = (props) => {
                         />
                       )}
                     </div>
-                    <div className="mt-0.5 flex items-center gap-2 text-xs text-text/50">
+                    <div className="mt-0.5 flex items-center gap-2 text-xs text-sub">
                       <span>
                         {formatMeetingDate(m.started_at, i18n.language)}
                       </span>
@@ -334,10 +332,10 @@ const Workspace: React.FC<{ selectedIsCloud: boolean }> = ({
   }, [transcript, segments]);
 
   return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-      {/* My notes */}
-      <div className="space-y-2 min-w-0">
-        <div className="px-1 flex items-center justify-between gap-2">
+    <div className="grid grid-cols-1 gap-6 md:grid-cols-[minmax(0,1fr)_14rem]">
+      {/* My notes: the page itself, not a boxed field. */}
+      <div className="min-w-0">
+        <div className="flex items-center justify-between gap-2 pb-1">
           <SectionHeading id={`${notesId}-heading`}>
             {t("meeting.myNotes")}
           </SectionHeading>
@@ -350,30 +348,28 @@ const Workspace: React.FC<{ selectedIsCloud: boolean }> = ({
             />
           </div>
         </div>
-        <div className="bg-background border border-mid-gray/20 rounded-lg p-4 focus-within:border-logo-primary/60 transition-colors">
-          <textarea
-            id={notesId}
-            aria-labelledby={`${notesId}-heading`}
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder={t("meeting.myNotesPlaceholder")}
-            className="w-full h-56 resize-none bg-transparent text-sm text-text/90 placeholder:text-text/40 focus:outline-none"
-          />
-        </div>
+        <textarea
+          id={notesId}
+          aria-labelledby={`${notesId}-heading`}
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder={t("meeting.myNotesPlaceholder")}
+          className="min-h-[18rem] w-full resize-none bg-transparent font-serif text-[15.5px] leading-7 text-text placeholder:text-faint focus:outline-none"
+        />
         {notesSave === "error" && notesError && (
-          <InlineError className="px-1 text-xs">
+          <InlineError className="text-xs">
             {t("meeting.errors.notesSaveFailed", { error: notesError })}
           </InlineError>
         )}
       </div>
 
-      {/* Live transcript */}
-      <div className="space-y-2 min-w-0">
-        <div className="px-1 flex items-center justify-between">
+      {/* Live transcript: a quiet rail beside the notes. */}
+      <div className="min-w-0 md:border-s md:border-line md:ps-4">
+        <div className="flex items-center justify-between pb-2">
           <SectionHeading>{t("meeting.transcript")}</SectionHeading>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             {isRunning && (
-              <span className="text-[10px] font-medium uppercase tracking-wide text-text/40">
+              <span className="text-[11px] text-faint">
                 {t("meeting.livePreview")}
               </span>
             )}
@@ -384,48 +380,59 @@ const Workspace: React.FC<{ selectedIsCloud: boolean }> = ({
             />
           </div>
         </div>
-        <div className="relative">
-          <div
-            ref={transcriptRef}
-            // A scrollable region must be reachable by keyboard.
-            // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
-            tabIndex={0}
-            aria-label={t("meeting.transcript")}
-            aria-live={isRunning ? "polite" : undefined}
-            className="bg-background border border-mid-gray/20 rounded-lg p-4 h-[15.5rem] overflow-y-auto focus:outline-none focus-visible:border-logo-primary/60"
-          >
-            {segments.length > 0 ? (
-              <PlainTranscript segments={segments} />
-            ) : hasTranscript ? (
-              <p className="text-sm text-text/90 whitespace-pre-wrap break-words select-text">
-                {transcript}
-              </p>
-            ) : (
-              <p className="text-sm text-text/40">
-                {isRunning
-                  ? selectedIsCloud
-                    ? t("meeting.cloudLivePreviewOff")
-                    : t("meeting.listening")
-                  : finalizing
-                    ? t("meeting.finalizing")
-                    : t("meeting.transcriptEmpty")}
-              </p>
-            )}
-          </div>
-          {finalizing && (
-            <div className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-2 rounded-b-lg border-t border-mid-gray/20 bg-background/95 py-2 text-sm text-text/70 backdrop-blur-sm">
-              <Loader2
-                width={15}
-                height={15}
-                className="animate-spin"
-                aria-hidden
-              />
-              <span>{t("meeting.finalizing")}</span>
-            </div>
+        <div
+          ref={transcriptRef}
+          // A scrollable region must be reachable by keyboard.
+          // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
+          tabIndex={0}
+          aria-label={t("meeting.transcript")}
+          aria-live={isRunning ? "polite" : undefined}
+          className="max-h-[22rem] overflow-y-auto rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-logo-primary/40"
+        >
+          {segments.length > 0 ? (
+            <PlainTranscript segments={segments} compact />
+          ) : hasTranscript ? (
+            <p className="text-xs leading-relaxed whitespace-pre-wrap break-words text-sub select-text">
+              {transcript}
+            </p>
+          ) : (
+            <p className="text-xs text-faint">
+              {isRunning
+                ? selectedIsCloud
+                  ? t("meeting.cloudLivePreviewOff")
+                  : t("meeting.listening")
+                : finalizing
+                  ? t("meeting.finalizing")
+                  : t("meeting.transcriptEmpty")}
+            </p>
           )}
         </div>
       </div>
     </div>
+  );
+};
+
+/** Date and title of the current (or just-finished) meeting, set like the top
+ * of a notebook page. */
+const SessionHeader: React.FC = () => {
+  const { t, i18n } = useTranslation();
+  const { startedAtMs, sessionTitle } = useMeetingStore(
+    useShallow((s) => ({
+      startedAtMs: s.startedAtMs,
+      sessionTitle: s.sessionTitle,
+    })),
+  );
+  return (
+    <header className="pb-4">
+      {startedAtMs != null && (
+        <p className="text-xs text-faint">
+          {formatMeetingDate(startedAtMs, i18n.language)}
+        </p>
+      )}
+      <h2 className="mt-1 font-serif text-[26px] leading-tight font-semibold tracking-tight">
+        {sessionTitle?.trim() || t("meeting.untitledMeeting")}
+      </h2>
+    </header>
   );
 };
 
@@ -479,7 +486,7 @@ const SummaryPanel: React.FC<{
           <CopyButton text={summary} label={t("meeting.copySummary")} />
         )}
       </div>
-      <div className="bg-background border border-mid-gray/20 rounded-lg p-4 space-y-3">
+      <div className="card p-4 space-y-3">
         <div className="flex flex-wrap items-center gap-3">
           <Button
             onClick={handleSummarize}
@@ -514,7 +521,7 @@ const SummaryPanel: React.FC<{
           <SummaryLocationNote info={providerInfo} />
         </div>
 
-        <p className="text-[11px] text-text/40">
+        <p className="text-[11px] text-faint">
           {t("meeting.generateSummaryHint")}
         </p>
 
@@ -619,7 +626,7 @@ const InterruptedBanner: React.FC<{
                   ? t("meeting.recoverTitleUnfinished")
                   : t("meeting.recoverTitleInterrupted")}
               </p>
-              <p className="flex flex-wrap items-center gap-x-2 text-xs text-text/50">
+              <p className="flex flex-wrap items-center gap-x-2 text-xs text-sub">
                 <span className="truncate">
                   {m.title.trim() || t("meeting.untitledMeeting")}
                 </span>
@@ -634,7 +641,7 @@ const InterruptedBanner: React.FC<{
                   </>
                 )}
               </p>
-              <p className="text-xs text-text/60">
+              <p className="text-xs text-sub">
                 {m.has_buffers
                   ? t("meeting.recoverDescriptionWithAudio")
                   : t("meeting.recoverDescriptionPartial")}

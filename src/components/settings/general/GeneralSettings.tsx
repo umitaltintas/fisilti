@@ -41,20 +41,20 @@ export const GeneralSettings: React.FC = () => {
             disabled={pushToTalk}
           />
         )}
-        <PushToTalk descriptionMode="tooltip" grouped={true} />
-        <ShowOverlay descriptionMode="tooltip" grouped={true} />
+        <PushToTalk descriptionMode="inline" grouped={true} />
+        <ShowOverlay descriptionMode="inline" grouped={true} />
       </SettingsGroup>
 
       <SettingsGroup title={t("settings.sound.title")}>
-        <MicrophoneSelector descriptionMode="tooltip" grouped={true} />
+        <MicrophoneSelector descriptionMode="inline" grouped={true} />
         {/* Which microphone to use with the lid closed. Laptops only (the
             component renders nothing elsewhere); it lives next to the main
             microphone choice it overrides. */}
-        <ClamshellMicrophoneSelector descriptionMode="tooltip" grouped={true} />
-        <MuteWhileRecording descriptionMode="tooltip" grouped={true} />
-        <AudioFeedback descriptionMode="tooltip" grouped={true} />
+        <ClamshellMicrophoneSelector descriptionMode="inline" grouped={true} />
+        <MuteWhileRecording descriptionMode="inline" grouped={true} />
+        <AudioFeedback descriptionMode="inline" grouped={true} />
         <OutputDeviceSelector
-          descriptionMode="tooltip"
+          descriptionMode="inline"
           grouped={true}
           disabled={!audioFeedbackEnabled}
         />
@@ -66,11 +66,11 @@ export const GeneralSettings: React.FC = () => {
       </SettingsGroup>
 
       <SettingsGroup title={t("settings.general.groups.app")}>
-        <AppLanguageSelector descriptionMode="tooltip" grouped={true} />
-        <AutostartToggle descriptionMode="tooltip" grouped={true} />
-        <StartHidden descriptionMode="tooltip" grouped={true} />
-        <ShowTrayIcon descriptionMode="tooltip" grouped={true} />
-        <UpdateChecksToggle descriptionMode="tooltip" grouped={true} />
+        <AppLanguageSelector descriptionMode="inline" grouped={true} />
+        <AutostartToggle descriptionMode="inline" grouped={true} />
+        <StartHidden descriptionMode="inline" grouped={true} />
+        <ShowTrayIcon descriptionMode="inline" grouped={true} />
+        <UpdateChecksToggle descriptionMode="inline" grouped={true} />
       </SettingsGroup>
     </div>
   );

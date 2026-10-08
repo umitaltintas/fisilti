@@ -78,14 +78,14 @@ export const MeetingModelPanel: React.FC<MeetingModelPanelProps> = ({
         <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-logo-primary/15 text-logo-primary">
           <Radio className="h-4 w-4" />
         </div>
-        <p className="text-xs text-text/60">
+        <p className="text-xs text-sub">
           {t("settings.models.meetingModel.description")}
         </p>
       </div>
       <SettingContainer
         title={t("settings.models.meetingModel.label")}
         description={t("settings.models.meetingModel.hint")}
-        descriptionMode="tooltip"
+        descriptionMode="inline"
         grouped
       >
         <Dropdown

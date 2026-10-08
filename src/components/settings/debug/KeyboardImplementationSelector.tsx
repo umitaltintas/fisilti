@@ -19,7 +19,7 @@ interface KeyboardImplementationSelectorProps {
 
 export const KeyboardImplementationSelector: React.FC<
   KeyboardImplementationSelectorProps
-> = ({ descriptionMode = "tooltip", grouped = false }) => {
+> = ({ descriptionMode = "inline", grouped = false }) => {
   const { t } = useTranslation();
   const { getSetting, isUpdating, refreshSettings } = useSettings();
   const currentImplementation =

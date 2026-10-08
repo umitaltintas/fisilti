@@ -206,7 +206,7 @@ export const MeetingSignal: React.FC<MeetingSignalProps> = ({
       <h3 className="text-[11px] font-medium text-mid-gray uppercase tracking-wide">
         {t("meeting.signal")}
       </h3>
-      <div className="rounded-md border border-mid-gray/20 bg-background/60 p-3 space-y-3">
+      <div className="rounded-md border border-line bg-background/60 p-3 space-y-3">
         <canvas
           ref={canvasRef}
           className="block w-full h-16 rounded-sm"

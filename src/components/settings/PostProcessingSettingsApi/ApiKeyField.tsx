@@ -89,7 +89,7 @@ export const ApiKeyField: React.FC<ApiKeyFieldProps> = React.memo(
         >
           {state === "saving" && (
             <Loader2
-              className="h-3.5 w-3.5 animate-spin text-text/50"
+              className="h-3.5 w-3.5 animate-spin text-sub"
               aria-label={t("settings.apiKey.saving")}
             />
           )}
@@ -101,7 +101,7 @@ export const ApiKeyField: React.FC<ApiKeyFieldProps> = React.memo(
           )}
           {state === "failed" && (
             <AlertCircle
-              className="h-3.5 w-3.5 text-red-400"
+              className="h-3.5 w-3.5 text-rec"
               aria-label={t("settings.apiKey.failed")}
             />
           )}

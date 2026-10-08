@@ -87,9 +87,7 @@ function groupByDay(
 }
 
 const EmptyCard: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <div className="bg-background border border-mid-gray/20 rounded-lg px-4 py-8 text-center text-text/60 text-sm">
-    {children}
-  </div>
+  <div className="card px-4 py-8 text-center text-sub text-sm">{children}</div>
 );
 
 // The "History" tab: search + past meetings grouped by day.
@@ -155,7 +153,7 @@ export const MeetingHistory: React.FC<MeetingHistoryProps> = ({
     );
   } else if (meetingsState === "error") {
     content = (
-      <div className="bg-background border border-mid-gray/20 rounded-lg px-4 py-6 flex flex-col items-center gap-3 text-center">
+      <div className="card px-4 py-6 flex flex-col items-center gap-3 text-center">
         <InlineError>
           {t("meeting.pastMeetingsError")}
           {meetingsError ? ` (${meetingsError})` : ""}
@@ -181,7 +179,7 @@ export const MeetingHistory: React.FC<MeetingHistoryProps> = ({
     content = groups.map((group) => (
       <section key={group.key} className="space-y-2">
         <SectionHeading className="px-1">{group.label}</SectionHeading>
-        <ul className="bg-background border border-mid-gray/20 rounded-lg divide-y divide-mid-gray/20">
+        <ul className="card divide-y divide-line">
           {group.items.map((m) => (
             <PastMeetingRow
               key={m.id}
@@ -204,7 +202,7 @@ export const MeetingHistory: React.FC<MeetingHistoryProps> = ({
         <Search
           width={15}
           height={15}
-          className="absolute start-3 top-1/2 -translate-y-1/2 text-text/40 pointer-events-none"
+          className="absolute start-3 top-1/2 -translate-y-1/2 text-faint pointer-events-none"
           aria-hidden
         />
         <input
@@ -213,7 +211,7 @@ export const MeetingHistory: React.FC<MeetingHistoryProps> = ({
           onChange={(e) => setQuery(e.target.value)}
           placeholder={t("meeting.searchPlaceholder")}
           aria-label={t("meeting.search")}
-          className="w-full rounded-md border border-mid-gray/20 bg-mid-gray/5 py-2 ps-9 pe-8 text-sm text-text placeholder:text-text/40 focus:border-logo-primary focus:outline-none focus:ring-1 focus:ring-logo-primary [&::-webkit-search-cancel-button]:hidden"
+          className="w-full rounded-md border border-line bg-mid-gray/5 py-2 ps-9 pe-8 text-sm text-text placeholder:text-faint focus:border-logo-primary focus:outline-none focus:ring-1 focus:ring-logo-primary [&::-webkit-search-cancel-button]:hidden"
         />
         {query.length > 0 && (
           <IconButton
@@ -276,11 +274,8 @@ const PastMeetingRow: React.FC<PastMeetingRowProps> = ({
             />
           )}
           {live ? (
-            <span className="shrink-0 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide bg-red-500/15 text-red-400">
-              <span
-                className="h-1.5 w-1.5 rounded-full bg-red-500"
-                aria-hidden
-              />
+            <span className="shrink-0 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide bg-rec/15 text-rec">
+              <span className="h-1.5 w-1.5 rounded-full bg-rec" aria-hidden />
               {t("meeting.recording")}
             </span>
           ) : (
@@ -291,7 +286,7 @@ const PastMeetingRow: React.FC<PastMeetingRowProps> = ({
             )
           )}
         </div>
-        <div className="mt-0.5 flex items-center gap-2 text-xs text-text/50">
+        <div className="mt-0.5 flex items-center gap-2 text-xs text-sub">
           <span className="tabular-nums">
             {formatMeetingTime(meeting.started_at, locale)}
           </span>
@@ -301,7 +296,7 @@ const PastMeetingRow: React.FC<PastMeetingRowProps> = ({
           </span>
         </div>
         {meeting.transcript_preview.trim().length > 0 && (
-          <p className="mt-1 text-xs text-text/60 line-clamp-2 break-words">
+          <p className="mt-1 text-xs text-sub line-clamp-2 break-words">
             {meeting.transcript_preview}
           </p>
         )}

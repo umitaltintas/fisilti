@@ -25,7 +25,7 @@ interface HandyKeysEvent {
 }
 
 export const HandyKeysShortcutInput: React.FC<HandyKeysShortcutInputProps> = ({
-  descriptionMode = "tooltip",
+  descriptionMode = "inline",
   grouped = false,
   shortcutId,
   disabled = false,

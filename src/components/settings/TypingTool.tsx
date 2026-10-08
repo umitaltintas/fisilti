@@ -21,7 +21,7 @@ const allToolLabels: Record<string, string> = {
 };
 
 export const TypingToolSetting: React.FC<TypingToolProps> = React.memo(
-  ({ descriptionMode = "tooltip", grouped = false }) => {
+  ({ descriptionMode = "inline", grouped = false }) => {
     const { t } = useTranslation();
     const { getSetting, updateSetting, isUpdating } = useSettings();
     const osType = useOsType();

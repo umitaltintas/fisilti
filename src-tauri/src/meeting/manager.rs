@@ -620,20 +620,18 @@ impl MeetingManager {
         // re-run once the cause is fixed.
         if transcript.trim().is_empty() {
             let failure = session.finalize_error.lock().unwrap().clone();
-            let spent_tokens = !session.usage.lock().unwrap().is_empty();
             let captured_samples = session
                 .buffers()
                 .map(|b| super::buffers::sample_count(&b.mixed))
                 .unwrap_or(0);
             let voiced = session.voiced.load(Ordering::Relaxed);
-            match empty_session_outcome(failure.as_deref(), captured_samples, spent_tokens, voiced)
-            {
+            match empty_session_outcome(failure.as_deref(), captured_samples, voiced) {
                 EmptySessionOutcome::PreserveForRecovery => {
                     log::warn!(
                         "meeting: no transcript from a session with {} samples of audio; \
                          keeping it for recovery (reason: {})",
                         captured_samples,
-                        failure.as_deref().unwrap_or("no text despite speech")
+                        failure.as_deref().unwrap_or("no text was produced")
                     );
                     self.preserve_failed_session(session);
                     return;
@@ -1173,23 +1171,28 @@ enum EmptySessionOutcome {
     PreserveForRecovery,
 }
 
+/// Captured audio (16 kHz mixed track) past which an empty-transcript session
+/// is always kept: 20 seconds. Shorter ones are accidental starts.
+const KEEP_AUDIO_MIN_SAMPLES: u64 = 16_000 * 20;
+
 /// Decide the fate of an empty-transcript session.
 ///
-/// Nothing captured → nothing to preserve. A reported transcription failure
-/// → preserve. Tokens spent with no transcript is an anomaly worth keeping
-/// only when the VADs actually heard speech: a silent session on a cloud model
-/// (Gemini billed for listening to nothing) used to be kept as a "failed"
-/// meeting forever.
+/// An empty transcript does not prove nothing was said: a quiet microphone,
+/// a VAD that missed speech or a cloud model that returned nothing all look
+/// the same here, and deleting the buffers makes that unrecoverable. So any
+/// session with real audio — a reported failure, detected speech, or simply
+/// more than [`KEEP_AUDIO_MIN_SAMPLES`] — is kept for the recovery flow, where
+/// the user can re-transcribe it or discard it themselves. Only a short,
+/// silent, error-free session (an accidental start) is dropped.
 fn empty_session_outcome(
     failure: Option<&str>,
     captured_samples: u64,
-    spent_tokens: bool,
     voiced: bool,
 ) -> EmptySessionOutcome {
     if captured_samples == 0 {
         return EmptySessionOutcome::Discard;
     }
-    if failure.is_some() || (spent_tokens && voiced) {
+    if failure.is_some() || voiced || captured_samples >= KEEP_AUDIO_MIN_SAMPLES {
         return EmptySessionOutcome::PreserveForRecovery;
     }
     EmptySessionOutcome::Discard
@@ -1260,48 +1263,35 @@ mod tests {
         // A meeting whose every transcription call failed (e.g. no API
         // balance) used to be deleted outright, throwing away its audio.
         assert_eq!(
-            empty_session_outcome(Some("402 Payment Required"), 5_968_320, false, false),
+            empty_session_outcome(Some("402 Payment Required"), 5_968_320, false),
             EmptySessionOutcome::PreserveForRecovery
         );
     }
 
     #[test]
-    fn empty_session_without_audio_or_failure_is_discarded() {
+    fn a_long_session_with_no_transcript_keeps_its_audio() {
+        // A 3-minute meeting on a cloud model came back with no text and no
+        // detected speech, and was deleted with its audio. Length alone is
+        // reason enough to keep it.
         assert_eq!(
-            empty_session_outcome(None, 5_968_320, false, true),
-            EmptySessionOutcome::Discard
-        );
-        // A failure with no captured audio: a retry would have nothing to read.
-        assert_eq!(
-            empty_session_outcome(Some("model unavailable"), 0, false, true),
-            EmptySessionOutcome::Discard
-        );
-        assert_eq!(
-            empty_session_outcome(None, 0, false, false),
-            EmptySessionOutcome::Discard
-        );
-    }
-
-    #[test]
-    fn a_session_that_spent_tokens_on_real_speech_is_never_discarded() {
-        // Live translation billed two minutes of speech, produced no stored
-        // segments, and the meeting was deleted — audio and all.
-        assert_eq!(
-            empty_session_outcome(None, 5_968_320, true, true),
+            empty_session_outcome(None, 16_000 * 180, false),
             EmptySessionOutcome::PreserveForRecovery
         );
         assert_eq!(
-            empty_session_outcome(None, 0, true, true),
-            EmptySessionOutcome::Discard
+            empty_session_outcome(None, 16_000 * 5, true),
+            EmptySessionOutcome::PreserveForRecovery
         );
     }
 
     #[test]
-    fn a_silent_cloud_session_is_not_kept_as_a_failure() {
-        // Gemini billed for listening to silence: no speech, no error — there
-        // is nothing a retry could recover.
+    fn only_a_short_silent_session_is_discarded() {
         assert_eq!(
-            empty_session_outcome(None, 5_968_320, true, false),
+            empty_session_outcome(None, 16_000 * 5, false),
+            EmptySessionOutcome::Discard
+        );
+        // Nothing captured: a retry would have nothing to read.
+        assert_eq!(
+            empty_session_outcome(Some("model unavailable"), 0, true),
             EmptySessionOutcome::Discard
         );
     }

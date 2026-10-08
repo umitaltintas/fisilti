@@ -603,17 +603,6 @@ fn export_bindings(builder: &Builder<tauri::Wry>) {
         .expect("Failed to export typescript bindings");
 }
 
-#[cfg(test)]
-mod bindings_tests {
-    /// Regenerates `src/bindings.ts` without launching the app:
-    /// `cargo test --lib export_typescript_bindings -- --ignored`.
-    #[test]
-    #[ignore = "writes src/bindings.ts; run explicitly"]
-    fn export_typescript_bindings() {
-        super::export_bindings(&super::specta_builder());
-    }
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run(cli_args: CliArgs) {
     // Detect portable mode before anything else
@@ -802,4 +791,15 @@ pub fn run(cli_args: CliArgs) {
             }
             let _ = (app, event); // suppress unused warnings on non-macOS
         });
+}
+
+#[cfg(test)]
+mod bindings_tests {
+    /// Regenerates `src/bindings.ts` without launching the app:
+    /// `cargo test --lib export_typescript_bindings -- --ignored`.
+    #[test]
+    #[ignore = "writes src/bindings.ts; run explicitly"]
+    fn export_typescript_bindings() {
+        super::export_bindings(&super::specta_builder());
+    }
 }

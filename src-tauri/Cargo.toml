@@ -1,6 +1,6 @@
 [package]
 name = "handy"
-version = "0.1.0"
+version = "0.2.0"
 description = "Fısıltı — local dictation & AI meeting notes"
 authors = ["Ümit Altıntaş", "cjpais"]
 edition = "2021"

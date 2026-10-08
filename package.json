@@ -1,7 +1,7 @@
 {
   "name": "fisilti",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Fisilti \u2014 private, local-first dictation & AI meeting notes for macOS (based on Handy)",
   "type": "module",
   "scripts": {

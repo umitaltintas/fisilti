@@ -50,9 +50,9 @@ const AppToaster: React.FC = () => (
       unstyled: true,
       classNames: {
         toast:
-          "bg-background border border-mid-gray/20 rounded-lg shadow-lg px-4 py-3 flex items-center gap-3 text-sm",
-        title: "font-medium",
-        description: "text-mid-gray",
+          "bg-surface text-text rounded-[10px] shadow-[0_0_0_1px_var(--color-line),0_10px_30px_-8px_rgb(0_0_0/0.25)] px-3.5 py-2.5 flex items-center gap-3 text-[13px] w-[300px]",
+        title: "font-semibold",
+        description: "text-sub text-xs",
       },
     }}
   />

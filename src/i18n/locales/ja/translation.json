@@ -288,6 +288,13 @@
       "groups": {
         "recording": "録音",
         "app": "アプリ"
+      },
+      "appearance": {
+        "title": "外観",
+        "description": "macOS に合わせるか、常にライトまたはダークを使います。",
+        "system": "システム",
+        "light": "ライト",
+        "dark": "ダーク"
       }
     },
     "sound": {

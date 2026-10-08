@@ -223,6 +223,13 @@
       "groups": {
         "recording": "錄音",
         "app": "應用程式"
+      },
+      "appearance": {
+        "title": "外觀",
+        "description": "跟隨 macOS，或一律使用淺色或深色主題。",
+        "system": "跟隨系統",
+        "light": "淺色",
+        "dark": "深色"
       }
     },
     "models": {

@@ -223,6 +223,13 @@
       "groups": {
         "recording": "Kayıt",
         "app": "Uygulama"
+      },
+      "appearance": {
+        "title": "Görünüm",
+        "description": "macOS'u takip et ya da her zaman açık veya koyu tema kullan.",
+        "system": "Sistem",
+        "light": "Açık",
+        "dark": "Koyu"
       }
     },
     "models": {

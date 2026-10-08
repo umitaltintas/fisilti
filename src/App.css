@@ -71,24 +71,50 @@
   text-align: center;
 }
 
+/* Dark palette: warm charcoal, the same paper feel as the light theme.
+ * Follows the system unless the user picked a theme (data-theme on <html>). */
 @media (prefers-color-scheme: dark) {
-  :root {
-    /* Colors - Dark Theme */
-    --color-text: #f2f0ec;
-    --color-background: #1b1a1f;
-    --color-surface: #24232a;
-    --color-sidebar: #17161b;
-    --color-line: #302e36;
-    --color-chip: #2d2b33;
-    --color-sub: #a29ea8;
-    --color-faint: #77737d;
-    --color-mid-gray: #8f8a96;
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --color-text: #f1ede6;
+    --color-background: #1c1a17;
+    --color-surface: #272420;
+    --color-sidebar: #151311;
+    --color-line: #35312b;
+    --color-chip: #312d28;
+    --color-sub: #aaa398;
+    --color-faint: #7b756c;
+    --color-mid-gray: #8f887d;
     --color-background-ui: #8b5cf6;
-    --color-logo-primary: #8b5cf6;
+    --color-logo-primary: #9b6dff;
     --color-logo-stroke: #ddd6fe;
-    --color-brand-soft: #2c2440;
+    --color-brand-soft: #2e2541;
     --color-brand-text: #c4b5fd;
+    --color-rec: #ff5a5f;
+    --color-ok: #3fbf86;
   }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-text: #f1ede6;
+  --color-background: #1c1a17;
+  --color-surface: #272420;
+  --color-sidebar: #151311;
+  --color-line: #35312b;
+  --color-chip: #312d28;
+  --color-sub: #aaa398;
+  --color-faint: #7b756c;
+  --color-mid-gray: #8f887d;
+  --color-background-ui: #8b5cf6;
+  --color-logo-primary: #9b6dff;
+  --color-logo-stroke: #ddd6fe;
+  --color-brand-soft: #2e2541;
+  --color-brand-text: #c4b5fd;
+  --color-rec: #ff5a5f;
+  --color-ok: #3fbf86;
+}
+:root[data-theme="light"] {
+  color-scheme: light;
 }
 
 /* macOS - tint native overlay scrollbar thumb */

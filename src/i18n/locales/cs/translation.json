@@ -288,6 +288,13 @@
       "groups": {
         "recording": "Nahrávání",
         "app": "Aplikace"
+      },
+      "appearance": {
+        "title": "Vzhled",
+        "description": "Řídit se macOS, nebo vždy použít světlý či tmavý motiv.",
+        "system": "Systém",
+        "light": "Světlý",
+        "dark": "Tmavý"
       }
     },
     "sound": {

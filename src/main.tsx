@@ -6,6 +6,10 @@ import App from "./App";
 // Set platform before render so CSS can scope per-platform (e.g. scrollbar styles)
 document.documentElement.dataset.platform = platform();
 
+// Apply the chosen theme before the first paint so it never flashes.
+import { applyTheme, getThemePreference } from "./lib/utils/theme";
+applyTheme(getThemePreference());
+
 // Initialize i18n
 import "./i18n";
 

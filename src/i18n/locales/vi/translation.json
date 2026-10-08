@@ -288,6 +288,13 @@
       "groups": {
         "recording": "Ghi âm",
         "app": "Ứng dụng"
+      },
+      "appearance": {
+        "title": "Giao diện",
+        "description": "Theo macOS, hoặc luôn dùng giao diện sáng hay tối.",
+        "system": "Hệ thống",
+        "light": "Sáng",
+        "dark": "Tối"
       }
     },
     "sound": {

@@ -288,6 +288,13 @@
       "groups": {
         "recording": "Nagrywanie",
         "app": "Aplikacja"
+      },
+      "appearance": {
+        "title": "Wygląd",
+        "description": "Zgodnie z macOS albo zawsze jasny lub ciemny motyw.",
+        "system": "System",
+        "light": "Jasny",
+        "dark": "Ciemny"
       }
     },
     "sound": {

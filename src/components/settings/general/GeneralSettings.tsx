@@ -14,6 +14,7 @@ import { OutputDeviceSelector } from "../OutputDeviceSelector";
 import { VolumeSlider } from "../VolumeSlider";
 import { SoundPicker } from "../SoundPicker";
 import { AppLanguageSelector } from "../AppLanguageSelector";
+import { AppearanceSelector } from "../AppearanceSelector";
 import { AutostartToggle } from "../AutostartToggle";
 import { StartHidden } from "../StartHidden";
 import { ShowTrayIcon } from "../ShowTrayIcon";
@@ -67,6 +68,7 @@ export const GeneralSettings: React.FC = () => {
 
       <SettingsGroup title={t("settings.general.groups.app")}>
         <AppLanguageSelector descriptionMode="inline" grouped={true} />
+        <AppearanceSelector descriptionMode="inline" grouped={true} />
         <AutostartToggle descriptionMode="inline" grouped={true} />
         <StartHidden descriptionMode="inline" grouped={true} />
         <ShowTrayIcon descriptionMode="inline" grouped={true} />

@@ -288,6 +288,13 @@
       "groups": {
         "recording": "录音",
         "app": "应用"
+      },
+      "appearance": {
+        "title": "外观",
+        "description": "跟随 macOS，或始终使用浅色或深色主题。",
+        "system": "跟随系统",
+        "light": "浅色",
+        "dark": "深色"
       }
     },
     "sound": {

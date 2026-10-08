@@ -219,6 +219,13 @@
       "groups": {
         "recording": "التسجيل",
         "app": "التطبيق"
+      },
+      "appearance": {
+        "title": "المظهر",
+        "description": "اتّباع macOS، أو استخدام سمة فاتحة أو داكنة دائمًا.",
+        "system": "النظام",
+        "light": "فاتح",
+        "dark": "داكن"
       }
     },
     "sound": {

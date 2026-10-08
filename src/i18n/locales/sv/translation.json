@@ -223,6 +223,13 @@
       "groups": {
         "recording": "Inspelning",
         "app": "App"
+      },
+      "appearance": {
+        "title": "Utseende",
+        "description": "Följ macOS eller använd alltid ett ljust eller mörkt tema.",
+        "system": "System",
+        "light": "Ljust",
+        "dark": "Mörkt"
       }
     },
     "models": {

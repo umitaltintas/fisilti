@@ -288,6 +288,13 @@
       "groups": {
         "recording": "Aufnahme",
         "app": "App"
+      },
+      "appearance": {
+        "title": "Erscheinungsbild",
+        "description": "macOS folgen oder immer ein helles bzw. dunkles Design verwenden.",
+        "system": "System",
+        "light": "Hell",
+        "dark": "Dunkel"
       }
     },
     "sound": {

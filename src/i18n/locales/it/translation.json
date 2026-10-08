@@ -288,6 +288,13 @@
       "groups": {
         "recording": "Registrazione",
         "app": "App"
+      },
+      "appearance": {
+        "title": "Aspetto",
+        "description": "Segui macOS oppure usa sempre un tema chiaro o scuro.",
+        "system": "Sistema",
+        "light": "Chiaro",
+        "dark": "Scuro"
       }
     },
     "sound": {

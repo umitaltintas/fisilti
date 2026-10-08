@@ -223,6 +223,13 @@
       "groups": {
         "recording": "Recording",
         "app": "Application"
+      },
+      "appearance": {
+        "title": "Appearance",
+        "description": "Follow macOS, or always use a light or dark theme.",
+        "system": "System",
+        "light": "Light",
+        "dark": "Dark"
       }
     },
     "models": {

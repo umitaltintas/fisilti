@@ -223,6 +223,13 @@
       "groups": {
         "recording": "Запис",
         "app": "Додаток"
+      },
+      "appearance": {
+        "title": "Вигляд",
+        "description": "Як у macOS або завжди світла чи темна тема.",
+        "system": "Системний",
+        "light": "Світлий",
+        "dark": "Темний"
       }
     },
     "models": {

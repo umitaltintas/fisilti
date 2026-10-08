@@ -223,6 +223,13 @@
       "groups": {
         "recording": "녹음",
         "app": "앱"
+      },
+      "appearance": {
+        "title": "모양",
+        "description": "macOS 설정을 따르거나 항상 밝은 테마 또는 어두운 테마를 사용합니다.",
+        "system": "시스템",
+        "light": "밝게",
+        "dark": "어둡게"
       }
     },
     "sound": {

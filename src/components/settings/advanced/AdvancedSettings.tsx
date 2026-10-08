@@ -13,7 +13,6 @@ import { ExperimentalToggle } from "../ExperimentalToggle";
 import { AccelerationSelector } from "../AccelerationSelector";
 import { LazyStreamClose } from "../LazyStreamClose";
 import { AlwaysOnMicrophone } from "../AlwaysOnMicrophone";
-import { ClamshellMicrophoneSelector } from "../ClamshellMicrophoneSelector";
 import { KeyboardImplementationSelector } from "../debug/KeyboardImplementationSelector";
 import { WordCorrectionThreshold } from "../debug/WordCorrectionThreshold";
 import { LogLevelSelector } from "../debug/LogLevelSelector";
@@ -44,6 +43,10 @@ export const AdvancedSettings: React.FC = () => {
         <CustomWords descriptionMode="tooltip" grouped />
         <WordCorrectionThreshold descriptionMode="tooltip" grouped={true} />
         <ModelUnloadTimeoutSetting descriptionMode="tooltip" grouped={true} />
+        {/* A real latency/privacy trade-off, not a debugging aid: it used to
+            sit in the debug-only Developer group, invisible to almost
+            everyone. */}
+        <AlwaysOnMicrophone descriptionMode="tooltip" grouped={true} />
       </SettingsGroup>
 
       <SettingsGroup title={t("settings.advanced.groups.experimental")}>
@@ -65,11 +68,6 @@ export const AdvancedSettings: React.FC = () => {
           <LogLevelSelector grouped={true} />
           <PasteDelay descriptionMode="tooltip" grouped={true} />
           <RecordingBuffer descriptionMode="tooltip" grouped={true} />
-          <AlwaysOnMicrophone descriptionMode="tooltip" grouped={true} />
-          <ClamshellMicrophoneSelector
-            descriptionMode="tooltip"
-            grouped={true}
-          />
           <LogDirectory grouped={true} />
         </SettingsGroup>
       )}

@@ -1,7 +1,15 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { readFile } from "@tauri-apps/plugin-fs";
-import { Check, Copy, FolderOpen, RotateCcw, Star, Trash2 } from "lucide-react";
+import {
+  Check,
+  Copy,
+  FolderOpen,
+  Loader2,
+  RotateCcw,
+  Star,
+  Trash2,
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import {
@@ -14,31 +22,14 @@ import { useOsType } from "@/hooks/useOsType";
 import { formatDateTime } from "@/utils/dateFormat";
 import { AudioPlayer } from "../../ui/AudioPlayer";
 import { Button } from "../../ui/Button";
+import { IconButton } from "../../ui/IconButton";
+import { useConfirm } from "../../ui/ConfirmDialog";
+import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
+import { errorMessage } from "@/lib/utils/errors";
 import { CollapsibleGroup } from "../../ui/CollapsibleGroup";
 import { SettingsGroup } from "../../ui/SettingsGroup";
 import { HistoryLimit } from "../HistoryLimit";
 import { RecordingRetentionPeriodSelector } from "../RecordingRetentionPeriod";
-
-const IconButton: React.FC<{
-  onClick: () => void;
-  title: string;
-  disabled?: boolean;
-  active?: boolean;
-  children: React.ReactNode;
-}> = ({ onClick, title, disabled, active, children }) => (
-  <button
-    onClick={onClick}
-    disabled={disabled}
-    className={`p-1.5 rounded-md flex items-center justify-center transition-colors cursor-pointer disabled:cursor-not-allowed disabled:text-text/20 ${
-      active
-        ? "text-logo-primary hover:text-logo-primary/80"
-        : "text-text/50 hover:text-logo-primary"
-    }`}
-    title={title}
-  >
-    {children}
-  </button>
-);
 
 const PAGE_SIZE = 30;
 
@@ -68,7 +59,9 @@ export const HistorySettings: React.FC = () => {
   const osType = useOsType();
   const [entries, setEntries] = useState<HistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
+  const { confirm, dialog } = useConfirm();
   const sentinelRef = useRef<HTMLDivElement>(null);
   const entriesRef = useRef<HistoryEntry[]>([]);
   const loadingRef = useRef(false);
@@ -78,36 +71,50 @@ export const HistorySettings: React.FC = () => {
     entriesRef.current = entries;
   }, [entries]);
 
-  const loadPage = useCallback(async (cursor?: number) => {
-    const isFirstPage = cursor === undefined;
-    if (!isFirstPage && loadingRef.current) return;
-    loadingRef.current = true;
+  const loadPage = useCallback(
+    async (cursor?: number) => {
+      const isFirstPage = cursor === undefined;
+      if (!isFirstPage && loadingRef.current) return;
+      loadingRef.current = true;
 
-    if (isFirstPage) setLoading(true);
+      if (isFirstPage) {
+        setLoading(true);
+        setLoadError(null);
+      }
 
-    try {
-      const result = await commands.getHistoryEntries(
-        cursor ?? null,
-        PAGE_SIZE,
-      );
-      if (result.status === "ok") {
+      try {
+        const result = await commands.getHistoryEntries(
+          cursor ?? null,
+          PAGE_SIZE,
+        );
+        if (result.status === "error") throw result.error;
         const { entries: newEntries, has_more } = result.data;
         setEntries((prev) =>
           isFirstPage ? newEntries : [...prev, ...newEntries],
         );
         setHasMore(has_more);
+      } catch (error) {
+        console.error("Failed to load history entries:", error);
+        if (isFirstPage) {
+          setLoadError(errorMessage(error));
+        } else {
+          // Stop the infinite scroll from hammering a failing backend.
+          setHasMore(false);
+          toast.error(t("settings.history.loadMoreError"), {
+            description: errorMessage(error),
+          });
+        }
+      } finally {
+        setLoading(false);
+        loadingRef.current = false;
       }
-    } catch (error) {
-      console.error("Failed to load history entries:", error);
-    } finally {
-      setLoading(false);
-      loadingRef.current = false;
-    }
-  }, []);
+    },
+    [t],
+  );
 
   // Initial load
   useEffect(() => {
-    loadPage();
+    void loadPage();
   }, [loadPage]);
 
   // Infinite scroll via IntersectionObserver
@@ -123,7 +130,7 @@ export const HistorySettings: React.FC = () => {
         if (first.isIntersecting) {
           const lastEntry = entriesRef.current[entriesRef.current.length - 1];
           if (lastEntry) {
-            loadPage(lastEntry.id);
+            void loadPage(lastEntry.id);
           }
         }
       },
@@ -150,7 +157,7 @@ export const HistorySettings: React.FC = () => {
     });
 
     return () => {
-      unlisten.then((fn) => fn());
+      void unlisten.then((fn) => fn());
     };
   }, []);
 
@@ -161,26 +168,16 @@ export const HistorySettings: React.FC = () => {
     );
     try {
       const result = await commands.toggleHistoryEntrySaved(id);
-      if (result.status !== "ok") {
-        // Revert on failure
-        setEntries((prev) =>
-          prev.map((e) => (e.id === id ? { ...e, saved: !e.saved } : e)),
-        );
-      }
+      if (result.status === "error") throw result.error;
     } catch (error) {
       console.error("Failed to toggle saved status:", error);
       // Revert on failure
       setEntries((prev) =>
         prev.map((e) => (e.id === id ? { ...e, saved: !e.saved } : e)),
       );
-    }
-  };
-
-  const copyToClipboard = async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch (error) {
-      console.error("Failed to copy to clipboard:", error);
+      toast.error(t("settings.history.saveError"), {
+        description: errorMessage(error),
+      });
     }
   };
 
@@ -205,36 +202,40 @@ export const HistorySettings: React.FC = () => {
     [osType],
   );
 
+  /** Ask, then delete. Rejects when the backend refused, after restoring
+   * the list, so the caller's error toast actually fires. */
   const deleteAudioEntry = async (id: number) => {
+    const ok = await confirm({
+      title: t("settings.history.deleteConfirmTitle"),
+      description: t("settings.history.deleteConfirmText"),
+      destructive: true,
+    });
+    if (!ok) return;
     // Optimistically remove
     setEntries((prev) => prev.filter((e) => e.id !== id));
     try {
       const result = await commands.deleteHistoryEntry(id);
-      if (result.status !== "ok") {
-        // Reload on failure
-        loadPage();
-      }
+      if (result.status === "error") throw result.error;
     } catch (error) {
-      console.error("Failed to delete entry:", error);
-      loadPage();
+      void loadPage();
+      throw error;
     }
   };
 
   const retryHistoryEntry = async (id: number) => {
     const result = await commands.retryHistoryEntryTranscription(id);
-    if (result.status !== "ok") {
-      throw new Error(String(result.error));
-    }
+    if (result.status === "error") throw result.error;
   };
 
   const openRecordingsFolder = async () => {
     try {
       const result = await commands.openRecordingsFolder();
-      if (result.status !== "ok") {
-        throw new Error(String(result.error));
-      }
+      if (result.status === "error") throw result.error;
     } catch (error) {
       console.error("Failed to open recordings folder:", error);
+      toast.error(t("settings.history.openFolderError"), {
+        description: errorMessage(error),
+      });
     }
   };
 
@@ -242,13 +243,28 @@ export const HistorySettings: React.FC = () => {
 
   if (loading) {
     content = (
-      <div className="px-4 py-3 text-center text-text/60">
+      <div
+        className="px-4 py-6 flex items-center justify-center gap-2 text-sm text-text/60"
+        role="status"
+      >
+        <Loader2 width={14} height={14} className="animate-spin" />
         {t("settings.history.loading")}
+      </div>
+    );
+  } else if (loadError !== null) {
+    content = (
+      <div className="px-4 py-6 flex flex-col items-center gap-3 text-center">
+        <p role="alert" className="text-sm text-red-400 break-words">
+          {t("settings.history.loadError")} ({loadError})
+        </p>
+        <Button variant="secondary" size="sm" onClick={() => void loadPage()}>
+          {t("common.retry")}
+        </Button>
       </div>
     );
   } else if (entries.length === 0) {
     content = (
-      <div className="px-4 py-3 text-center text-text/60">
+      <div className="px-4 py-8 text-center text-sm text-text/60">
         {t("settings.history.empty")}
       </div>
     );
@@ -260,8 +276,7 @@ export const HistorySettings: React.FC = () => {
             <HistoryEntryComponent
               key={entry.id}
               entry={entry}
-              onToggleSaved={() => toggleSaved(entry.id)}
-              onCopyText={() => copyToClipboard(entry.transcription_text)}
+              onToggleSaved={() => void toggleSaved(entry.id)}
               getAudioUrl={getAudioUrl}
               deleteAudio={deleteAudioEntry}
               retryTranscription={retryHistoryEntry}
@@ -276,6 +291,7 @@ export const HistorySettings: React.FC = () => {
 
   return (
     <div className="max-w-3xl w-full mx-auto space-y-6">
+      {dialog}
       {/* How much history is kept used to be configured under Advanced, two
           sections away from the list it governs. */}
       <CollapsibleGroup title={t("settings.history.retentionSettings")}>
@@ -296,7 +312,7 @@ export const HistorySettings: React.FC = () => {
             </h2>
           </div>
           <OpenRecordingsButton
-            onClick={openRecordingsFolder}
+            onClick={() => void openRecordingsFolder()}
             label={t("settings.history.openFolder")}
           />
         </div>
@@ -311,7 +327,6 @@ export const HistorySettings: React.FC = () => {
 interface HistoryEntryProps {
   entry: HistoryEntry;
   onToggleSaved: () => void;
-  onCopyText: () => void;
   getAudioUrl: (fileName: string) => Promise<string | null>;
   deleteAudio: (id: number) => Promise<void>;
   retryTranscription: (id: number) => Promise<void>;
@@ -320,13 +335,12 @@ interface HistoryEntryProps {
 const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
   entry,
   onToggleSaved,
-  onCopyText,
   getAudioUrl,
   deleteAudio,
   retryTranscription,
 }) => {
   const { t, i18n } = useTranslation();
-  const [showCopied, setShowCopied] = useState(false);
+  const { copied, copy } = useCopyToClipboard();
   const [retrying, setRetrying] = useState(false);
 
   const hasTranscription = entry.transcription_text.trim().length > 0;
@@ -336,22 +350,14 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
     [getAudioUrl, entry.file_name],
   );
 
-  const handleCopyText = () => {
-    if (!hasTranscription) {
-      return;
-    }
-
-    onCopyText();
-    setShowCopied(true);
-    setTimeout(() => setShowCopied(false), 2000);
-  };
-
   const handleDeleteEntry = async () => {
     try {
       await deleteAudio(entry.id);
     } catch (error) {
       console.error("Failed to delete entry:", error);
-      toast.error(t("settings.history.deleteError"));
+      toast.error(t("settings.history.deleteError"), {
+        description: errorMessage(error),
+      });
     }
   };
 
@@ -361,7 +367,9 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
       await retryTranscription(entry.id);
     } catch (error) {
       console.error("Failed to re-transcribe:", error);
-      toast.error(t("settings.history.retranscribeError"));
+      toast.error(t("settings.history.retranscribeError"), {
+        description: errorMessage(error),
+      });
     } finally {
       setRetrying(false);
     }
@@ -375,11 +383,15 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
         <p className="text-sm font-medium">{formattedDate}</p>
         <div className="flex items-center">
           <IconButton
-            onClick={handleCopyText}
+            onClick={() => void copy(entry.transcription_text)}
             disabled={!hasTranscription || retrying}
-            title={t("settings.history.copyToClipboard")}
+            label={
+              copied
+                ? t("meeting.copied")
+                : t("settings.history.copyToClipboard")
+            }
           >
-            {showCopied ? (
+            {copied ? (
               <Check width={16} height={16} />
             ) : (
               <Copy width={16} height={16} />
@@ -388,8 +400,9 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
           <IconButton
             onClick={onToggleSaved}
             disabled={retrying}
-            active={entry.saved}
-            title={
+            tone={entry.saved ? "active" : "default"}
+            aria-pressed={entry.saved}
+            label={
               entry.saved
                 ? t("settings.history.unsave")
                 : t("settings.history.save")
@@ -402,9 +415,9 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
             />
           </IconButton>
           <IconButton
-            onClick={handleRetranscribe}
+            onClick={() => void handleRetranscribe()}
             disabled={retrying}
-            title={t("settings.history.retranscribe")}
+            label={t("settings.history.retranscribe")}
           >
             <RotateCcw
               width={16}
@@ -417,9 +430,10 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
             />
           </IconButton>
           <IconButton
-            onClick={handleDeleteEntry}
+            onClick={() => void handleDeleteEntry()}
             disabled={retrying}
-            title={t("settings.history.delete")}
+            tone="danger"
+            label={t("settings.history.delete")}
           >
             <Trash2 width={16} height={16} />
           </IconButton>

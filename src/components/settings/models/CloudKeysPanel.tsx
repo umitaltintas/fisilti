@@ -11,7 +11,7 @@ interface ApiKeyRowProps {
   title: string;
   description: string;
   value: string;
-  onCommit: (value: string) => void;
+  onCommit: (value: string) => Promise<boolean>;
   disabled: boolean;
   consoleUrl: string;
 }
@@ -43,13 +43,14 @@ const ApiKeyRow: React.FC<ApiKeyRowProps> = ({
       <div className="flex items-center gap-2">
         <ApiKeyField
           value={value}
-          onBlur={onCommit}
+          onCommit={onCommit}
           disabled={disabled}
           placeholder={t("settings.models.keys.placeholder")}
+          ariaLabel={title}
         />
         <button
           type="button"
-          onClick={() => openUrl(consoleUrl)}
+          onClick={() => void openUrl(consoleUrl)}
           className="cursor-pointer whitespace-nowrap text-xs text-logo-primary hover:underline"
         >
           {t("settings.models.keys.getKey")}
@@ -71,8 +72,13 @@ const ApiKeyRow: React.FC<ApiKeyRowProps> = ({
  */
 export const CloudKeysPanel: React.FC = () => {
   const { t } = useTranslation();
-  const { settings, updateSetting, updatePostProcessApiKey, isUpdatingKey } =
-    useSettingsStore();
+  const settings = useSettingsStore((s) => s.settings);
+  const updateSetting = useSettingsStore((s) => s.updateSetting);
+  const updatePostProcessApiKey = useSettingsStore(
+    (s) => s.updatePostProcessApiKey,
+  );
+  const isUpdating = useSettingsStore((s) => s.isUpdating);
+  const isUpdatingKey = (key: string) => isUpdating[key] === true;
 
   return (
     <SettingsGroup title={t("settings.models.keys.title")}>
@@ -89,7 +95,7 @@ export const CloudKeysPanel: React.FC = () => {
         title={t("settings.models.keys.openrouter")}
         description={t("settings.models.keys.openrouterHint")}
         value={settings?.post_process_api_keys?.["openrouter"] ?? ""}
-        onCommit={(value) => void updatePostProcessApiKey("openrouter", value)}
+        onCommit={(value) => updatePostProcessApiKey("openrouter", value)}
         disabled={isUpdatingKey("post_process_api_key:openrouter")}
         consoleUrl="https://openrouter.ai/keys"
       />
@@ -98,7 +104,7 @@ export const CloudKeysPanel: React.FC = () => {
         title={t("settings.models.keys.gemini")}
         description={t("settings.models.keys.geminiHint")}
         value={settings?.gemini_api_key ?? ""}
-        onCommit={(value) => void updateSetting("gemini_api_key", value)}
+        onCommit={(value) => updateSetting("gemini_api_key", value)}
         disabled={isUpdatingKey("gemini_api_key")}
         consoleUrl="https://aistudio.google.com/apikey"
       />

@@ -41,7 +41,7 @@ export const ClamshellMicrophoneSelector: React.FC<ClamshellMicrophoneSelectorPr
         }
       };
 
-      checkIsLaptop();
+      void checkIsLaptop();
     }, []);
 
     // Only render on laptops
@@ -69,8 +69,8 @@ export const ClamshellMicrophoneSelector: React.FC<ClamshellMicrophoneSelectorPr
 
     return (
       <SettingContainer
-        title={t("settings.debug.clamshellMicrophone.title")}
-        description={t("settings.debug.clamshellMicrophone.description")}
+        title={t("settings.sound.clamshellMicrophone.title")}
+        description={t("settings.sound.clamshellMicrophone.description")}
         descriptionMode={descriptionMode}
         grouped={grouped}
       >

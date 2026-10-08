@@ -34,13 +34,13 @@ export const CustomWords: React.FC<CustomWordsProps> = React.memo(
           );
           return;
         }
-        updateSetting("custom_words", [...customWords, sanitizedWord]);
+        void updateSetting("custom_words", [...customWords, sanitizedWord]);
         setNewWord("");
       }
     };
 
     const handleRemoveWord = (wordToRemove: string) => {
-      updateSetting(
+      void updateSetting(
         "custom_words",
         customWords.filter((word) => word !== wordToRemove),
       );

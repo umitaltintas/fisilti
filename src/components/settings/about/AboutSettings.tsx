@@ -22,7 +22,7 @@ export const AboutSettings: React.FC = () => {
       }
     };
 
-    fetchVersion();
+    void fetchVersion();
   }, []);
 
   const handleDonateClick = async () => {

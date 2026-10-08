@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useMemo, useState, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import {
   getKeyName,
@@ -11,6 +11,7 @@ import { useSettings } from "../../hooks/useSettings";
 import { useOsType } from "../../hooks/useOsType";
 import { commands } from "@/bindings";
 import { toast } from "sonner";
+import { errorMessage } from "@/lib/utils/errors";
 
 interface GlobalShortcutInputProps {
   descriptionMode?: "inline" | "tooltip";
@@ -37,7 +38,8 @@ export const GlobalShortcutInput: React.FC<GlobalShortcutInputProps> = ({
   const shortcutRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
   const osType = useOsType();
 
-  const bindings = getSetting("bindings") || {};
+  const storedBindings = getSetting("bindings");
+  const bindings = useMemo(() => storedBindings ?? {}, [storedBindings]);
 
   useEffect(() => {
     // Only add event listeners when we're in editing mode
@@ -127,7 +129,7 @@ export const GlobalShortcutInput: React.FC<GlobalShortcutInputProps> = ({
             console.error("Failed to change binding:", error);
             toast.error(
               t("settings.general.shortcut.errors.set", {
-                error: String(error),
+                error: errorMessage(error),
               }),
             );
 
@@ -174,17 +176,21 @@ export const GlobalShortcutInput: React.FC<GlobalShortcutInputProps> = ({
       }
     };
 
-    window.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("keyup", handleKeyUp);
-    window.addEventListener("click", handleClickOutside);
+    const onKeyDown = (e: KeyboardEvent) => void handleKeyDown(e);
+    const onKeyUp = (e: KeyboardEvent) => void handleKeyUp(e);
+    const onClick = (e: MouseEvent) => void handleClickOutside(e);
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("click", onClick);
 
     return () => {
       cleanup = true;
-      window.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("keyup", handleKeyUp);
-      window.removeEventListener("click", handleClickOutside);
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("click", onClick);
     };
   }, [
+    t,
     keyPressed,
     recordedKeys,
     editingShortcutId,
@@ -298,12 +304,16 @@ export const GlobalShortcutInput: React.FC<GlobalShortcutInputProps> = ({
             {formatCurrentKeys()}
           </div>
         ) : (
-          <div
-            className="px-2 py-1 text-sm font-semibold bg-mid-gray/10 border border-mid-gray/80 hover:bg-logo-primary/10 rounded-md cursor-pointer hover:border-logo-primary"
-            onClick={() => startRecording(shortcutId)}
+          <button
+            type="button"
+            aria-label={t("settings.general.shortcut.change", {
+              shortcut: translatedName,
+            })}
+            className="px-2 py-1 text-sm font-semibold bg-mid-gray/10 border border-mid-gray/80 hover:bg-logo-primary/10 rounded-md cursor-pointer hover:border-logo-primary focus:outline-none focus-visible:ring-1 focus-visible:ring-logo-primary"
+            onClick={() => void startRecording(shortcutId)}
           >
             {formatKeyCombination(binding.current_binding, osType)}
-          </div>
+          </button>
         )}
         <ResetButton
           onClick={() => resetBinding(shortcutId)}

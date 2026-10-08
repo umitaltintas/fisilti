@@ -33,20 +33,21 @@ const MeetingPrompt: React.FC = () => {
   useEffect(() => {
     const unlistenPromise = listen<MeetingPromptPayload>(
       MEETING_PROMPT_UPDATE_EVENT,
-      async (event) => {
+      (event) => {
         // Match the app's current language each time a prompt is shown.
-        await syncLanguageFromSettings();
-        setSubmitted(false);
-        setPayload(event.payload);
+        void syncLanguageFromSettings().then(() => {
+          setSubmitted(false);
+          setPayload(event.payload);
+        });
       },
     );
 
     // Signal the backend we are mounted so it can (re)send the current payload,
     // closing the race where the first emit happens before this listener binds.
-    emit(MEETING_PROMPT_READY_EVENT);
+    void emit(MEETING_PROMPT_READY_EVENT);
 
     return () => {
-      unlistenPromise.then((unlisten) => unlisten());
+      void unlistenPromise.then((unlisten) => unlisten());
     };
   }, []);
 

@@ -39,7 +39,7 @@ export const AccelerationSelector: FC<AccelerationSelectorProps> = ({
   const [ortOptions, setOrtOptions] = useState<DropdownOption[]>([]);
 
   useEffect(() => {
-    commands.getAvailableAccelerators().then((available) => {
+    void commands.getAvailableAccelerators().then((available) => {
       setWhisperOptions(
         available.whisper.map((v) => ({
           value: v,

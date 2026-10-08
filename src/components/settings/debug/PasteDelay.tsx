@@ -16,7 +16,7 @@ export const PasteDelay: React.FC<PasteDelayProps> = ({
   const { settings, updateSetting } = useSettings();
 
   const handleDelayChange = (value: number) => {
-    updateSetting("paste_delay_ms", value);
+    void updateSetting("paste_delay_ms", value);
   };
 
   return (

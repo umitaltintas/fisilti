@@ -910,11 +910,24 @@ async startMeeting() : Promise<Result<null, string>> {
 }
 },
 /**
- * Stop the meeting session and return the final accumulated transcript text.
+ * Stop the meeting session. Returns the id of the saved meeting row (or `null`
+ * when nothing was saved) and the final accumulated transcript text.
  */
-async stopMeeting() : Promise<Result<string, string>> {
+async stopMeeting() : Promise<Result<StopMeetingResult, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("stop_meeting") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Snapshot of the meeting session: state (`"idle"` | `"running"` |
+ * `"finalizing"`), the in-progress row id once known, and the start time.
+ */
+async getMeetingSession() : Promise<Result<MeetingSessionInfo, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_meeting_session") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1597,6 +1610,23 @@ usage: MeetingUsage | null }
  * model to produce structured markdown and to answer in the transcript's
  * language).
  */
+/**
+ * Snapshot of the meeting session, returned by `get_meeting_session` and
+ * emitted as `meeting-session-changed`.
+ */
+export type MeetingSessionInfo = { 
+/**
+ * `"idle"`, `"running"`, or `"finalizing"` (stop in progress).
+ */
+state: string; 
+/**
+ * Row id of the in-progress (or finalizing) meeting, once known.
+ */
+meeting_id: number | null; 
+/**
+ * Epoch milliseconds the session started, or `null` when idle.
+ */
+started_at_ms: number | null }
 export type MeetingSummaryTemplate = { id: string; name: string; prompt: string }
 /**
  * Everything a meeting spent, one entry per model involved.
@@ -1644,6 +1674,18 @@ export type PostProcessProvider = { id: string; label: string; base_url: string;
 export type RecordingRetentionPeriod = "never" | "preserve_limit" | "days_3" | "weeks_2" | "months_3"
 export type ShortcutBinding = { id: string; name: string; description: string; default_binding: string; current_binding: string }
 export type SoundTheme = "marimba" | "pop" | "custom"
+/**
+ * Result of `stop_meeting`.
+ */
+export type StopMeetingResult = { 
+/**
+ * Id of the saved meeting row, or `null` when nothing was saved.
+ */
+meeting_id: number | null; 
+/**
+ * The final accumulated transcript text.
+ */
+transcript: string }
 /**
  * A single transcribed speech segment with its (relative) start timestamp.
  */

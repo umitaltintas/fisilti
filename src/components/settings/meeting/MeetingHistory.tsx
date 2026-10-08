@@ -1,21 +1,26 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { Search, Sparkles, Trash2, X } from "lucide-react";
+import { useShallow } from "zustand/react/shallow";
+import { toast } from "sonner";
+import { Loader2, Search, Sparkles, Trash2, X } from "lucide-react";
 
 import { Button } from "../../ui/Button";
-import { SectionHeading, formatDuration, formatMeetingTime } from "./shared";
+import { IconButton } from "../../ui/IconButton";
+import { useConfirm } from "../../ui/ConfirmDialog";
+import {
+  InlineError,
+  SectionHeading,
+  formatDuration,
+  formatMeetingTime,
+} from "./shared";
 import type { MeetingListItem } from "@/lib/meeting";
+import { isLiveMeeting, useMeetingStore } from "@/stores/meetingStore";
+import { errorMessage } from "@/lib/utils/errors";
 
 interface MeetingHistoryProps {
-  meetings: MeetingListItem[];
-  error: string | null;
-  searchQuery: string;
-  onSearchChange: (value: string) => void;
-  confirmDeleteId: number | null;
-  onRequestDelete: (id: number) => void;
-  onCancelDelete: () => void;
-  onConfirmDelete: (id: number) => void;
   onOpen: (id: number) => void;
+  /** Called after a meeting was deleted (e.g. to close its detail view). */
+  onDeleted?: (id: number) => void;
 }
 
 interface DayGroup {
@@ -81,80 +86,148 @@ function groupByDay(
   return groups;
 }
 
+const EmptyCard: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <div className="bg-background border border-mid-gray/20 rounded-lg px-4 py-8 text-center text-text/60 text-sm">
+    {children}
+  </div>
+);
+
 // The "History" tab: search + past meetings grouped by day.
 export const MeetingHistory: React.FC<MeetingHistoryProps> = ({
-  meetings,
-  error,
-  searchQuery,
-  onSearchChange,
-  confirmDeleteId,
-  onRequestDelete,
-  onCancelDelete,
-  onConfirmDelete,
   onOpen,
+  onDeleted,
 }) => {
   const { t, i18n } = useTranslation();
+  const {
+    meetings,
+    meetingsState,
+    meetingsError,
+    query,
+    setQuery,
+    loadMeetings,
+    deleteMeeting,
+    status,
+    meetingId,
+  } = useMeetingStore(
+    useShallow((s) => ({
+      meetings: s.meetings,
+      meetingsState: s.meetingsState,
+      meetingsError: s.meetingsError,
+      query: s.query,
+      setQuery: s.setQuery,
+      loadMeetings: s.loadMeetings,
+      deleteMeeting: s.deleteMeeting,
+      status: s.status,
+      meetingId: s.meetingId,
+    })),
+  );
+  const { confirm, dialog } = useConfirm();
   const groups = groupByDay(meetings, i18n.language, t);
+
+  const handleDelete = async (meeting: MeetingListItem) => {
+    const ok = await confirm({
+      title: t("meeting.confirmDelete"),
+      description: t("meeting.confirmDeleteText", {
+        title: meeting.title.trim() || t("meeting.untitledMeeting"),
+      }),
+      destructive: true,
+    });
+    if (!ok) return;
+    try {
+      await deleteMeeting(meeting.id);
+      onDeleted?.(meeting.id);
+    } catch (error) {
+      toast.error(t("meeting.deleteError"), {
+        description: errorMessage(error),
+      });
+    }
+  };
+
+  let content: React.ReactNode;
+  if (meetingsState === "loading" && meetings.length === 0) {
+    content = (
+      <EmptyCard>
+        <span className="inline-flex items-center gap-2" role="status">
+          <Loader2 width={14} height={14} className="animate-spin" />
+          {t("meeting.loading")}
+        </span>
+      </EmptyCard>
+    );
+  } else if (meetingsState === "error") {
+    content = (
+      <div className="bg-background border border-mid-gray/20 rounded-lg px-4 py-6 flex flex-col items-center gap-3 text-center">
+        <InlineError>
+          {t("meeting.pastMeetingsError")}
+          {meetingsError ? ` (${meetingsError})` : ""}
+        </InlineError>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => void loadMeetings()}
+        >
+          {t("common.retry")}
+        </Button>
+      </div>
+    );
+  } else if (meetings.length === 0) {
+    content = (
+      <EmptyCard>
+        {query.trim().length > 0
+          ? t("meeting.searchNoResults")
+          : t("meeting.pastMeetingsEmpty")}
+      </EmptyCard>
+    );
+  } else {
+    content = groups.map((group) => (
+      <section key={group.key} className="space-y-2">
+        <SectionHeading className="px-1">{group.label}</SectionHeading>
+        <ul className="bg-background border border-mid-gray/20 rounded-lg divide-y divide-mid-gray/20">
+          {group.items.map((m) => (
+            <PastMeetingRow
+              key={m.id}
+              meeting={m}
+              locale={i18n.language}
+              live={isLiveMeeting(m.id, { status, meetingId })}
+              onOpen={() => onOpen(m.id)}
+              onDelete={() => void handleDelete(m)}
+            />
+          ))}
+        </ul>
+      </section>
+    ));
+  }
 
   return (
     <div className="space-y-4">
+      {dialog}
       <div className="relative">
         <Search
           width={15}
           height={15}
-          className="absolute left-3 top-1/2 -translate-y-1/2 text-text/40 pointer-events-none"
+          className="absolute start-3 top-1/2 -translate-y-1/2 text-text/40 pointer-events-none"
+          aria-hidden
         />
         <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => onSearchChange(e.target.value)}
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
           placeholder={t("meeting.searchPlaceholder")}
-          className="w-full rounded-md border border-mid-gray/20 bg-mid-gray/5 py-2 pl-9 pr-8 text-sm text-text placeholder:text-text/40 focus:border-logo-primary focus:outline-none focus:ring-1 focus:ring-logo-primary"
+          aria-label={t("meeting.search")}
+          className="w-full rounded-md border border-mid-gray/20 bg-mid-gray/5 py-2 ps-9 pe-8 text-sm text-text placeholder:text-text/40 focus:border-logo-primary focus:outline-none focus:ring-1 focus:ring-logo-primary [&::-webkit-search-cancel-button]:hidden"
         />
-        {searchQuery.length > 0 && (
-          <button
-            onClick={() => onSearchChange("")}
-            className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-text/40 hover:text-logo-primary cursor-pointer"
-            title={t("meeting.dismiss")}
+        {query.length > 0 && (
+          <IconButton
+            onClick={() => setQuery("")}
+            label={t("common.clear")}
+            size="sm"
+            className="absolute end-2 top-1/2 -translate-y-1/2"
           >
             <X width={14} height={14} />
-          </button>
+          </IconButton>
         )}
       </div>
 
-      {error && (
-        <p className="text-sm text-red-400 whitespace-pre-wrap break-words">
-          {error}
-        </p>
-      )}
-
-      {meetings.length === 0 ? (
-        <div className="bg-background border border-mid-gray/20 rounded-lg px-4 py-8 text-center text-text/60 text-sm">
-          {searchQuery.trim().length > 0
-            ? t("meeting.searchNoResults")
-            : t("meeting.pastMeetingsEmpty")}
-        </div>
-      ) : (
-        groups.map((group) => (
-          <div key={group.key} className="space-y-2">
-            <SectionHeading className="px-1">{group.label}</SectionHeading>
-            <div className="bg-background border border-mid-gray/20 rounded-lg divide-y divide-mid-gray/20">
-              {group.items.map((m) => (
-                <PastMeetingRow
-                  key={m.id}
-                  meeting={m}
-                  locale={i18n.language}
-                  confirming={confirmDeleteId === m.id}
-                  onOpen={() => onOpen(m.id)}
-                  onRequestDelete={() => onRequestDelete(m.id)}
-                  onCancelDelete={onCancelDelete}
-                  onConfirmDelete={() => onConfirmDelete(m.id)}
-                />
-              ))}
-            </div>
-          </div>
-        ))
-      )}
+      {content}
     </div>
   );
 };
@@ -162,29 +235,33 @@ export const MeetingHistory: React.FC<MeetingHistoryProps> = ({
 interface PastMeetingRowProps {
   meeting: MeetingListItem;
   locale: string;
-  confirming: boolean;
+  /** The session recording right now: it cannot be deleted from here. */
+  live: boolean;
   onOpen: () => void;
-  onRequestDelete: () => void;
-  onCancelDelete: () => void;
-  onConfirmDelete: () => void;
+  onDelete: () => void;
 }
 
 const PastMeetingRow: React.FC<PastMeetingRowProps> = ({
   meeting,
   locale,
-  confirming,
+  live,
   onOpen,
-  onRequestDelete,
-  onCancelDelete,
-  onConfirmDelete,
+  onDelete,
 }) => {
   const { t } = useTranslation();
   const title = meeting.title.trim() || t("meeting.untitledMeeting");
+  // A row that is still transcribing (or was interrupted, or is live) stays in
+  // the list rather than vanishing — a session that takes minutes to finalize
+  // should not look like it was lost. It cannot be deleted while it is in
+  // that state: the backend still owns it.
+  const processing = meeting.status !== "completed";
+
   return (
-    <div className="px-4 py-3 flex items-start justify-between gap-3">
+    <li className="px-4 py-3 flex items-start justify-between gap-3">
       <button
+        type="button"
         onClick={onOpen}
-        className="flex-1 min-w-0 text-left cursor-pointer group"
+        className="flex-1 min-w-0 text-start cursor-pointer group rounded focus:outline-none focus-visible:ring-1 focus-visible:ring-logo-primary"
       >
         <div className="flex items-center gap-2">
           <p className="text-sm font-medium text-text group-hover:text-logo-primary transition-colors truncate">
@@ -198,15 +275,20 @@ const PastMeetingRow: React.FC<PastMeetingRowProps> = ({
               aria-label={t("meeting.hasSummary")}
             />
           )}
-          {/* A row that is still transcribing (or was interrupted) stays in the
-              list rather than vanishing — a session that takes minutes to
-              finalize should not look like it was lost. The badge is what keeps
-              it from reading as a finished meeting with a suspiciously short
-              transcript. */}
-          {meeting.status !== "completed" && (
-            <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide bg-logo-primary/15 text-logo-primary">
-              {t("meeting.stillProcessing")}
+          {live ? (
+            <span className="shrink-0 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide bg-red-500/15 text-red-400">
+              <span
+                className="h-1.5 w-1.5 rounded-full bg-red-500"
+                aria-hidden
+              />
+              {t("meeting.recording")}
             </span>
+          ) : (
+            processing && (
+              <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide bg-logo-primary/15 text-logo-primary">
+                {t("meeting.stillProcessing")}
+              </span>
+            )
           )}
         </div>
         <div className="mt-0.5 flex items-center gap-2 text-xs text-text/50">
@@ -215,7 +297,7 @@ const PastMeetingRow: React.FC<PastMeetingRowProps> = ({
           </span>
           <span aria-hidden>•</span>
           <span className="tabular-nums">
-            {formatDuration(meeting.duration_ms)}
+            {formatDuration(meeting.duration_ms, t)}
           </span>
         </div>
         {meeting.transcript_preview.trim().length > 0 && (
@@ -224,31 +306,16 @@ const PastMeetingRow: React.FC<PastMeetingRowProps> = ({
           </p>
         )}
       </button>
-      <div className="shrink-0 flex items-center gap-1">
-        {confirming ? (
-          <>
-            <Button
-              onClick={onConfirmDelete}
-              variant="danger"
-              size="sm"
-              title={t("meeting.confirmDelete")}
-            >
-              {t("meeting.confirm")}
-            </Button>
-            <Button onClick={onCancelDelete} variant="secondary" size="sm">
-              {t("meeting.cancel")}
-            </Button>
-          </>
-        ) : (
-          <button
-            onClick={onRequestDelete}
-            title={t("meeting.delete")}
-            className="p-1.5 rounded-md flex items-center justify-center transition-colors cursor-pointer text-text/50 hover:text-red-400"
-          >
-            <Trash2 width={16} height={16} />
-          </button>
-        )}
-      </div>
-    </div>
+      {!live && !processing && (
+        <IconButton
+          tone="danger"
+          onClick={onDelete}
+          label={t("meeting.deleteNamed", { title })}
+          className="shrink-0"
+        >
+          <Trash2 width={16} height={16} />
+        </IconButton>
+      )}
+    </li>
   );
 };

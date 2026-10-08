@@ -81,6 +81,23 @@ Fisilti is a cross-platform desktop speech-to-text app built with Tauri 2.x (Rus
 
 **State Flow:** Zustand → Tauri Command → Rust State → Persistence (tauri-plugin-store)
 
+**Settings writes:** go through `settings::update_settings(&app, |s| ..)` (or
+`try_update_settings`), a re-entrant process-wide lock around read-modify-write.
+Never `get_settings` + `write_settings`; two commands racing would drop one
+change. Reading is lenient: one unparseable field resets only that field and
+the raw blob is backed up to `settings_store.json.bak.<timestamp>`. Enum
+variants with digits need explicit `#[serde(rename)]` (serde says `min2`,
+specta would say `min_2`).
+
+**Errors reach the user.** Dictation failures emit `dictation-error`
+(`{ stage: transcription | paste | model_load | no_speech | recording,
+message }`, `utils::emit_dictation_error`); the frontend toasts them. On the
+frontend, specta commands return `{ status: "error" }` instead of throwing —
+always check `result.status`; `settingsStore` rolls back only the failed key.
+
+**Bindings:** `src/bindings.ts` is generated. Regenerate without launching the
+app: `cd src-tauri && cargo test --lib export_typescript_bindings -- --ignored`.
+
 ## Internationalization (i18n)
 
 All user-facing strings must use i18next translations. ESLint enforces this (no hardcoded strings in JSX).
@@ -162,6 +179,19 @@ Fisilti supports command-line parameters on all platforms for integration with s
 Opt-in feature: detect when a meeting app starts using the microphone, prompt
 to start a transcription session, and offer to end (then auto-end) the session
 on prolonged silence or when the meeting app releases the mic.
+
+**Session lifecycle:** each meeting is one `meeting/session.rs` `Session`
+owned by the manager's slot; the slot is `Idle → Running → Finalizing → Idle`.
+`Finalizing` (stop in progress) refuses start/import/recover and keeps
+`is_active()` true, so dictation never swaps the engine mid-finalize. Delete,
+discard, recover and retranscribe refuse the live/finalizing meeting id. The
+manager is split into `capture.rs`, `finalize.rs`, `live.rs`, `exclusive.rs`,
+`buffers.rs` (capture buffers live in `{app_data}/meeting_buffers`), `dsp.rs`,
+`text.rs`, `summarize.rs`. Quitting mid-meeting flushes and leaves the row
+recoverable (`MeetingManager::shutdown`, bounded ~6 s). The frontend mirrors
+the session in `src/stores/meetingStore.ts` (initialised once in `main.tsx`,
+driven by `meeting-session-changed`), so live notes autosave to the
+in-progress row and survive navigation.
 
 **Implementation files:**
 

@@ -10,6 +10,7 @@ import {
 } from "@/lib/utils/modelTranslation";
 import { LANGUAGES } from "@/lib/constants/languages";
 import { isCloudModel } from "@/lib/utils/model";
+import { IconButton } from "@/components/ui/IconButton";
 
 /** Short, human summary of what languages a model covers. */
 const languageSummary = (
@@ -94,87 +95,107 @@ export const ModelRow: React.FC<ModelRowProps> = ({
     else onSelect(model.id);
   };
 
+  const activatable = !isBusy && !isActive;
+
+  // The row is a list item holding two kinds of control side by side: the
+  // main button (select / download) and the small action buttons (cancel,
+  // delete). They used to be nested inside one div role="button", which is
+  // invalid and made the inner buttons unreachable for screen readers.
   return (
     <div
-      role="button"
-      tabIndex={isBusy || isActive ? -1 : 0}
-      onClick={handleActivate}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          handleActivate();
-        }
-      }}
       className={`flex items-center gap-3 px-4 py-2.5 transition-colors ${
         isActive
           ? "bg-logo-primary/10"
-          : isBusy
-            ? ""
-            : "cursor-pointer hover:bg-mid-gray/10"
+          : activatable
+            ? "hover:bg-mid-gray/10"
+            : ""
       }`}
     >
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="truncate text-sm font-medium">{name}</span>
-          {isActive && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-logo-primary/20 px-2 py-0.5 text-[10px] font-medium text-logo-primary">
-              <Check className="h-3 w-3" />
-              {t("modelSelector.active")}
-            </span>
-          )}
-          {isCloud && (
-            <Cloud className="h-3.5 w-3.5 shrink-0 text-text/35" aria-hidden />
-          )}
-          {model.is_custom && (
-            <span className="rounded-full bg-mid-gray/20 px-2 py-0.5 text-[10px] text-text/60">
-              {t("modelSelector.custom")}
-            </span>
+      <button
+        type="button"
+        onClick={handleActivate}
+        disabled={!activatable}
+        aria-current={isActive ? "true" : undefined}
+        aria-label={
+          status === "downloadable"
+            ? t("settings.models.downloadNamed", { modelName: name })
+            : isActive
+              ? undefined
+              : t("settings.models.useNamed", { modelName: name })
+        }
+        className={`flex min-w-0 flex-1 items-center gap-3 rounded text-start focus:outline-none focus-visible:ring-1 focus-visible:ring-logo-primary disabled:cursor-default ${
+          activatable ? "cursor-pointer" : ""
+        }`}
+      >
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="truncate text-sm font-medium">{name}</span>
+            {isActive && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-logo-primary/20 px-2 py-0.5 text-[10px] font-medium text-logo-primary">
+                <Check className="h-3 w-3" aria-hidden />
+                {t("modelSelector.active")}
+              </span>
+            )}
+            {isCloud && (
+              <Cloud
+                className="h-3.5 w-3.5 shrink-0 text-text/35"
+                aria-hidden
+              />
+            )}
+            {model.is_custom && (
+              <span className="rounded-full bg-mid-gray/20 px-2 py-0.5 text-[10px] text-text/60">
+                {t("modelSelector.custom")}
+              </span>
+            )}
+          </div>
+          <p className="truncate text-xs text-text/50">
+            {getTranslatedModelDescription(model, t)}
+          </p>
+          {status === "downloading" && downloadProgress !== undefined && (
+            <div className="mt-1.5 flex items-center gap-2">
+              <div className="h-1 flex-1 overflow-hidden rounded-full bg-mid-gray/20">
+                <div
+                  className="h-full rounded-full bg-logo-primary transition-all"
+                  style={{ width: `${downloadProgress}%` }}
+                />
+              </div>
+              <span className="tabular-nums text-[10px] text-text/50">
+                {Math.round(downloadProgress)}%
+                {downloadSpeed !== undefined && downloadSpeed > 0
+                  ? ` · ${t("modelSelector.downloadSpeed", { speed: downloadSpeed.toFixed(1) })}`
+                  : ""}
+              </span>
+            </div>
           )}
         </div>
-        <p className="truncate text-xs text-text/50">
-          {getTranslatedModelDescription(model, t)}
-        </p>
-        {status === "downloading" && downloadProgress !== undefined && (
-          <div className="mt-1.5 flex items-center gap-2">
-            <div className="h-1 flex-1 overflow-hidden rounded-full bg-mid-gray/20">
-              <div
-                className="h-full rounded-full bg-logo-primary transition-all"
-                style={{ width: `${downloadProgress}%` }}
-              />
-            </div>
-            <span className="tabular-nums text-[10px] text-text/50">
-              {Math.round(downloadProgress)}%
-              {downloadSpeed !== undefined && downloadSpeed > 0
-                ? ` · ${downloadSpeed.toFixed(1)} MB/s`
-                : ""}
-            </span>
-          </div>
-        )}
-      </div>
 
-      <div className="hidden shrink-0 items-center gap-3 md:flex">
-        {model.supported_languages.length > 0 && (
-          <span className="text-xs text-text/40">
-            {languageSummary(model, t)}
-          </span>
-        )}
-        {model.accuracy_score > 0 && (
-          <Meter
-            label={t("onboarding.modelCard.accuracy")}
-            value={model.accuracy_score}
-          />
-        )}
-      </div>
+        <div className="hidden shrink-0 items-center gap-3 md:flex">
+          {model.supported_languages.length > 0 && (
+            <span className="text-xs text-text/40">
+              {languageSummary(model, t)}
+            </span>
+          )}
+          {model.accuracy_score > 0 && (
+            <Meter
+              label={t("onboarding.modelCard.accuracy")}
+              value={model.accuracy_score}
+            />
+          )}
+        </div>
+      </button>
 
       <div className="flex w-24 shrink-0 items-center justify-end gap-1">
         {status === "downloadable" && (
           <span className="flex items-center gap-1 text-xs text-text/50">
-            <Download className="h-3.5 w-3.5" />
+            <Download className="h-3.5 w-3.5" aria-hidden />
             {formatModelSize(Number(model.size_mb))}
           </span>
         )}
         {status === "switching" && (
-          <Loader2 className="h-4 w-4 animate-spin text-text/40" />
+          <Loader2
+            className="h-4 w-4 animate-spin text-text/40"
+            aria-label={t("modelSelector.switching")}
+          />
         )}
         {(status === "verifying" || status === "extracting") && (
           <span className="text-xs text-text/50">
@@ -184,30 +205,21 @@ export const ModelRow: React.FC<ModelRowProps> = ({
           </span>
         )}
         {status === "downloading" && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onCancel(model.id);
-            }}
-            aria-label={t("modelSelector.cancelDownload")}
-            className="rounded-md p-1.5 text-text/50 transition-colors hover:bg-mid-gray/20 hover:text-text cursor-pointer"
+          <IconButton
+            onClick={() => onCancel(model.id)}
+            label={t("modelSelector.cancelDownload")}
           >
             <X className="h-3.5 w-3.5" />
-          </button>
+          </IconButton>
         )}
         {!isCloud && !model.is_custom && model.is_downloaded && !isBusy && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete(model.id);
-            }}
-            title={t("modelSelector.deleteModel", { modelName: name })}
-            className="rounded-md p-1.5 text-text/40 transition-colors hover:bg-mid-gray/20 hover:text-text cursor-pointer"
+          <IconButton
+            onClick={() => onDelete(model.id)}
+            label={t("modelSelector.deleteModel", { modelName: name })}
+            tone="danger"
           >
             <Trash2 className="h-3.5 w-3.5" />
-          </button>
+          </IconButton>
         )}
       </div>
     </div>

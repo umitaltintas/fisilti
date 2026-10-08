@@ -1,5 +1,4 @@
-import { listen } from "@tauri-apps/api/event";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   MicrophoneIcon,
@@ -10,6 +9,7 @@ import "./RecordingOverlay.css";
 import { commands } from "@/bindings";
 import i18n, { syncLanguageFromSettings } from "@/i18n";
 import { getLanguageDirection } from "@/lib/utils/rtl";
+import { useTauriEvent } from "@/hooks/useTauriEvent";
 
 type OverlayState = "recording" | "transcribing" | "processing";
 
@@ -21,46 +21,34 @@ const RecordingOverlay: React.FC = () => {
   const smoothedLevelsRef = useRef<number[]>(Array(16).fill(0));
   const direction = getLanguageDirection(i18n.language);
 
-  useEffect(() => {
-    const setupEventListeners = async () => {
-      // Listen for show-overlay event from Rust
-      const unlistenShow = await listen("show-overlay", async (event) => {
-        // Sync language from settings each time overlay is shown
-        await syncLanguageFromSettings();
-        const overlayState = event.payload as OverlayState;
+  // Each subscription cleans up after itself even when the window unmounts
+  // before `listen()` resolved (the old setup returned its cleanup from an
+  // async function, where React never saw it).
+  useTauriEvent<OverlayState>("show-overlay", (overlayState) => {
+    // Sync language from settings each time overlay is shown, before the
+    // text appears.
+    void syncLanguageFromSettings()
+      .catch(() => undefined)
+      .then(() => {
         setState(overlayState);
         setIsVisible(true);
       });
+  });
 
-      // Listen for hide-overlay event from Rust
-      const unlistenHide = await listen("hide-overlay", () => {
-        setIsVisible(false);
-      });
+  useTauriEvent("hide-overlay", () => {
+    setIsVisible(false);
+  });
 
-      // Listen for mic-level updates
-      const unlistenLevel = await listen<number[]>("mic-level", (event) => {
-        const newLevels = event.payload as number[];
+  useTauriEvent<number[]>("mic-level", (newLevels) => {
+    // Apply smoothing to reduce jitter
+    const smoothed = smoothedLevelsRef.current.map((prev, i) => {
+      const target = newLevels[i] || 0;
+      return prev * 0.7 + target * 0.3; // Smooth transition
+    });
 
-        // Apply smoothing to reduce jitter
-        const smoothed = smoothedLevelsRef.current.map((prev, i) => {
-          const target = newLevels[i] || 0;
-          return prev * 0.7 + target * 0.3; // Smooth transition
-        });
-
-        smoothedLevelsRef.current = smoothed;
-        setLevels(smoothed.slice(0, 9));
-      });
-
-      // Cleanup function
-      return () => {
-        unlistenShow();
-        unlistenHide();
-        unlistenLevel();
-      };
-    };
-
-    setupEventListeners();
-  }, []);
+    smoothedLevelsRef.current = smoothed;
+    setLevels(smoothed.slice(0, 9));
+  });
 
   const getIcon = () => {
     if (state === "recording") {
@@ -103,14 +91,19 @@ const RecordingOverlay: React.FC = () => {
 
       <div className="overlay-right">
         {state === "recording" && (
-          <div
+          <button
+            type="button"
             className="cancel-button"
+            aria-label={t("overlay.cancel")}
+            title={t("overlay.cancel")}
             onClick={() => {
-              commands.cancelOperation();
+              commands.cancelOperation().catch((error: unknown) => {
+                console.error("Failed to cancel recording:", error);
+              });
             }}
           >
             <CancelIcon />
-          </div>
+          </button>
         )}
       </div>
     </div>

@@ -1,10 +1,10 @@
 import React, { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ask } from "@tauri-apps/plugin-dialog";
 import { Search, X } from "lucide-react";
 import type { ModelCardStatus } from "@/components/onboarding";
 import { useModelStore } from "@/stores/modelStore";
 import { CollapsibleGroup } from "@/components/ui/CollapsibleGroup";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { LANGUAGES } from "@/lib/constants/languages";
 import type { ModelInfo } from "@/bindings";
 import { getTranslatedModelName } from "@/lib/utils/modelTranslation";
@@ -66,6 +66,7 @@ export const ModelsSettings: React.FC = () => {
   const { t } = useTranslation();
   const [switchingModelId, setSwitchingModelId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const { confirm, dialog } = useConfirm();
 
   const {
     models,
@@ -107,26 +108,22 @@ export const ModelsSettings: React.FC = () => {
   const handleModelDelete = async (modelId: string) => {
     const model = models.find((m: ModelInfo) => m.id === modelId);
     const modelName = model ? getTranslatedModelName(model, t) : modelId;
-    const confirmed = await ask(
-      modelId === currentModel
-        ? t("settings.models.deleteActiveConfirm", { modelName })
-        : t("settings.models.deleteConfirm", { modelName }),
-      { title: t("settings.models.deleteTitle"), kind: "warning" },
-    );
+    const confirmed = await confirm({
+      title: t("settings.models.deleteTitle"),
+      description:
+        modelId === currentModel
+          ? t("settings.models.deleteActiveConfirm", { modelName })
+          : t("settings.models.deleteConfirm", { modelName }),
+      destructive: true,
+    });
     if (!confirmed) return;
-    try {
-      await deleteModel(modelId);
-    } catch (err) {
-      console.error(`Failed to delete model ${modelId}:`, err);
-    }
+    // Failures are reported by the model store.
+    await deleteModel(modelId);
   };
 
-  const handleModelCancel = async (modelId: string) => {
-    try {
-      await cancelDownload(modelId);
-    } catch (err) {
-      console.error(`Failed to cancel download for ${modelId}:`, err);
-    }
+  const handleModelCancel = (modelId: string) => {
+    // Failures are reported by the model store.
+    void cancelDownload(modelId);
   };
 
   const searching = query.trim().length > 0;
@@ -176,9 +173,9 @@ export const ModelsSettings: React.FC = () => {
       key={model.id}
       model={model}
       status={getModelStatus(model.id)}
-      onSelect={handleModelSelect}
-      onDownload={downloadModel}
-      onDelete={handleModelDelete}
+      onSelect={(id) => void handleModelSelect(id)}
+      onDownload={(id) => void downloadModel(id)}
+      onDelete={(id) => void handleModelDelete(id)}
       onCancel={handleModelCancel}
       downloadProgress={downloadProgress[model.id]?.percentage}
       downloadSpeed={downloadStats[model.id]?.speed}
@@ -203,6 +200,7 @@ export const ModelsSettings: React.FC = () => {
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-6">
+      {dialog}
       <ActiveModelPanel model={currentModelInfo} />
       <MeetingModelPanel models={models} dictationModel={currentModelInfo} />
       <CloudKeysPanel />
@@ -213,13 +211,17 @@ export const ModelsSettings: React.FC = () => {
             {t("settings.models.browse")}
           </h2>
           <div className="relative w-64">
-            <Search className="pointer-events-none absolute start-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-text/40" />
+            <Search
+              className="pointer-events-none absolute start-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-text/40"
+              aria-hidden
+            />
             <input
-              type="text"
+              type="search"
+              aria-label={t("settings.models.searchPlaceholder")}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder={t("settings.models.searchPlaceholder")}
-              className="w-full rounded-lg border border-mid-gray/30 bg-background py-1.5 ps-8 pe-7 text-sm focus:border-logo-primary focus:outline-none"
+              className="w-full rounded-lg border border-mid-gray/30 bg-background py-1.5 ps-8 pe-7 text-sm focus:border-logo-primary focus:outline-none [&::-webkit-search-cancel-button]:hidden"
             />
             {searching && (
               <button

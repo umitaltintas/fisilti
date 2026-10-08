@@ -1,20 +1,23 @@
-import { useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import { toast, Toaster } from "sonner";
 import { useTranslation } from "react-i18next";
-import { listen } from "@tauri-apps/api/event";
 import { platform } from "@tauri-apps/plugin-os";
 import {
   checkAccessibilityPermission,
   checkMicrophonePermission,
 } from "tauri-plugin-macos-permissions-api";
-import { ModelStateEvent, RecordingErrorEvent } from "./lib/types/events";
+import {
+  DictationErrorEvent,
+  ModelStateEvent,
+  RecordingErrorEvent,
+} from "./lib/types/events";
 import "./App.css";
 import AccessibilityPermissions from "./components/AccessibilityPermissions";
 import Footer from "./components/footer";
 import Onboarding, { AccessibilityOnboarding } from "./components/onboarding";
 import { Sidebar, SidebarSection, SECTIONS_CONFIG } from "./components/Sidebar";
-import { useSettings } from "./hooks/useSettings";
 import { useSettingsStore } from "./stores/settingsStore";
+import { useTauriEvent } from "./hooks/useTauriEvent";
 import { commands } from "@/bindings";
 import { getLanguageDirection, initializeRTL } from "@/lib/utils/rtl";
 
@@ -26,6 +29,23 @@ const renderSettingsContent = (section: SidebarSection) => {
   return <ActiveComponent />;
 };
 
+/** Mounted once for the whole app, so toasts raised during onboarding (or
+ * before the main UI renders) are not dropped. */
+const AppToaster: React.FC = () => (
+  <Toaster
+    theme="system"
+    toastOptions={{
+      unstyled: true,
+      classNames: {
+        toast:
+          "bg-background border border-mid-gray/20 rounded-lg shadow-lg px-4 py-3 flex items-center gap-3 text-sm",
+        title: "font-medium",
+        description: "text-mid-gray",
+      },
+    }}
+  />
+);
+
 function App() {
   const { t, i18n } = useTranslation();
   const [onboardingStep, setOnboardingStep] = useState<OnboardingStep | null>(
@@ -36,19 +56,18 @@ function App() {
   const [isReturningUser, setIsReturningUser] = useState(false);
   const [currentSection, setCurrentSection] =
     useState<SidebarSection>("general");
-  const { settings, updateSetting } = useSettings();
-  const direction = getLanguageDirection(i18n.language);
+  // Narrow selectors: App re-renders for these values only, not for every
+  // settings change anywhere in the app.
+  const debugMode = useSettingsStore((s) => s.settings?.debug_mode ?? false);
+  const updateSetting = useSettingsStore((s) => s.updateSetting);
   const refreshAudioDevices = useSettingsStore(
     (state) => state.refreshAudioDevices,
   );
   const refreshOutputDevices = useSettingsStore(
     (state) => state.refreshOutputDevices,
   );
+  const direction = getLanguageDirection(i18n.language);
   const hasCompletedPostOnboardingInit = useRef(false);
-
-  useEffect(() => {
-    checkOnboardingStatus();
-  }, []);
 
   // Initialize RTL direction when language changes
   useEffect(() => {
@@ -62,27 +81,21 @@ function App() {
       Promise.all([
         commands.initializeEnigo(),
         commands.initializeShortcuts(),
-      ]).catch((e) => {
+      ]).catch((e: unknown) => {
         console.warn("Failed to initialize:", e);
       });
-      refreshAudioDevices();
-      refreshOutputDevices();
+      void refreshAudioDevices();
+      void refreshOutputDevices();
     }
   }, [onboardingStep, refreshAudioDevices, refreshOutputDevices]);
 
-  // Navigate to a sidebar section when the backend asks for it (e.g. the
-  // tray's "Meetings" item emits "navigate-section" with the section id).
-  useEffect(() => {
-    const unlisten = listen<string>("navigate-section", (event) => {
-      if (event.payload in SECTIONS_CONFIG) {
-        setCurrentSection(event.payload as SidebarSection);
-      }
-    });
-
-    return () => {
-      unlisten.then((fn) => fn());
-    };
-  }, []);
+  // Navigate to a sidebar section when the backend (the tray's "Meetings"
+  // item) or a page (a "go to Models" link) asks for it.
+  useTauriEvent<string>("navigate-section", (section) => {
+    if (section in SECTIONS_CONFIG) {
+      setCurrentSection(section as SidebarSection);
+    }
+  });
 
   // Handle keyboard shortcuts for debug mode toggle
   useEffect(() => {
@@ -95,30 +108,25 @@ function App() {
 
       if (isDebugShortcut) {
         event.preventDefault();
-        const currentDebugMode = settings?.debug_mode ?? false;
-        updateSetting("debug_mode", !currentDebugMode);
+        void updateSetting("debug_mode", !debugMode);
         // Debug settings are a group inside Advanced rather than their own
         // sidebar entry, so jump there to show what the shortcut revealed.
-        if (!currentDebugMode) {
+        if (!debugMode) {
           setCurrentSection("advanced");
         }
       }
     };
 
-    // Add event listener when component mounts
     document.addEventListener("keydown", handleKeyDown);
-
-    // Cleanup event listener when component unmounts
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [settings?.debug_mode, updateSetting]);
+  }, [debugMode, updateSetting]);
 
-  // Listen for recording errors from the backend and show a toast
-  useEffect(() => {
-    const unlisten = listen<RecordingErrorEvent>("recording-error", (event) => {
-      const { error_type, detail } = event.payload;
-
+  // Recording errors from the backend become a toast.
+  useTauriEvent<RecordingErrorEvent>(
+    "recording-error",
+    ({ error_type, detail }) => {
       if (error_type === "microphone_permission_denied") {
         const currentPlatform = platform();
         const platformKey = `errors.micPermissionDenied.${currentPlatform}`;
@@ -128,44 +136,57 @@ function App() {
         toast.error(t("errors.micPermissionDeniedTitle"), { description });
       } else {
         toast.error(
-          t("errors.recordingFailed", { error: detail ?? "Unknown error" }),
-        );
-      }
-    });
-    return () => {
-      unlisten.then((fn) => fn());
-    };
-  }, [t]);
-
-  // Listen for model loading failures and show a toast
-  useEffect(() => {
-    const unlisten = listen<ModelStateEvent>("model-state-changed", (event) => {
-      if (event.payload.event_type === "loading_failed") {
-        toast.error(
-          t("errors.modelLoadFailed", {
-            model:
-              event.payload.model_name || t("errors.modelLoadFailedUnknown"),
+          t("errors.recordingFailed", {
+            error: detail ?? t("errors.unknown"),
           }),
-          {
-            description: event.payload.error,
-          },
         );
       }
-    });
-    return () => {
-      unlisten.then((fn) => fn());
-    };
-  }, [t]);
+    },
+  );
 
-  const revealMainWindowForPermissions = async () => {
-    try {
-      await commands.showMainWindowCommand();
-    } catch (e) {
-      console.warn("Failed to show main window for permission onboarding:", e);
+  // Dictation pipeline failures. "Nothing was heard" is not an error, so it
+  // gets a gentle info toast instead of a red one.
+  useTauriEvent<DictationErrorEvent>(
+    "dictation-error",
+    ({ stage, message }) => {
+      const title = t(`errors.dictation.${stage}`, {
+        defaultValue: t("errors.dictation.generic"),
+      });
+      const options = message ? { description: message } : undefined;
+      if (stage === "no_speech") {
+        toast.info(title, options);
+      } else {
+        toast.error(title, options);
+      }
+    },
+  );
+
+  // Model loading failures become a toast.
+  useTauriEvent<ModelStateEvent>("model-state-changed", (payload) => {
+    if (payload.event_type === "loading_failed") {
+      toast.error(
+        t("errors.modelLoadFailed", {
+          model: payload.model_name || t("errors.modelLoadFailedUnknown"),
+        }),
+        {
+          description: payload.error,
+        },
+      );
     }
-  };
+  });
 
-  const checkOnboardingStatus = async () => {
+  const checkOnboardingStatus = useCallback(async () => {
+    const revealMainWindowForPermissions = async () => {
+      try {
+        await commands.showMainWindowCommand();
+      } catch (e) {
+        console.warn(
+          "Failed to show main window for permission onboarding:",
+          e,
+        );
+      }
+    };
+
     try {
       // Check if they have any models available
       const result = await commands.hasAnyModelsAvailable();
@@ -221,68 +242,68 @@ function App() {
       console.error("Failed to check onboarding status:", error);
       setOnboardingStep("accessibility");
     }
-  };
+  }, []);
 
-  const handleAccessibilityComplete = () => {
+  useEffect(() => {
+    void checkOnboardingStatus();
+  }, [checkOnboardingStatus]);
+
+  // Stable identities: AccessibilityOnboarding runs its permission check in an
+  // effect keyed on this callback, so a new function per render re-ran it.
+  const handleAccessibilityComplete = useCallback(() => {
     // Returning users already have models, skip to main app
     // New users need to select a model
     setOnboardingStep(isReturningUser ? "done" : "model");
-  };
+  }, [isReturningUser]);
 
-  const handleModelSelected = () => {
-    // Transition to main app - user has started a download
+  const handleModelSelected = useCallback(() => {
+    // Transition to main app - the chosen model is downloaded and selected
     setOnboardingStep("done");
-  };
+  }, []);
 
-  // Still checking onboarding status
+  let content: React.ReactNode;
   if (onboardingStep === null) {
-    return null;
-  }
-
-  if (onboardingStep === "accessibility") {
-    return <AccessibilityOnboarding onComplete={handleAccessibilityComplete} />;
-  }
-
-  if (onboardingStep === "model") {
-    return <Onboarding onModelSelected={handleModelSelected} />;
+    // Still checking onboarding status
+    content = null;
+  } else if (onboardingStep === "accessibility") {
+    content = (
+      <AccessibilityOnboarding onComplete={handleAccessibilityComplete} />
+    );
+  } else if (onboardingStep === "model") {
+    content = <Onboarding onModelSelected={handleModelSelected} />;
+  } else {
+    content = (
+      <div
+        dir={direction}
+        className="h-screen flex flex-col select-none cursor-default"
+      >
+        {/* Main content area that takes remaining space */}
+        <div className="flex-1 flex overflow-hidden">
+          <Sidebar
+            activeSection={currentSection}
+            onSectionChange={setCurrentSection}
+          />
+          {/* Scrollable content area */}
+          <main className="flex-1 flex flex-col overflow-hidden">
+            <div className="flex-1 overflow-y-auto">
+              <div className="flex flex-col items-center p-4 gap-4">
+                <AccessibilityPermissions />
+                {renderSettingsContent(currentSection)}
+              </div>
+            </div>
+          </main>
+        </div>
+        {/* Fixed footer at bottom */}
+        <Footer />
+      </div>
+    );
   }
 
   return (
-    <div
-      dir={direction}
-      className="h-screen flex flex-col select-none cursor-default"
-    >
-      <Toaster
-        theme="system"
-        toastOptions={{
-          unstyled: true,
-          classNames: {
-            toast:
-              "bg-background border border-mid-gray/20 rounded-lg shadow-lg px-4 py-3 flex items-center gap-3 text-sm",
-            title: "font-medium",
-            description: "text-mid-gray",
-          },
-        }}
-      />
-      {/* Main content area that takes remaining space */}
-      <div className="flex-1 flex overflow-hidden">
-        <Sidebar
-          activeSection={currentSection}
-          onSectionChange={setCurrentSection}
-        />
-        {/* Scrollable content area */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="flex-1 overflow-y-auto">
-            <div className="flex flex-col items-center p-4 gap-4">
-              <AccessibilityPermissions />
-              {renderSettingsContent(currentSection)}
-            </div>
-          </div>
-        </div>
-      </div>
-      {/* Fixed footer at bottom */}
-      <Footer />
-    </div>
+    <>
+      <AppToaster />
+      {content}
+    </>
   );
 }
 

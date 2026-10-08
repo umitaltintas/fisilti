@@ -644,6 +644,10 @@
       "saving": "Schlüssel wird gesichert…",
       "saved": "Schlüssel gesichert",
       "failed": "Schlüssel nicht gesichert"
+    },
+    "moreOptions": {
+      "show": "Weitere Optionen",
+      "hide": "Weniger anzeigen"
     }
   },
   "footer": {

@@ -15,6 +15,7 @@ import { VolumeSlider } from "../VolumeSlider";
 import { SoundPicker } from "../SoundPicker";
 import { AppLanguageSelector } from "../AppLanguageSelector";
 import { AppearanceSelector } from "../AppearanceSelector";
+import { MoreOptions } from "../../ui/MoreOptions";
 import { AutostartToggle } from "../AutostartToggle";
 import { StartHidden } from "../StartHidden";
 import { ShowTrayIcon } from "../ShowTrayIcon";
@@ -35,44 +36,52 @@ export const GeneralSettings: React.FC = () => {
     <div className="mx-auto w-full max-w-3xl space-y-6">
       <SettingsGroup title={t("settings.general.groups.recording")}>
         <ShortcutInput shortcutId="transcribe" grouped={true} />
-        {!isLinux && (
-          <ShortcutInput
-            shortcutId="cancel"
-            grouped={true}
-            disabled={pushToTalk}
-          />
-        )}
         <PushToTalk descriptionMode="inline" grouped={true} />
-        <ShowOverlay descriptionMode="inline" grouped={true} />
+        <MoreOptions>
+          {/* Push-to-talk cancels by releasing the key; the cancel shortcut
+              only matters in toggle mode. Dynamic registration is unstable
+              on Linux, so it stays hidden there. */}
+          {!isLinux && !pushToTalk && (
+            <ShortcutInput shortcutId="cancel" grouped={true} />
+          )}
+          <ShowOverlay descriptionMode="inline" grouped={true} />
+        </MoreOptions>
       </SettingsGroup>
 
       <SettingsGroup title={t("settings.sound.title")}>
         <MicrophoneSelector descriptionMode="inline" grouped={true} />
-        {/* Which microphone to use with the lid closed. Laptops only (the
-            component renders nothing elsewhere); it lives next to the main
-            microphone choice it overrides. */}
-        <ClamshellMicrophoneSelector descriptionMode="inline" grouped={true} />
-        <MuteWhileRecording descriptionMode="inline" grouped={true} />
         <AudioFeedback descriptionMode="inline" grouped={true} />
-        <OutputDeviceSelector
-          descriptionMode="inline"
-          grouped={true}
-          disabled={!audioFeedbackEnabled}
-        />
-        <SoundPicker
-          label={t("settings.sound.soundTheme.label")}
-          description={t("settings.sound.soundTheme.description")}
-        />
-        <VolumeSlider disabled={!audioFeedbackEnabled} />
+        {/* Only meaningful while feedback sounds are on. */}
+        {audioFeedbackEnabled && (
+          <SoundPicker
+            label={t("settings.sound.soundTheme.label")}
+            description={t("settings.sound.soundTheme.description")}
+          />
+        )}
+        {audioFeedbackEnabled && <VolumeSlider />}
+        <MoreOptions>
+          {/* Laptops only (renders nothing elsewhere); next to the main
+              microphone choice it overrides. */}
+          <ClamshellMicrophoneSelector
+            descriptionMode="inline"
+            grouped={true}
+          />
+          <MuteWhileRecording descriptionMode="inline" grouped={true} />
+          {audioFeedbackEnabled && (
+            <OutputDeviceSelector descriptionMode="inline" grouped={true} />
+          )}
+        </MoreOptions>
       </SettingsGroup>
 
       <SettingsGroup title={t("settings.general.groups.app")}>
         <AppLanguageSelector descriptionMode="inline" grouped={true} />
         <AppearanceSelector descriptionMode="inline" grouped={true} />
         <AutostartToggle descriptionMode="inline" grouped={true} />
-        <StartHidden descriptionMode="inline" grouped={true} />
-        <ShowTrayIcon descriptionMode="inline" grouped={true} />
-        <UpdateChecksToggle descriptionMode="inline" grouped={true} />
+        <MoreOptions>
+          <StartHidden descriptionMode="inline" grouped={true} />
+          <ShowTrayIcon descriptionMode="inline" grouped={true} />
+          <UpdateChecksToggle descriptionMode="inline" grouped={true} />
+        </MoreOptions>
       </SettingsGroup>
     </div>
   );

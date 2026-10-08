@@ -644,6 +644,10 @@
       "saving": "Sparar nyckel…",
       "saved": "Nyckeln har sparats",
       "failed": "Nyckeln sparades inte"
+    },
+    "moreOptions": {
+      "show": "Fler alternativ",
+      "hide": "Färre alternativ"
     }
   },
   "footer": {

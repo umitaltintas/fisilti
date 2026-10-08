@@ -644,6 +644,10 @@
       "saving": "Ukládání klíče…",
       "saved": "Klíč uložen",
       "failed": "Klíč nebyl uložen"
+    },
+    "moreOptions": {
+      "show": "Další možnosti",
+      "hide": "Méně možností"
     }
   },
   "footer": {

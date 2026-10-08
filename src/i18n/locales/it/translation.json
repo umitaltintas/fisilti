@@ -644,6 +644,10 @@
       "saving": "Salvataggio della chiave…",
       "saved": "Chiave salvata",
       "failed": "Chiave non salvata"
+    },
+    "moreOptions": {
+      "show": "Altre opzioni",
+      "hide": "Meno opzioni"
     }
   },
   "footer": {

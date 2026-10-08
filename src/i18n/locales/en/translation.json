@@ -644,6 +644,10 @@
       "saving": "Saving key…",
       "saved": "Key saved",
       "failed": "Key not saved"
+    },
+    "moreOptions": {
+      "show": "More options",
+      "hide": "Fewer options"
     }
   },
   "footer": {

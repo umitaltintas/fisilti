@@ -644,6 +644,10 @@
       "saving": "Anahtar kaydediliyor…",
       "saved": "Anahtar kaydedildi",
       "failed": "Anahtar kaydedilemedi"
+    },
+    "moreOptions": {
+      "show": "Daha fazla seçenek",
+      "hide": "Daha az göster"
     }
   },
   "footer": {

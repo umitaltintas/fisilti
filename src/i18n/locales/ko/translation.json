@@ -644,6 +644,10 @@
       "saving": "키 저장 중…",
       "saved": "키를 저장했습니다",
       "failed": "키가 저장되지 않았습니다"
+    },
+    "moreOptions": {
+      "show": "옵션 더 보기",
+      "hide": "옵션 접기"
     }
   },
   "footer": {

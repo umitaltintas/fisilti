@@ -644,6 +644,10 @@
       "saving": "Zapisywanie klucza…",
       "saved": "Klucz zapisany",
       "failed": "Klucz nie został zapisany"
+    },
+    "moreOptions": {
+      "show": "Więcej opcji",
+      "hide": "Mniej opcji"
     }
   },
   "footer": {

@@ -644,6 +644,10 @@
       "saving": "正在保存密钥…",
       "saved": "密钥已保存",
       "failed": "密钥未保存"
+    },
+    "moreOptions": {
+      "show": "更多选项",
+      "hide": "收起选项"
     }
   },
   "footer": {

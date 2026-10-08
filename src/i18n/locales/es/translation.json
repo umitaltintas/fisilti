@@ -644,6 +644,10 @@
       "saving": "Guardando clave…",
       "saved": "Clave guardada",
       "failed": "Clave no guardada"
+    },
+    "moreOptions": {
+      "show": "Más opciones",
+      "hide": "Menos opciones"
     }
   },
   "footer": {

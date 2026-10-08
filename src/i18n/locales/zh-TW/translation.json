@@ -644,6 +644,10 @@
       "saving": "正在儲存金鑰…",
       "saved": "金鑰已儲存",
       "failed": "金鑰未儲存"
+    },
+    "moreOptions": {
+      "show": "更多選項",
+      "hide": "收起選項"
     }
   },
   "footer": {

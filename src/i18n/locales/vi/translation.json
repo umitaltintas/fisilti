@@ -644,6 +644,10 @@
       "saving": "Đang lưu khóa…",
       "saved": "Đã lưu khóa",
       "failed": "Chưa lưu được khóa"
+    },
+    "moreOptions": {
+      "show": "Thêm tùy chọn",
+      "hide": "Ẩn bớt tùy chọn"
     }
   },
   "footer": {

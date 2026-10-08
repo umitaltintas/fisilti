@@ -18,6 +18,7 @@ import { WordCorrectionThreshold } from "../debug/WordCorrectionThreshold";
 import { LogLevelSelector } from "../debug/LogLevelSelector";
 import { LogDirectory } from "../debug/LogDirectory";
 import { PasteDelay } from "../debug/PasteDelay";
+import { MoreOptions } from "../../ui/MoreOptions";
 import { RecordingBuffer } from "../debug/RecordingBuffer";
 
 // Set-once options. The old Debug section was folded in here as the
@@ -33,20 +34,22 @@ export const AdvancedSettings: React.FC = () => {
     <div className="mx-auto w-full max-w-3xl space-y-6">
       <SettingsGroup title={t("settings.advanced.groups.output")}>
         <PasteMethodSetting descriptionMode="inline" grouped={true} />
-        <TypingToolSetting descriptionMode="inline" grouped={true} />
-        <ClipboardHandlingSetting descriptionMode="inline" grouped={true} />
         <AutoSubmit descriptionMode="inline" grouped={true} />
-        <AppendTrailingSpace descriptionMode="inline" grouped={true} />
+        <MoreOptions>
+          <TypingToolSetting descriptionMode="inline" grouped={true} />
+          <ClipboardHandlingSetting descriptionMode="inline" grouped={true} />
+          <AppendTrailingSpace descriptionMode="inline" grouped={true} />
+        </MoreOptions>
       </SettingsGroup>
 
       <SettingsGroup title={t("settings.advanced.groups.transcription")}>
         <CustomWords descriptionMode="inline" grouped />
-        <WordCorrectionThreshold descriptionMode="inline" grouped={true} />
-        <ModelUnloadTimeoutSetting descriptionMode="inline" grouped={true} />
-        {/* A real latency/privacy trade-off, not a debugging aid: it used to
-            sit in the debug-only Developer group, invisible to almost
-            everyone. */}
-        <AlwaysOnMicrophone descriptionMode="inline" grouped={true} />
+        <MoreOptions>
+          <WordCorrectionThreshold descriptionMode="inline" grouped={true} />
+          <ModelUnloadTimeoutSetting descriptionMode="inline" grouped={true} />
+          {/* A real latency/privacy trade-off, not a debugging aid. */}
+          <AlwaysOnMicrophone descriptionMode="inline" grouped={true} />
+        </MoreOptions>
       </SettingsGroup>
 
       <SettingsGroup title={t("settings.advanced.groups.experimental")}>

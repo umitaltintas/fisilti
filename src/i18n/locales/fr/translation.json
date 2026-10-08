@@ -644,6 +644,10 @@
       "saving": "Enregistrement de la clé…",
       "saved": "Clé enregistrée",
       "failed": "Clé non enregistrée"
+    },
+    "moreOptions": {
+      "show": "Plus d’options",
+      "hide": "Moins d’options"
     }
   },
   "footer": {

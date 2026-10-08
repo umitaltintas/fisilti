@@ -39,7 +39,7 @@ export const CollapsibleGroup: React.FC<CollapsibleGroupProps> = ({
             open ? "" : "-rotate-90"
           }`}
         />
-        <h2 className="text-xs font-medium text-mid-gray uppercase tracking-wide group-hover:text-text/80 transition-colors">
+        <h2 className="text-xs font-semibold text-sub transition-colors group-hover:text-text">
           {title}
         </h2>
         {count !== undefined && (

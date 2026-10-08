@@ -14,6 +14,7 @@ import type { DropdownOption } from "../../ui/Dropdown";
 import { ShortcutInput } from "../ShortcutInput";
 import { Alert } from "../../ui/Alert";
 import { Button } from "../../ui/Button";
+import { MoreOptions } from "../../ui/MoreOptions";
 import { InlineError } from "./shared";
 import { useModelStore } from "@/stores/modelStore";
 import { useSettingsStore, type Settings } from "@/stores/settingsStore";
@@ -213,49 +214,51 @@ export const MeetingPreferences: React.FC = () => {
           </InlineError>
         )}
 
-        <SettingContainer
-          title={t("meeting.exportDir.title")}
-          description={t("meeting.exportDir.description")}
-          descriptionMode="inline"
-          grouped
-        >
-          <div className="flex items-center gap-2 min-w-0">
-            {exportDir && (
-              <span
-                className="max-w-56 truncate text-xs font-mono text-sub"
-                title={exportDir}
-                dir="rtl"
-              >
-                {exportDir}
-              </span>
-            )}
-            <Button
-              onClick={() => void handleExportDir(true)}
-              variant="secondary"
-              size="sm"
-              disabled={busy("meeting_export_dir")}
-            >
-              {exportDir
-                ? t("meeting.exportDir.change")
-                : t("meeting.exportDir.choose")}
-            </Button>
-            {exportDir && (
+        <MoreOptions>
+          <SettingContainer
+            title={t("meeting.exportDir.title")}
+            description={t("meeting.exportDir.description")}
+            descriptionMode="inline"
+            grouped
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              {exportDir && (
+                <span
+                  className="max-w-56 truncate text-xs font-mono text-sub"
+                  title={exportDir}
+                  dir="rtl"
+                >
+                  {exportDir}
+                </span>
+              )}
               <Button
-                onClick={() => void handleExportDir(false)}
-                variant="ghost"
+                onClick={() => void handleExportDir(true)}
+                variant="secondary"
                 size="sm"
                 disabled={busy("meeting_export_dir")}
               >
-                {t("meeting.exportDir.off")}
+                {exportDir
+                  ? t("meeting.exportDir.change")
+                  : t("meeting.exportDir.choose")}
               </Button>
-            )}
-          </div>
-        </SettingContainer>
-        {exportDirError && (
-          <InlineError className="px-4 pb-2 text-xs">
-            {exportDirError}
-          </InlineError>
-        )}
+              {exportDir && (
+                <Button
+                  onClick={() => void handleExportDir(false)}
+                  variant="ghost"
+                  size="sm"
+                  disabled={busy("meeting_export_dir")}
+                >
+                  {t("meeting.exportDir.off")}
+                </Button>
+              )}
+            </div>
+          </SettingContainer>
+          {exportDirError && (
+            <InlineError className="px-4 pb-2 text-xs">
+              {exportDirError}
+            </InlineError>
+          )}
+        </MoreOptions>
       </SettingsGroup>
 
       <CollapsibleGroup
@@ -381,38 +384,43 @@ export const MeetingPreferences: React.FC = () => {
             description={t("meeting.autoEndDescription")}
             grouped
           />
-          <SettingContainer
-            title={t("meeting.silenceTimeoutLabel")}
-            description={t("meeting.silenceTimeoutDescription")}
-            descriptionMode="inline"
-            grouped
-            disabled={!autoEnd}
-          >
-            <Dropdown
-              options={silenceTimeoutOptions}
-              selectedValue={String(silenceTimeoutSecs)}
-              onSelect={(v) =>
-                void updateSetting("meeting_silence_timeout_secs", Number(v))
-              }
-              disabled={!autoEnd || busy("meeting_silence_timeout_secs")}
-            />
-          </SettingContainer>
-          <SettingContainer
-            title={t("meeting.autoEndGraceLabel")}
-            description={t("meeting.autoEndGraceDescription")}
-            descriptionMode="inline"
-            grouped
-            disabled={!autoEnd}
-          >
-            <Dropdown
-              options={autoEndGraceOptions}
-              selectedValue={String(autoEndGraceSecs)}
-              onSelect={(v) =>
-                void updateSetting("meeting_auto_end_grace_secs", Number(v))
-              }
-              disabled={!autoEnd || busy("meeting_auto_end_grace_secs")}
-            />
-          </SettingContainer>
+          {autoEnd && (
+            <MoreOptions>
+              <SettingContainer
+                title={t("meeting.silenceTimeoutLabel")}
+                description={t("meeting.silenceTimeoutDescription")}
+                descriptionMode="inline"
+                grouped
+              >
+                <Dropdown
+                  options={silenceTimeoutOptions}
+                  selectedValue={String(silenceTimeoutSecs)}
+                  onSelect={(v) =>
+                    void updateSetting(
+                      "meeting_silence_timeout_secs",
+                      Number(v),
+                    )
+                  }
+                  disabled={busy("meeting_silence_timeout_secs")}
+                />
+              </SettingContainer>
+              <SettingContainer
+                title={t("meeting.autoEndGraceLabel")}
+                description={t("meeting.autoEndGraceDescription")}
+                descriptionMode="inline"
+                grouped
+              >
+                <Dropdown
+                  options={autoEndGraceOptions}
+                  selectedValue={String(autoEndGraceSecs)}
+                  onSelect={(v) =>
+                    void updateSetting("meeting_auto_end_grace_secs", Number(v))
+                  }
+                  disabled={busy("meeting_auto_end_grace_secs")}
+                />
+              </SettingContainer>
+            </MoreOptions>
+          )}
         </SettingsGroup>
       </CollapsibleGroup>
     </div>

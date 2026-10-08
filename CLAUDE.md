@@ -325,6 +325,12 @@ clusters (`SECTIONS_CONFIG` in `src/components/Sidebar.tsx`):
   Advanced, shown only when `debug_mode` is on.
 - Long lists use `ui/CollapsibleGroup.tsx` so a page opens showing only what
   is likely needed.
+- **Each group shows only its essentials.** Rows most people never change go
+  in a `ui/MoreOptions.tsx` at the bottom of their `SettingsGroup` (still the
+  same page — "one home per setting" holds). A row that only matters while
+  another setting is on (feedback sound/volume/output device, auto-end
+  timeouts, the cancel shortcut in push-to-talk) is not rendered at all while
+  it is off, rather than shown disabled.
 - **One set of settings primitives.** Anything that reads as a setting is built
   from `SettingsGroup` + `SettingContainer` / `ToggleSwitch` / `Dropdown`, on
   every page including the ones inside a feature workspace. Do not grow a

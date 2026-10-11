@@ -105,6 +105,13 @@ pub struct PostProcessProvider {
     pub supports_structured_output: bool,
 }
 
+/// Top-left corner of the collapsed mascot window, in logical coordinates.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Type)]
+pub struct MascotPosition {
+    pub x: f64,
+    pub y: f64,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
 #[serde(rename_all = "lowercase")]
 pub enum OverlayPosition {
@@ -403,6 +410,12 @@ pub struct AppSettings {
     pub keyboard_implementation: KeyboardImplementation,
     #[serde(default = "default_show_tray_icon")]
     pub show_tray_icon: bool,
+    /// Show the draggable desktop mascot (see `mascot.rs`).
+    #[serde(default)]
+    pub show_mascot: bool,
+    /// Where the user last dropped the mascot, in logical screen coordinates.
+    #[serde(default)]
+    pub mascot_position: Option<MascotPosition>,
     #[serde(default = "default_paste_delay_ms")]
     pub paste_delay_ms: u64,
     #[serde(default = "default_typing_tool")]
@@ -1137,6 +1150,8 @@ pub fn get_default_settings() -> AppSettings {
         lazy_stream_close: false,
         keyboard_implementation: KeyboardImplementation::default(),
         show_tray_icon: default_show_tray_icon(),
+        show_mascot: false,
+        mascot_position: None,
         paste_delay_ms: default_paste_delay_ms(),
         typing_tool: default_typing_tool(),
         external_script_path: None,

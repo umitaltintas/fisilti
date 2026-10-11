@@ -17,6 +17,14 @@
     "recordingIndicator": "Fısıltı — Spelar in…",
     "meetings": "Möten..."
   },
+  "mascot": {
+    "label": "Fısıltı-maskot",
+    "cancel": "Avbryt",
+    "history": "Diktathistorik",
+    "meetings": "Möten",
+    "openApp": "Öppna Fısıltı",
+    "hide": "Dölj maskot"
+  },
   "sidebar": {
     "general": "Allmänt",
     "models": "Modeller",
@@ -373,6 +381,10 @@
       "showTrayIcon": {
         "label": "Visa ikon i systemfältet",
         "description": "Visa Fısıltı-ikonen i systemfältet."
+      },
+      "showMascot": {
+        "label": "Visa maskot",
+        "description": "En liten figur på skärmen. Dra den vart du vill; klicka för snabbåtgärder."
       },
       "overlay": {
         "title": "Överlagringsposition",

@@ -17,6 +17,14 @@
     "recordingIndicator": "Fısıltı — 錄製中…",
     "meetings": "會議..."
   },
+  "mascot": {
+    "label": "Fısıltı 吉祥物",
+    "cancel": "取消",
+    "history": "聽寫記錄",
+    "meetings": "會議",
+    "openApp": "開啟 Fısıltı",
+    "hide": "隱藏吉祥物"
+  },
   "sidebar": {
     "general": "一般",
     "models": "模型",
@@ -373,6 +381,10 @@
       "showTrayIcon": {
         "label": "顯示系統匣圖示",
         "description": "在系統匣中顯示 Fısıltı 圖示"
+      },
+      "showMascot": {
+        "label": "顯示吉祥物",
+        "description": "螢幕上的小角色。可拖到任意位置，點一下即可快速操作。"
       },
       "overlay": {
         "title": "懸浮窗位置",

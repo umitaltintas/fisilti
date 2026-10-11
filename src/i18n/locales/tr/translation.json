@@ -17,6 +17,14 @@
     "recordingIndicator": "Fısıltı — Kaydediliyor…",
     "meetings": "Toplantılar..."
   },
+  "mascot": {
+    "label": "Fısıltı maskotu",
+    "cancel": "İptal",
+    "history": "Dikte geçmişi",
+    "meetings": "Toplantılar",
+    "openApp": "Fısıltı'yı aç",
+    "hide": "Maskotu gizle"
+  },
   "sidebar": {
     "general": "Genel",
     "models": "Modeller",
@@ -373,6 +381,10 @@
       "showTrayIcon": {
         "label": "Tepsi simgesini göster",
         "description": "Fısıltı simgesini sistem tepsisinde göster."
+      },
+      "showMascot": {
+        "label": "Maskotu göster",
+        "description": "Ekranında küçük bir karakter. İstediğin yere sürükle, hızlı işlemler için tıkla."
       },
       "overlay": {
         "title": "Overlay konumu",

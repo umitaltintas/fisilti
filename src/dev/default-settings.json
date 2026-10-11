@@ -168,6 +168,8 @@
   "lazy_stream_close": false,
   "keyboard_implementation": "handy_keys",
   "show_tray_icon": true,
+  "show_mascot": false,
+  "mascot_position": null,
   "paste_delay_ms": 60,
   "typing_tool": "auto",
   "external_script_path": null,

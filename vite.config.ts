@@ -40,6 +40,7 @@ export default defineConfig(async () => ({
         overlay: resolve(__dirname, "src/overlay/index.html"),
         meetingPrompt: resolve(__dirname, "src/meeting-prompt/index.html"),
         subtitle: resolve(__dirname, "src/subtitle/index.html"),
+        mascot: resolve(__dirname, "src/mascot/index.html"),
       },
     },
   },

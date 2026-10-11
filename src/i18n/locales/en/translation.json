@@ -17,6 +17,14 @@
     "recordingIndicator": "Fisilti — Recording…",
     "meetings": "Meetings..."
   },
+  "mascot": {
+    "label": "Fısıltı mascot",
+    "cancel": "Cancel",
+    "history": "Dictation history",
+    "meetings": "Meetings",
+    "openApp": "Open Fısıltı",
+    "hide": "Hide mascot"
+  },
   "sidebar": {
     "general": "General",
     "models": "Models",
@@ -373,6 +381,10 @@
       "showTrayIcon": {
         "label": "Show tray icon",
         "description": "Display the Fisilti icon in the system tray."
+      },
+      "showMascot": {
+        "label": "Show mascot",
+        "description": "A little character on your screen. Drag it anywhere; click it for quick actions."
       },
       "overlay": {
         "title": "Overlay position",

@@ -522,6 +522,39 @@ async changeShowTrayIconSetting(enabled: boolean) : Promise<Result<null, string>
     else return { status: "error", error: e  as any };
 }
 },
+async changeShowMascotSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_show_mascot_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getMascotStatus() : Promise<MascotStatus> {
+    return await TAURI_INVOKE("get_mascot_status");
+},
+/**
+ * Grow the window for the menu (or shrink it back) without moving the
+ * character on screen. The menu goes above the character unless that would
+ * leave the monitor, and the window is clamped horizontally so the menu stays
+ * fully visible at a screen edge.
+ */
+async setMascotMenuOpen(open: boolean) : Promise<Result<MascotLayout, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_mascot_menu_open", { open }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async mascotAction(action: MascotAction) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("mascot_action", { action }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeWhisperAcceleratorSetting(accelerator: WhisperAcceleratorSetting) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_whisper_accelerator_setting", { accelerator }) };
@@ -1409,7 +1442,15 @@ export type AppSettings = { bindings: Partial<{ [key in string]: ShortcutBinding
  * transcription entry (e.g. `openai/gpt-4o-mini-transcribe`). Empty unless
  * the user enters one in Settings → Models.
  */
-openrouter_custom_model?: string; mute_while_recording?: boolean; append_trailing_space?: boolean; app_language?: string; experimental_enabled?: boolean; lazy_stream_close?: boolean; keyboard_implementation?: KeyboardImplementation; show_tray_icon?: boolean; paste_delay_ms?: number; typing_tool?: TypingTool; external_script_path: string | null; custom_filler_words?: string[] | null; whisper_accelerator?: WhisperAcceleratorSetting; ort_accelerator?: OrtAcceleratorSetting; extra_recording_buffer_ms?: number; 
+openrouter_custom_model?: string; mute_while_recording?: boolean; append_trailing_space?: boolean; app_language?: string; experimental_enabled?: boolean; lazy_stream_close?: boolean; keyboard_implementation?: KeyboardImplementation; show_tray_icon?: boolean; 
+/**
+ * Show the draggable desktop mascot (see `mascot.rs`).
+ */
+show_mascot?: boolean; 
+/**
+ * Where the user last dropped the mascot, in logical screen coordinates.
+ */
+mascot_position?: MascotPosition | null; paste_delay_ms?: number; typing_tool?: TypingTool; external_script_path: string | null; custom_filler_words?: string[] | null; whisper_accelerator?: WhisperAcceleratorSetting; ort_accelerator?: OrtAcceleratorSetting; extra_recording_buffer_ms?: number; 
 /**
  * Meeting mode: automatically summarize the meeting transcript on stop
  * (using the active post-process provider). Additive; defaults to false.
@@ -1625,6 +1666,42 @@ has_buffers: boolean }
 export type KeyboardImplementation = "tauri" | "handy_keys"
 export type LLMPrompt = { id: string; name: string; prompt: string }
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error"
+/**
+ * The menu's actions. Each one reuses the tray's path.
+ */
+export type MascotAction = "toggle_dictation" | "toggle_meeting" | "copy_last_transcript" | "open_app" | "open_history" | "open_meetings" | "cancel" | "hide"
+/**
+ * How the page should lay out the expanded window.
+ */
+export type MascotLayout = { 
+/**
+ * The menu sits above the character (false: below, near the top edge).
+ */
+menu_above: boolean; 
+/**
+ * Offset of the character's left edge inside the window, in logical px.
+ */
+mascot_left: number }
+/**
+ * Top-left corner of the collapsed mascot window, in logical coordinates.
+ */
+export type MascotPosition = { x: number; y: number }
+/**
+ * What the page needs to render on mount.
+ */
+export type MascotStatus = { 
+/**
+ * `"idle"`, `"recording"` or `"transcribing"`.
+ */
+dictation: string; 
+/**
+ * `"idle"`, `"running"` or `"finalizing"`.
+ */
+meeting: string; 
+/**
+ * Meeting capture exists on macOS only; the menu hides the item elsewhere.
+ */
+meeting_supported: boolean }
 /**
  * Detection status snapshot for the frontend (settings UI / debugging).
  */

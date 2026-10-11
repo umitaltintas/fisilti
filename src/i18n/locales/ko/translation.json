@@ -17,6 +17,14 @@
     "recordingIndicator": "Fısıltı — 녹음 중…",
     "meetings": "회의..."
   },
+  "mascot": {
+    "label": "Fısıltı 마스코트",
+    "cancel": "취소",
+    "history": "받아쓰기 기록",
+    "meetings": "회의",
+    "openApp": "Fısıltı 열기",
+    "hide": "마스코트 숨기기"
+  },
   "sidebar": {
     "general": "일반",
     "models": "모델",
@@ -373,6 +381,10 @@
       "showTrayIcon": {
         "label": "트레이 아이콘 표시",
         "description": "시스템 트레이에 Fısıltı 아이콘을 표시합니다."
+      },
+      "showMascot": {
+        "label": "마스코트 표시",
+        "description": "화면 위의 작은 캐릭터입니다. 원하는 곳으로 끌어 놓고, 클릭하면 빠른 작업을 할 수 있습니다."
       },
       "overlay": {
         "title": "오버레이 위치",

@@ -17,6 +17,14 @@
     "recordingIndicator": "Fısıltı — Nagrywanie…",
     "meetings": "Spotkania..."
   },
+  "mascot": {
+    "label": "Maskotka Fısıltı",
+    "cancel": "Anuluj",
+    "history": "Historia dyktowania",
+    "meetings": "Spotkania",
+    "openApp": "Otwórz Fısıltı",
+    "hide": "Ukryj maskotkę"
+  },
   "sidebar": {
     "general": "Ogólne",
     "models": "Modele",
@@ -373,6 +381,10 @@
       "showTrayIcon": {
         "label": "Pokaż ikonę w zasobniku",
         "description": "Wyświetlaj ikonę Fısıltı w zasobniku systemowym."
+      },
+      "showMascot": {
+        "label": "Pokaż maskotkę",
+        "description": "Mała postać na ekranie. Przeciągnij ją w dowolne miejsce, kliknij, aby otworzyć szybkie akcje."
       },
       "overlay": {
         "title": "Pozycja nakładki",

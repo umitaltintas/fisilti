@@ -17,6 +17,14 @@
     "recordingIndicator": "Fısıltı — Enregistrement…",
     "meetings": "Réunions..."
   },
+  "mascot": {
+    "label": "Mascotte Fısıltı",
+    "cancel": "Annuler",
+    "history": "Historique de dictée",
+    "meetings": "Réunions",
+    "openApp": "Ouvrir Fısıltı",
+    "hide": "Masquer la mascotte"
+  },
   "sidebar": {
     "general": "Général",
     "models": "Modèles",
@@ -373,6 +381,10 @@
       "showTrayIcon": {
         "label": "Afficher l'icône de la barre",
         "description": "Afficher l'icône de Fısıltı dans la barre système."
+      },
+      "showMascot": {
+        "label": "Afficher la mascotte",
+        "description": "Un petit personnage sur votre écran. Déplacez-le où vous voulez ; cliquez dessus pour les actions rapides."
       },
       "overlay": {
         "title": "Position de la fenêtre d'enregistrement",

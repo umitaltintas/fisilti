@@ -192,6 +192,12 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
   has_any_models_available: () => true,
   has_any_models_or_downloads: () => true,
   get_transcription_model_status: () => settings.selected_model,
+  get_mascot_status: () => ({
+    dictation: "idle",
+    meeting: "idle",
+    meeting_supported: true,
+  }),
+  set_mascot_menu_open: () => ({ menu_above: true, mascot_left: 72 }),
   get_model_load_status: () => ({
     is_loaded: true,
     current_model: settings.selected_model,

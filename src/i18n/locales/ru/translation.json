@@ -17,6 +17,14 @@
     "recordingIndicator": "Fisilti — Запись…",
     "meetings": "Встречи..."
   },
+  "mascot": {
+    "label": "Талисман Fısıltı",
+    "cancel": "Отмена",
+    "history": "История диктовки",
+    "meetings": "Встречи",
+    "openApp": "Открыть Fısıltı",
+    "hide": "Скрыть талисман"
+  },
   "sidebar": {
     "general": "Общие",
     "models": "Модели",
@@ -373,6 +381,10 @@
       "showTrayIcon": {
         "label": "Показать значок в трее",
         "description": "Отображать значок Fisilti в системном трее."
+      },
+      "showMascot": {
+        "label": "Показывать талисман",
+        "description": "Маленький персонаж на экране. Перетащите его куда угодно, нажмите для быстрых действий."
       },
       "overlay": {
         "title": "Позиция индикатора",

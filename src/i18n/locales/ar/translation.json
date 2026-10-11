@@ -17,6 +17,14 @@
     "recordingIndicator": "Fısıltı — جارٍ التسجيل…",
     "meetings": "الاجتماعات..."
   },
+  "mascot": {
+    "label": "تميمة Fısıltı",
+    "cancel": "إلغاء",
+    "history": "سجل الإملاء",
+    "meetings": "الاجتماعات",
+    "openApp": "فتح Fısıltı",
+    "hide": "إخفاء التميمة"
+  },
   "sidebar": {
     "general": "عام",
     "advanced": "متقدم",
@@ -304,6 +312,10 @@
       "showTrayIcon": {
         "label": "إظهار أيقونة شريط النظام",
         "description": ".عرض أيقونة Fısıltı في شريط النظام"
+      },
+      "showMascot": {
+        "label": "إظهار التميمة",
+        "description": "شخصية صغيرة على شاشتك. اسحبها إلى أي مكان وانقر عليها للإجراءات السريعة."
       },
       "overlay": {
         "title": "موقع التراكب",

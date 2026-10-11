@@ -17,6 +17,14 @@
     "recordingIndicator": "Fısıltı — Gravando…",
     "meetings": "Reuniões..."
   },
+  "mascot": {
+    "label": "Mascote do Fısıltı",
+    "cancel": "Cancelar",
+    "history": "Histórico de ditado",
+    "meetings": "Reuniões",
+    "openApp": "Abrir Fısıltı",
+    "hide": "Ocultar mascote"
+  },
   "sidebar": {
     "general": "Geral",
     "models": "Modelos",
@@ -373,6 +381,10 @@
       "showTrayIcon": {
         "label": "Mostrar ícone na bandeja",
         "description": "Exibir o ícone do Fısıltı na bandeja do sistema."
+      },
+      "showMascot": {
+        "label": "Mostrar mascote",
+        "description": "Um pequeno personagem na sua tela. Arraste para onde quiser; clique para ações rápidas."
       },
       "overlay": {
         "title": "Posição da Sobreposição",

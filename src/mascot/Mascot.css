@@ -1,0 +1,296 @@
+@import "tailwindcss";
+
+/* The window is transparent; only the character and the menu paint. */
+.mascot-root {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  user-select: none;
+  -webkit-user-select: none;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.mascot-root.menu-below {
+  justify-content: flex-start;
+}
+
+/* --- Character ------------------------------------------------------------ */
+
+.mascot-hit {
+  width: 88px;
+  height: 88px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: grab;
+  outline: none;
+}
+
+.mascot-hit:active {
+  cursor: grabbing;
+}
+
+.mascot-figure {
+  transition: transform 160ms ease-out;
+  filter: drop-shadow(0 4px 6px rgb(76 29 149 / 0.35));
+}
+
+.mascot-hit:hover .mascot-figure {
+  transform: scale(1.06);
+}
+
+.mascot-body {
+  transform-origin: 36px 60px;
+  animation: mascot-float 3.2s ease-in-out infinite;
+}
+
+.mascot-shadow {
+  fill: rgb(0 0 0 / 0.18);
+  transform-origin: 36px 68px;
+  animation: mascot-shadow 3.2s ease-in-out infinite;
+}
+
+.mascot-eyes {
+  transform-origin: 36px 32px;
+  animation: mascot-blink 4.6s infinite;
+}
+
+.mascot-pupils {
+  transition: transform 300ms ease-out;
+}
+
+.mascot-mouth-open,
+.mascot-waves,
+.mascot-dots {
+  opacity: 0;
+}
+
+.mascot-waves {
+  stroke: #a78bfa;
+  stroke-width: 2.4;
+}
+
+.mascot-live {
+  animation: mascot-pulse 1.4s ease-in-out infinite;
+}
+
+/* Menu open: looks up at it. */
+.mascot-figure[data-mood="curious"] .mascot-pupils {
+  transform: translateY(-1.5px);
+}
+
+/* Dictation recording: open mouth, sound waves, livelier bob. */
+.mascot-figure[data-mood="listening"] .mascot-smile {
+  opacity: 0;
+}
+.mascot-figure[data-mood="listening"] .mascot-mouth-open {
+  opacity: 1;
+  transform-origin: 36px 43px;
+  animation: mascot-talk 0.5s ease-in-out infinite alternate;
+}
+.mascot-figure[data-mood="listening"] .mascot-waves {
+  opacity: 1;
+  animation: mascot-waves 1s ease-in-out infinite;
+}
+.mascot-figure[data-mood="listening"] .mascot-body {
+  animation-duration: 1.2s;
+}
+
+/* Transcribing / saving a meeting: eyes up, thought dots. */
+.mascot-figure[data-mood="thinking"] .mascot-pupils {
+  transform: translate(1.5px, -2px);
+}
+.mascot-figure[data-mood="thinking"] .mascot-dots {
+  opacity: 1;
+}
+.mascot-figure[data-mood="thinking"] .mascot-dots circle {
+  animation: mascot-dot 1.2s ease-in-out infinite;
+}
+.mascot-figure[data-mood="thinking"] .mascot-dots circle:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.mascot-figure[data-mood="thinking"] .mascot-dots circle:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+/* After an action: a little hop. */
+.mascot-figure[data-mood="happy"] .mascot-body {
+  animation: mascot-hop 0.6s ease-out 2;
+}
+
+/* Being dragged: dangles and stops bobbing. */
+.mascot-figure[data-mood="dragging"] .mascot-body {
+  animation: none;
+  transform: rotate(-8deg) scaleY(1.05);
+}
+.mascot-figure[data-mood="dragging"] .mascot-shadow {
+  opacity: 0;
+}
+
+@keyframes mascot-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes mascot-shadow {
+  0%,
+  100% {
+    transform: scaleX(1);
+  }
+  50% {
+    transform: scaleX(0.85);
+  }
+}
+
+@keyframes mascot-blink {
+  0%,
+  92%,
+  100% {
+    transform: scaleY(1);
+  }
+  95% {
+    transform: scaleY(0.1);
+  }
+}
+
+@keyframes mascot-talk {
+  from {
+    transform: scaleY(0.6);
+  }
+  to {
+    transform: scaleY(1.15);
+  }
+}
+
+@keyframes mascot-waves {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes mascot-dot {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  50% {
+    transform: translateY(-2px);
+    opacity: 1;
+  }
+}
+
+@keyframes mascot-hop {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  30% {
+    transform: translateY(-8px) scale(1.04, 0.96);
+  }
+  60% {
+    transform: translateY(0) scale(1.06, 0.92);
+  }
+}
+
+@keyframes mascot-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* --- Menu ----------------------------------------------------------------- */
+
+.mascot-menu {
+  margin: 0 8px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: rgb(24 22 30 / 0.92);
+  border: 1px solid rgb(255 255 255 / 0.08);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.3);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  animation: mascot-menu-in 140ms ease-out;
+}
+
+.mascot-menu.from-below {
+  transform-origin: bottom center;
+}
+
+.mascot-menu.from-above {
+  transform-origin: top center;
+}
+
+.mascot-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 30px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #f4f2f8;
+  font-size: 12.5px;
+  text-align: start;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: default;
+}
+
+.mascot-menu-item svg {
+  flex: none;
+  opacity: 0.85;
+}
+
+.mascot-menu-item:hover:not(:disabled) {
+  background: #6d28d9;
+}
+
+.mascot-menu-item:disabled {
+  opacity: 0.4;
+}
+
+.mascot-menu-item.danger {
+  color: #c9c4d3;
+}
+
+.mascot-menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: rgb(255 255 255 / 0.1);
+}
+
+@keyframes mascot-menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}

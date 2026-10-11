@@ -14,6 +14,7 @@ mod helpers;
 mod input;
 mod llm_client;
 mod managers;
+mod mascot;
 mod meeting;
 mod meeting_detector;
 mod meeting_naming;
@@ -93,7 +94,7 @@ fn build_console_filter() -> env_filter::Filter {
     builder.build()
 }
 
-fn show_main_window(app: &AppHandle) {
+pub(crate) fn show_main_window(app: &AppHandle) {
     if let Some(main_window) = app.get_webview_window("main") {
         if let Err(e) = main_window.unminimize() {
             log::error!("Failed to unminimize webview window: {}", e);
@@ -414,6 +415,8 @@ fn initialize_core_logic(app_handle: &AppHandle) -> bool {
     // meeting is not waiting on window creation.
     subtitle_overlay::create_subtitle_overlay(app_handle);
 
+    mascot::init(app_handle);
+
     true
 }
 
@@ -499,6 +502,10 @@ fn specta_builder() -> Builder<tauri::Wry> {
             shortcut::change_keyboard_implementation_setting,
             shortcut::get_keyboard_implementation,
             shortcut::change_show_tray_icon_setting,
+            mascot::change_show_mascot_setting,
+            mascot::get_mascot_status,
+            mascot::set_mascot_menu_open,
+            mascot::mascot_action,
             shortcut::change_whisper_accelerator_setting,
             shortcut::change_ort_accelerator_setting,
             shortcut::get_available_accelerators,
@@ -810,7 +817,10 @@ mod bindings_tests {
     fn export_default_settings() {
         let json = serde_json::to_string_pretty(&crate::settings::get_default_settings())
             .expect("serialize default settings");
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../src/dev/default-settings.json");
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../src/dev/default-settings.json"
+        );
         std::fs::create_dir_all(std::path::Path::new(path).parent().unwrap()).unwrap();
         std::fs::write(path, json + "\n").expect("write default settings");
     }

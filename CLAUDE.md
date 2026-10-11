@@ -416,6 +416,19 @@ defaults are read from the backend, which is why the tab renders a spacer
 until the settings load instead of painting a collapsed group and expanding it
 a frame later.
 
+## Desktop Mascot
+
+Opt-in (`show_mascot`, toggle in General → App): a draggable character in
+an always-on-top window that opens quick actions on click. `src-tauri/src/mascot.rs`
++ `src/mascot/`. Every action reuses the tray's path (`mascot_action`). On
+macOS it is a **non-activating NSPanel that can never become key**, so a click
+does not take focus away from the app dictation pastes into. Do not replace it
+with a plain window. The window is 88×88 and only grows while the menu is open
+(`set_mascot_menu_open`): transparent areas still swallow clicks. After a drag
+the position is saved to `mascot_position` (debounced) and checked against the
+connected monitors at the next show. Dictation state reaches it through
+`dictation-state-changed`, which `tray::change_tray_icon` emits.
+
 ## Debug Mode
 
 Access debug features: `Cmd+Shift+D` (macOS) or `Ctrl+Shift+D` (Windows/Linux).

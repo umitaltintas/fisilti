@@ -17,6 +17,14 @@
     "recordingIndicator": "Fısıltı — Registrazione…",
     "meetings": "Riunioni..."
   },
+  "mascot": {
+    "label": "Mascotte di Fısıltı",
+    "cancel": "Annulla",
+    "history": "Cronologia dettatura",
+    "meetings": "Riunioni",
+    "openApp": "Apri Fısıltı",
+    "hide": "Nascondi mascotte"
+  },
   "sidebar": {
     "general": "Generale",
     "models": "Modelli",
@@ -373,6 +381,10 @@
       "showTrayIcon": {
         "label": "Mostra icona nella barra di sistema",
         "description": "Mostra l'icona di Fısıltı nella barra di sistema."
+      },
+      "showMascot": {
+        "label": "Mostra mascotte",
+        "description": "Un piccolo personaggio sullo schermo. Trascinalo ovunque; fai clic per le azioni rapide."
       },
       "overlay": {
         "title": "Posizione della Sovrimpressione",

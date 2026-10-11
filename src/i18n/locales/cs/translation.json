@@ -17,6 +17,14 @@
     "recordingIndicator": "Fısıltı — Nahrávání…",
     "meetings": "Schůzky..."
   },
+  "mascot": {
+    "label": "Maskot Fısıltı",
+    "cancel": "Zrušit",
+    "history": "Historie diktování",
+    "meetings": "Schůzky",
+    "openApp": "Otevřít Fısıltı",
+    "hide": "Skrýt maskota"
+  },
   "sidebar": {
     "general": "Obecné",
     "models": "Modely",
@@ -373,6 +381,10 @@
       "showTrayIcon": {
         "label": "Zobrazit ikonu v systémové liště",
         "description": "Zobrazit ikonu Fısıltı v systémové liště."
+      },
+      "showMascot": {
+        "label": "Zobrazit maskota",
+        "description": "Malá postavička na obrazovce. Přetáhněte ji kamkoli, kliknutím otevřete rychlé akce."
       },
       "overlay": {
         "title": "Pozice překryvu",

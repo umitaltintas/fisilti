@@ -17,6 +17,14 @@
     "recordingIndicator": "Fısıltı — 録音中…",
     "meetings": "会議..."
   },
+  "mascot": {
+    "label": "Fısıltı マスコット",
+    "cancel": "キャンセル",
+    "history": "ディクテーション履歴",
+    "meetings": "会議",
+    "openApp": "Fısıltı を開く",
+    "hide": "マスコットを隠す"
+  },
   "sidebar": {
     "general": "一般",
     "models": "モデル",
@@ -373,6 +381,10 @@
       "showTrayIcon": {
         "label": "トレイアイコンを表示",
         "description": "システムトレイにFısıltıのアイコンを表示します。"
+      },
+      "showMascot": {
+        "label": "マスコットを表示",
+        "description": "画面上の小さなキャラクター。好きな場所にドラッグし、クリックでクイック操作。"
       },
       "overlay": {
         "title": "オーバーレイ位置",

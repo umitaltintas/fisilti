@@ -17,6 +17,14 @@
     "recordingIndicator": "Fısıltı — Đang ghi…",
     "meetings": "Cuộc họp..."
   },
+  "mascot": {
+    "label": "Linh vật Fısıltı",
+    "cancel": "Hủy",
+    "history": "Lịch sử đọc chính tả",
+    "meetings": "Cuộc họp",
+    "openApp": "Mở Fısıltı",
+    "hide": "Ẩn linh vật"
+  },
   "sidebar": {
     "general": "Chung",
     "models": "Mô hình",
@@ -373,6 +381,10 @@
       "showTrayIcon": {
         "label": "Hiển thị biểu tượng khay",
         "description": "Hiển thị biểu tượng Fısıltı trong khay hệ thống."
+      },
+      "showMascot": {
+        "label": "Hiện linh vật",
+        "description": "Một nhân vật nhỏ trên màn hình. Kéo đến bất kỳ đâu; nhấp để thao tác nhanh."
       },
       "overlay": {
         "title": "Vị trí lớp phủ",

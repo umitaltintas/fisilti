@@ -17,6 +17,14 @@
     "recordingIndicator": "Fısıltı — Aufnahme…",
     "meetings": "Meetings..."
   },
+  "mascot": {
+    "label": "Fısıltı-Maskottchen",
+    "cancel": "Abbrechen",
+    "history": "Diktatverlauf",
+    "meetings": "Meetings",
+    "openApp": "Fısıltı öffnen",
+    "hide": "Maskottchen ausblenden"
+  },
   "sidebar": {
     "general": "Allgemein",
     "models": "Modelle",
@@ -373,6 +381,10 @@
       "showTrayIcon": {
         "label": "Taskleistensymbol anzeigen",
         "description": "Das Fısıltı-Symbol in der Taskleiste anzeigen."
+      },
+      "showMascot": {
+        "label": "Maskottchen anzeigen",
+        "description": "Eine kleine Figur auf deinem Bildschirm. Zieh sie überallhin, klick sie für Schnellaktionen an."
       },
       "overlay": {
         "title": "Overlay-Position",

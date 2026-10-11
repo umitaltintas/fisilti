@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "mascot",
+  "description": "The desktop mascot moves its own window when dragged",
+  "windows": ["mascot"],
+  "permissions": ["core:window:allow-start-dragging"]
+}

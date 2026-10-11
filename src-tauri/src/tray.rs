@@ -64,6 +64,8 @@ pub fn get_icon_path(theme: AppTheme, state: TrayIconState) -> &'static str {
 }
 
 pub fn change_tray_icon(app: &AppHandle, icon: TrayIconState) {
+    crate::mascot::set_dictation_state(app, &icon);
+
     let tray = app.state::<TrayIcon>();
     let theme = get_current_theme(app);
 

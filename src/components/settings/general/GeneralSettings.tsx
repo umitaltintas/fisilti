@@ -19,6 +19,7 @@ import { MoreOptions } from "../../ui/MoreOptions";
 import { AutostartToggle } from "../AutostartToggle";
 import { StartHidden } from "../StartHidden";
 import { ShowTrayIcon } from "../ShowTrayIcon";
+import { ShowMascot } from "../ShowMascot";
 import { UpdateChecksToggle } from "../UpdateChecksToggle";
 
 // The everyday page: how you record, what it sounds like, and how the app
@@ -77,6 +78,7 @@ export const GeneralSettings: React.FC = () => {
         <AppLanguageSelector descriptionMode="inline" grouped={true} />
         <AppearanceSelector descriptionMode="inline" grouped={true} />
         <AutostartToggle descriptionMode="inline" grouped={true} />
+        <ShowMascot descriptionMode="inline" grouped={true} />
         <MoreOptions>
           <StartHidden descriptionMode="inline" grouped={true} />
           <ShowTrayIcon descriptionMode="inline" grouped={true} />

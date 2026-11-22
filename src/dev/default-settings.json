@@ -166,7 +166,7 @@
   "app_language": "en-TR",
   "experimental_enabled": false,
   "lazy_stream_close": false,
-  "keyboard_implementation": "handy_keys",
+  "keyboard_implementation": "native",
   "show_tray_icon": true,
   "show_mascot": false,
   "mascot_position": null,

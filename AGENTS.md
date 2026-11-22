@@ -33,15 +33,8 @@ bun run build      # Build frontend (TypeScript + Vite)
 bun run preview    # Preview built frontend
 ```
 
-**Model Setup (Required for Development):**
-
-```bash
-# Create models directory
-mkdir -p src-tauri/resources/models
-
-# Download required VAD model
-curl -o src-tauri/resources/models/silero_vad_v4.onnx https://blob.handy.computer/silero_vad_v4.onnx
-```
+**Models:** The Silero VAD model (`src-tauri/resources/models/silero_vad_v4.onnx`) is
+committed, so there is no model to download before `bun run tauri dev`.
 
 ## Architecture Overview
 

@@ -34,12 +34,8 @@ bun run format            # Prettier + cargo fmt
 bun run format:check      # Check formatting without changes
 ```
 
-**Model Setup (Required for Development):**
-
-```bash
-mkdir -p src-tauri/resources/models
-curl -o src-tauri/resources/models/silero_vad_v4.onnx https://blob.handy.computer/silero_vad_v4.onnx
-```
+**Models:** The Silero VAD model (`src-tauri/resources/models/silero_vad_v4.onnx`) is
+committed, so there is no model to download before `bun run tauri dev`.
 
 ## Architecture Overview
 

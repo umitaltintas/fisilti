@@ -2,6 +2,6 @@
 Type=Application
 Name=Fısıltı
 Comment=Identifies Fısıltı to the desktop portal (global shortcuts)
-Exec=handy
-Icon=handy
+Exec=fisilti
+Icon=fisilti
 NoDisplay=true

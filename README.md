@@ -28,7 +28,7 @@ it happens. Whether that trade is worth making is your call, not a default.
 
 ## Features
 
-### Dictation (inherited from Handy)
+### Dictation
 
 - Push-to-talk / toggle speech-to-text pasted into any text field
 - Local transcription via **Whisper** (Small/Medium/Turbo/Large, GPU-accelerated

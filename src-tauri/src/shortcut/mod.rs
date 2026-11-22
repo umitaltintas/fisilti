@@ -4,7 +4,7 @@
 //! multiple backend implementations:
 //!
 //! - `tauri`: Uses Tauri's built-in global-shortcut plugin
-//! - `handy_keys`: Uses the handy-keys library for more control
+//! - `native_keys`: Uses the `native keys` crate (as `hotkeys`) for more control
 //! - `portal` (Linux/Wayland only): the XDG Desktop Portal GlobalShortcuts
 //!   interface, the only mechanism that works while a native Wayland window
 //!   has focus
@@ -15,7 +15,7 @@
 //! long as it is up (it is a runtime fact, never persisted).
 
 mod handler;
-pub mod handy_keys;
+pub mod native_keys;
 #[cfg(target_os = "linux")]
 mod portal;
 mod tauri_impl;
@@ -35,7 +35,7 @@ use crate::settings::{
 };
 use crate::tray;
 
-// Note: Commands are accessed via shortcut::handy_keys:: in lib.rs
+// Note: Commands are accessed via shortcut::native_keys:: in lib.rs
 
 /// Whether the XDG portal backend is handling shortcuts (always false off Linux).
 fn portal_active(app: &AppHandle) -> bool {
@@ -67,13 +67,13 @@ pub fn init_shortcuts(app: &AppHandle) {
         KeyboardImplementation::Tauri => {
             tauri_impl::init_shortcuts(app);
         }
-        KeyboardImplementation::HandyKeys => {
-            if let Err(e) = handy_keys::init_shortcuts(app) {
-                error!("Failed to initialize handy-keys shortcuts: {}", e);
+        KeyboardImplementation::Native => {
+            if let Err(e) = native_keys::init_shortcuts(app) {
+                error!("Failed to initialize native keys shortcuts: {}", e);
                 // Fall back to Tauri implementation and persist this fallback
                 warn!("Falling back to Tauri global shortcut implementation and saving fallback to settings");
 
-                // Update settings to persist the fallback so we don't retry HandyKeys on next launch
+                // Update settings to persist the fallback so we don't retry native keys on next launch
                 settings::update_settings(app, |settings| {
                     settings.keyboard_implementation = KeyboardImplementation::Tauri;
                 });
@@ -92,7 +92,7 @@ pub fn register_cancel_shortcut(app: &AppHandle) {
     let settings = get_settings(app);
     match settings.keyboard_implementation {
         KeyboardImplementation::Tauri => tauri_impl::register_cancel_shortcut(app),
-        KeyboardImplementation::HandyKeys => handy_keys::register_cancel_shortcut(app),
+        KeyboardImplementation::Native => native_keys::register_cancel_shortcut(app),
     }
 }
 
@@ -104,7 +104,7 @@ pub fn unregister_cancel_shortcut(app: &AppHandle) {
     let settings = get_settings(app);
     match settings.keyboard_implementation {
         KeyboardImplementation::Tauri => tauri_impl::unregister_cancel_shortcut(app),
-        KeyboardImplementation::HandyKeys => handy_keys::unregister_cancel_shortcut(app),
+        KeyboardImplementation::Native => native_keys::unregister_cancel_shortcut(app),
     }
 }
 
@@ -117,7 +117,7 @@ pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<()
     let settings = get_settings(app);
     match settings.keyboard_implementation {
         KeyboardImplementation::Tauri => tauri_impl::register_shortcut(app, binding),
-        KeyboardImplementation::HandyKeys => handy_keys::register_shortcut(app, binding),
+        KeyboardImplementation::Native => native_keys::register_shortcut(app, binding),
     }
 }
 
@@ -130,7 +130,7 @@ pub fn unregister_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<
     let settings = get_settings(app);
     match settings.keyboard_implementation {
         KeyboardImplementation::Tauri => tauri_impl::unregister_shortcut(app, binding),
-        KeyboardImplementation::HandyKeys => handy_keys::unregister_shortcut(app, binding),
+        KeyboardImplementation::Native => native_keys::unregister_shortcut(app, binding),
     }
 }
 
@@ -156,9 +156,9 @@ fn replace_shortcut(
         return portal::register_shortcut(app, new.clone());
     }
     match implementation {
-        // handy-keys tracks one hotkey per binding id and its register already
+        // native keys tracks one hotkey per binding id and its register already
         // replaces atomically (new first, then the old one is released).
-        KeyboardImplementation::HandyKeys => handy_keys::register_shortcut(app, new.clone()),
+        KeyboardImplementation::Native => native_keys::register_shortcut(app, new.clone()),
         KeyboardImplementation::Tauri => {
             let had_old = !old.current_binding.trim().is_empty();
             if had_old && same_shortcut(&old.current_binding, &new.current_binding) {
@@ -391,9 +391,9 @@ pub fn change_keyboard_implementation_setting(
         settings.keyboard_implementation = new_impl;
     });
 
-    // Initialize new implementation if needed (HandyKeys needs state)
-    if new_impl == KeyboardImplementation::HandyKeys {
-        if initialize_handy_keys_with_rollback(&app)? {
+    // Initialize new implementation if needed (native keys need state)
+    if new_impl == KeyboardImplementation::Native {
+        if initialize_native_keys_with_rollback(&app)? {
             // Shortcuts already registered during init
             return Ok(ImplementationChangeResult {
                 success: true,
@@ -433,7 +433,7 @@ pub fn get_keyboard_implementation(app: AppHandle) -> String {
     let settings = settings::get_settings(&app);
     match settings.keyboard_implementation {
         KeyboardImplementation::Tauri => "tauri".to_string(),
-        KeyboardImplementation::HandyKeys => "handy_keys".to_string(),
+        KeyboardImplementation::Native => "native".to_string(),
     }
 }
 
@@ -495,7 +495,7 @@ fn validate_shortcut_for_implementation(
 ) -> Result<(), String> {
     match implementation {
         KeyboardImplementation::Tauri => tauri_impl::validate_shortcut(raw),
-        KeyboardImplementation::HandyKeys => handy_keys::validate_shortcut(raw),
+        KeyboardImplementation::Native => native_keys::validate_shortcut(raw),
     }
 }
 
@@ -503,7 +503,7 @@ fn validate_shortcut_for_implementation(
 fn parse_keyboard_implementation(s: &str) -> KeyboardImplementation {
     match s {
         "tauri" => KeyboardImplementation::Tauri,
-        "handy_keys" => KeyboardImplementation::HandyKeys,
+        "native" | "handy_keys" => KeyboardImplementation::Native,
         other => {
             warn!(
                 "Invalid keyboard implementation '{}', defaulting to tauri",
@@ -530,7 +530,7 @@ fn unregister_all_shortcuts(app: &AppHandle, implementation: KeyboardImplementat
 
         let result = match implementation {
             KeyboardImplementation::Tauri => tauri_impl::unregister_shortcut(app, binding),
-            KeyboardImplementation::HandyKeys => handy_keys::unregister_shortcut(app, binding),
+            KeyboardImplementation::Native => native_keys::unregister_shortcut(app, binding),
         };
 
         if let Err(e) = result {
@@ -593,7 +593,7 @@ fn register_all_shortcuts_for_implementation(
         // Register with the appropriate implementation
         let result = match implementation {
             KeyboardImplementation::Tauri => tauri_impl::register_shortcut(app, binding),
-            KeyboardImplementation::HandyKeys => handy_keys::register_shortcut(app, binding),
+            KeyboardImplementation::Native => native_keys::register_shortcut(app, binding),
         };
 
         if let Err(e) = result {
@@ -618,21 +618,21 @@ fn register_all_shortcuts_for_implementation(
     reset_bindings
 }
 
-/// Initialize HandyKeys if not already initialized, with rollback on failure
-fn initialize_handy_keys_with_rollback(app: &AppHandle) -> Result<bool, String> {
-    if app.try_state::<handy_keys::HandyKeysState>().is_some() {
+/// Initialize native keys if not already initialized, with rollback on failure
+fn initialize_native_keys_with_rollback(app: &AppHandle) -> Result<bool, String> {
+    if app.try_state::<native_keys::NativeKeysState>().is_some() {
         return Ok(false); // Already initialized, caller should continue
     }
 
-    if let Err(e) = handy_keys::init_shortcuts(app) {
-        error!("Failed to initialize HandyKeys: {}", e);
+    if let Err(e) = native_keys::init_shortcuts(app) {
+        error!("Failed to initialize native keys: {}", e);
         // Rollback to Tauri
         settings::update_settings(app, |settings| {
             settings.keyboard_implementation = KeyboardImplementation::Tauri;
         });
         tauri_impl::init_shortcuts(app);
         return Err(format!(
-            "Failed to initialize HandyKeys: {}. Reverted to Tauri.",
+            "Failed to initialize native keys: {}. Reverted to Tauri.",
             e
         ));
     }

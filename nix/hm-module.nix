@@ -31,8 +31,8 @@ in
         PartOf = [ "graphical-session.target" ];
       };
       Service = {
-        # bin/handy matches the Cargo binary name (src-tauri/Cargo.toml).
-        ExecStart = "${cfg.package}/bin/handy";
+        # bin/fisilti matches the Cargo binary name (src-tauri/Cargo.toml).
+        ExecStart = "${cfg.package}/bin/fisilti";
         Restart = "on-failure";
         RestartSec = 5;
       };

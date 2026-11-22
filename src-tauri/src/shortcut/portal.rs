@@ -1,7 +1,7 @@
 //! XDG Desktop Portal `GlobalShortcuts` backend (Linux / Wayland)
 //!
 //! Wayland compositors do not let clients grab keys, so the X11-based
-//! backends (`tauri_impl`, `handy_keys`) never fire while a native Wayland
+//! backends (`tauri_impl`, `native_keys`) never fire while a native Wayland
 //! window has focus. The `org.freedesktop.portal.GlobalShortcuts` portal
 //! (KDE Plasma 6, GNOME 48+) is the sanctioned way around that: the app
 //! *declares* shortcuts and the compositor delivers `Activated` /
@@ -220,7 +220,7 @@ fn wanted_from(desired: &BTreeMap<String, ShortcutBinding>) -> Wanted {
 }
 
 // ============================================================================
-// Backend entry points (mirror tauri_impl / handy_keys)
+// Backend entry points (mirror tauri_impl / native_keys)
 // ============================================================================
 
 /// Try to bring the portal backend up. `Err` means "not available" and the

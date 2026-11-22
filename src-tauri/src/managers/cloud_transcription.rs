@@ -279,7 +279,7 @@ fn run_request(
         .header("Authorization", format!("Bearer {}", api_key))
         .header("Content-Type", "application/json")
         // OpenRouter attribution headers (optional but recommended).
-        .header("HTTP-Referer", "https://github.com/umitaltintas/Handy")
+        .header("HTTP-Referer", "https://github.com/umitaltintas/fisilti")
         .header("X-Title", "Fisilti")
         .json(&body)
         .send()

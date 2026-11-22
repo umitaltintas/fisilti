@@ -1,7 +1,7 @@
 import React from "react";
 import { useSettings } from "../../hooks/useSettings";
 import { GlobalShortcutInput } from "./GlobalShortcutInput";
-import { HandyKeysShortcutInput } from "./HandyKeysShortcutInput";
+import { NativeKeysShortcutInput } from "./NativeKeysShortcutInput";
 import { PortalShortcutInput } from "./PortalShortcutInput";
 import { usePortalShortcuts } from "../../hooks/usePortalShortcuts";
 
@@ -17,7 +17,7 @@ interface ShortcutInputProps {
  * based on the keyboard_implementation setting.
  *
  * - "tauri" (default): Uses GlobalShortcutInput with JS keyboard events
- * - "handy_keys": Uses HandyKeysShortcutInput with backend key events
+ * - "native": Uses NativeKeysShortcutInput with backend key events
  *
  * On Linux/Wayland the XDG GlobalShortcuts portal takes over regardless of
  * that setting: the desktop owns the key choice, so the row only displays it.
@@ -39,8 +39,8 @@ export const ShortcutInput: React.FC<ShortcutInputProps> = (props) => {
   }
 
   // Default to Tauri implementation if not set
-  if (keyboardImplementation === "handy_keys") {
-    return <HandyKeysShortcutInput {...props} />;
+  if (keyboardImplementation === "native") {
+    return <NativeKeysShortcutInput {...props} />;
   }
 
   return <GlobalShortcutInput {...props} />;

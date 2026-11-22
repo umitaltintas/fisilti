@@ -185,7 +185,9 @@ pub enum RecordingRetentionPeriod {
 #[serde(rename_all = "snake_case")]
 pub enum KeyboardImplementation {
     Tauri,
-    HandyKeys,
+    // Native keyboard hooks. Older builds stored this as "handy_keys".
+    #[serde(alias = "handy_keys")]
+    Native,
 }
 
 impl Default for KeyboardImplementation {
@@ -193,7 +195,7 @@ impl Default for KeyboardImplementation {
         #[cfg(target_os = "linux")]
         return KeyboardImplementation::Tauri;
         #[cfg(not(target_os = "linux"))]
-        return KeyboardImplementation::HandyKeys;
+        return KeyboardImplementation::Native;
     }
 }
 
@@ -1548,6 +1550,16 @@ pub fn get_recording_retention_period(app: &AppHandle) -> RecordingRetentionPeri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn keyboard_implementation_reads_the_old_handy_keys_value() {
+        let old: KeyboardImplementation = serde_json::from_str("\"handy_keys\"").unwrap();
+        assert_eq!(old, KeyboardImplementation::Native);
+        assert_eq!(
+            serde_json::to_string(&KeyboardImplementation::Native).unwrap(),
+            "\"native\""
+        );
+    }
 
     #[test]
     fn digit_variants_keep_their_stored_names() {

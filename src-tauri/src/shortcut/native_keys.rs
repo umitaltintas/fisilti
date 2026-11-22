@@ -1,7 +1,7 @@
-//! Handy-keys based keyboard shortcut implementation
+//! Native keyboard shortcut implementation
 //!
 //! This module provides an alternative to Tauri's global-shortcut plugin
-//! using the handy-keys library for more control over keyboard events.
+//! using the `native-keys` crate (imported as `hotkeys`) for more control over keyboard events.
 //!
 //! ## Architecture
 //!
@@ -27,7 +27,7 @@
 //! polled from a dedicated recording thread. Events are emitted to the frontend
 //! via Tauri's event system.
 
-use handy_keys::{Hotkey, HotkeyId, HotkeyManager, HotkeyState, KeyboardListener};
+use hotkeys::{Hotkey, HotkeyId, HotkeyManager, HotkeyState, KeyboardListener};
 use log::{debug, error, info};
 use serde::Serialize;
 use specta::Type;
@@ -56,8 +56,8 @@ enum ManagerCommand {
     Shutdown,
 }
 
-/// State for the handy-keys shortcut manager
-pub struct HandyKeysState {
+/// State for the native-keys shortcut manager
+pub struct NativeKeysState {
     /// Channel to send commands to the manager thread (wrapped in Mutex for Sync)
     command_sender: Mutex<Sender<ManagerCommand>>,
     /// Handle to the manager thread (wrapped in Mutex for Sync, allows proper join on drop)
@@ -85,8 +85,8 @@ pub struct FrontendKeyEvent {
     pub hotkey_string: String,
 }
 
-impl HandyKeysState {
-    /// Create a new HandyKeysState
+impl NativeKeysState {
+    /// Create a new NativeKeysState
     pub fn new(app: AppHandle) -> Result<Self, String> {
         let (cmd_tx, cmd_rx) = mpsc::channel::<ManagerCommand>();
 
@@ -108,7 +108,7 @@ impl HandyKeysState {
 
     /// The main manager thread - owns the HotkeyManager and processes commands
     fn manager_thread(cmd_rx: Receiver<ManagerCommand>, app: AppHandle) {
-        info!("handy-keys manager thread started");
+        info!("native-keys manager thread started");
 
         // Create the HotkeyManager in this thread
         let manager = match HotkeyManager::new_with_blocking() {
@@ -128,7 +128,7 @@ impl HandyKeysState {
             while let Some(event) = manager.try_recv() {
                 if let Some((binding_id, hotkey_string)) = hotkey_to_binding.get(&event.id) {
                     debug!(
-                        "handy-keys event: binding={}, hotkey={}, state={:?}",
+                        "native-keys event: binding={}, hotkey={}, state={:?}",
                         binding_id, hotkey_string, event.state
                     );
                     let is_pressed = event.state == HotkeyState::Pressed;
@@ -166,7 +166,7 @@ impl HandyKeysState {
                         let _ = response.send(result);
                     }
                     ManagerCommand::Shutdown => {
-                        info!("handy-keys manager thread shutting down");
+                        info!("native-keys manager thread shutting down");
                         break;
                     }
                 },
@@ -180,7 +180,7 @@ impl HandyKeysState {
             }
         }
 
-        info!("handy-keys manager thread stopped");
+        info!("native-keys manager thread stopped");
     }
 
     /// Register a hotkey for a binding, replacing the binding's current hotkey
@@ -224,7 +224,7 @@ impl HandyKeysState {
         hotkey_to_binding.insert(id, (binding_id.to_string(), hotkey_string.to_string()));
 
         debug!(
-            "Registered handy-keys shortcut: {} -> {:?}",
+            "Registered native-keys shortcut: {} -> {:?}",
             binding_id, hotkey
         );
         Ok(())
@@ -242,7 +242,7 @@ impl HandyKeysState {
                 .unregister(id)
                 .map_err(|e| format!("Failed to unregister hotkey: {}", e))?;
             hotkey_to_binding.remove(&id);
-            debug!("Unregistered handy-keys shortcut: {}", binding_id);
+            debug!("Unregistered native-keys shortcut: {}", binding_id);
         }
         Ok(())
     }
@@ -315,7 +315,7 @@ impl HandyKeysState {
             Self::recording_loop(app_clone, recording_running);
         });
 
-        debug!("Started handy-keys recording mode");
+        debug!("Started native-keys recording mode");
         Ok(())
     }
 
@@ -323,7 +323,7 @@ impl HandyKeysState {
     fn recording_loop(app: AppHandle, running: Arc<AtomicBool>) {
         while running.load(Ordering::SeqCst) {
             let event = {
-                let state = match app.try_state::<HandyKeysState>() {
+                let state = match app.try_state::<NativeKeysState>() {
                     Some(s) => s,
                     None => break,
                 };
@@ -344,7 +344,7 @@ impl HandyKeysState {
                 };
 
                 // Emit to frontend
-                if let Err(e) = app.emit("handy-keys-event", &frontend_event) {
+                if let Err(e) = app.emit("native-keys-event", &frontend_event) {
                     error!("Failed to emit key event: {}", e);
                 }
             } else {
@@ -375,12 +375,12 @@ impl HandyKeysState {
             *binding = None;
         }
 
-        debug!("Stopped handy-keys recording mode");
+        debug!("Stopped native-keys recording mode");
         Ok(())
     }
 }
 
-impl Drop for HandyKeysState {
+impl Drop for NativeKeysState {
     fn drop(&mut self) {
         // Signal recording to stop
         self.recording_running.store(false, Ordering::SeqCst);
@@ -400,51 +400,51 @@ impl Drop for HandyKeysState {
     }
 }
 
-/// Convert handy-keys Modifiers to a list of strings
-fn modifiers_to_strings(modifiers: handy_keys::Modifiers) -> Vec<String> {
+/// Convert native-keys Modifiers to a list of strings
+fn modifiers_to_strings(modifiers: hotkeys::Modifiers) -> Vec<String> {
     let mut result = Vec::new();
 
-    if modifiers.contains(handy_keys::Modifiers::CTRL) {
+    if modifiers.contains(hotkeys::Modifiers::CTRL) {
         result.push("ctrl".to_string());
     }
-    if modifiers.contains(handy_keys::Modifiers::OPT) {
+    if modifiers.contains(hotkeys::Modifiers::OPT) {
         #[cfg(target_os = "macos")]
         result.push("option".to_string());
         #[cfg(not(target_os = "macos"))]
         result.push("alt".to_string());
     }
-    if modifiers.contains(handy_keys::Modifiers::SHIFT) {
+    if modifiers.contains(hotkeys::Modifiers::SHIFT) {
         result.push("shift".to_string());
     }
-    if modifiers.contains(handy_keys::Modifiers::CMD) {
+    if modifiers.contains(hotkeys::Modifiers::CMD) {
         #[cfg(target_os = "macos")]
         result.push("command".to_string());
         #[cfg(not(target_os = "macos"))]
         result.push("super".to_string());
     }
-    if modifiers.contains(handy_keys::Modifiers::FN) {
+    if modifiers.contains(hotkeys::Modifiers::FN) {
         result.push("fn".to_string());
     }
 
     result
 }
 
-/// Validate a shortcut string for the HandyKeys implementation.
-/// HandyKeys is more permissive: allows modifier-only combos and the fn key.
+/// Validate a shortcut string for the native implementation.
+/// The native implementation is more permissive: allows modifier-only combos and the fn key.
 pub fn validate_shortcut(raw: &str) -> Result<(), String> {
     if raw.trim().is_empty() {
         return Err("Shortcut cannot be empty".into());
     }
-    // HandyKeys accepts modifier-only, key-only, and modifier+key combos
+    // The native implementation accepts modifier-only, key-only, and modifier+key combos
     // Just verify the string is parseable
     raw.parse::<Hotkey>()
         .map(|_| ())
-        .map_err(|e| format!("Invalid shortcut for HandyKeys: {}", e))
+        .map_err(|e| format!("Invalid shortcut: {}", e))
 }
 
-/// Initialize handy-keys shortcuts
+/// Initialize native-keys shortcuts
 pub fn init_shortcuts(app: &AppHandle) -> Result<(), String> {
-    let state = HandyKeysState::new(app.clone())?;
+    let state = NativeKeysState::new(app.clone())?;
 
     let default_bindings = settings::get_default_settings().bindings;
     let user_settings = settings::load_or_create_app_settings(app);
@@ -472,14 +472,14 @@ pub fn init_shortcuts(app: &AppHandle) -> Result<(), String> {
 
         if let Err(e) = state.register(&binding) {
             error!(
-                "Failed to register handy-keys shortcut {} during init: {}",
+                "Failed to register native-keys shortcut {} during init: {}",
                 id, e
             );
         }
     }
 
     app.manage(state);
-    info!("handy-keys shortcuts initialized");
+    info!("native-keys shortcuts initialized");
     Ok(())
 }
 
@@ -497,7 +497,7 @@ pub fn register_cancel_shortcut(app: &AppHandle) {
         let app_clone = app.clone();
         tauri::async_runtime::spawn(async move {
             if let Some(cancel_binding) = get_settings(&app_clone).bindings.get("cancel").cloned() {
-                if let Some(state) = app_clone.try_state::<HandyKeysState>() {
+                if let Some(state) = app_clone.try_state::<NativeKeysState>() {
                     if let Err(e) = state.register(&cancel_binding) {
                         error!("Failed to register cancel shortcut: {}", e);
                     }
@@ -520,7 +520,7 @@ pub fn unregister_cancel_shortcut(app: &AppHandle) {
         let app_clone = app.clone();
         tauri::async_runtime::spawn(async move {
             if let Some(cancel_binding) = get_settings(&app_clone).bindings.get("cancel").cloned() {
-                if let Some(state) = app_clone.try_state::<HandyKeysState>() {
+                if let Some(state) = app_clone.try_state::<NativeKeysState>() {
                     let _ = state.unregister(&cancel_binding);
                 }
             }
@@ -531,45 +531,45 @@ pub fn unregister_cancel_shortcut(app: &AppHandle) {
 /// Register a shortcut
 pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<(), String> {
     let state = app
-        .try_state::<HandyKeysState>()
-        .ok_or("HandyKeysState not initialized")?;
+        .try_state::<NativeKeysState>()
+        .ok_or("NativeKeysState not initialized")?;
     state.register(&binding)
 }
 
 /// Unregister a shortcut
 pub fn unregister_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<(), String> {
     let state = app
-        .try_state::<HandyKeysState>()
-        .ok_or("HandyKeysState not initialized")?;
+        .try_state::<NativeKeysState>()
+        .ok_or("NativeKeysState not initialized")?;
     state.unregister(&binding)
 }
 
 /// Start key recording mode
 #[tauri::command]
 #[specta::specta]
-pub fn start_handy_keys_recording(app: AppHandle, binding_id: String) -> Result<(), String> {
+pub fn start_native_keys_recording(app: AppHandle, binding_id: String) -> Result<(), String> {
     let settings = get_settings(&app);
-    if settings.keyboard_implementation != settings::KeyboardImplementation::HandyKeys {
-        return Err("handy-keys is not the active keyboard implementation".into());
+    if settings.keyboard_implementation != settings::KeyboardImplementation::Native {
+        return Err("native keys is not the active keyboard implementation".into());
     }
 
     let state = app
-        .try_state::<HandyKeysState>()
-        .ok_or("HandyKeysState not initialized")?;
+        .try_state::<NativeKeysState>()
+        .ok_or("NativeKeysState not initialized")?;
     state.start_recording(&app, binding_id)
 }
 
 /// Stop key recording mode
 #[tauri::command]
 #[specta::specta]
-pub fn stop_handy_keys_recording(app: AppHandle) -> Result<(), String> {
+pub fn stop_native_keys_recording(app: AppHandle) -> Result<(), String> {
     let settings = get_settings(&app);
-    if settings.keyboard_implementation != settings::KeyboardImplementation::HandyKeys {
-        return Err("handy-keys is not the active keyboard implementation".into());
+    if settings.keyboard_implementation != settings::KeyboardImplementation::Native {
+        return Err("native keys is not the active keyboard implementation".into());
     }
 
     let state = app
-        .try_state::<HandyKeysState>()
-        .ok_or("HandyKeysState not initialized")?;
+        .try_state::<NativeKeysState>()
+        .ok_or("NativeKeysState not initialized")?;
     state.stop_recording()
 }

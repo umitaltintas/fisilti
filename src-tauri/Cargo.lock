@@ -1986,6 +1986,85 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582"
 
 [[package]]
+name = "fisilti"
+version = "0.2.2"
+dependencies = [
+ "anyhow",
+ "ashpd",
+ "base64 0.22.1",
+ "block2",
+ "chrono",
+ "cidre",
+ "clap",
+ "cpal",
+ "ebur128",
+ "enigo",
+ "enumflags2",
+ "env_filter",
+ "ferrous-opencc",
+ "flate2",
+ "futures-channel",
+ "futures-util",
+ "gtk",
+ "gtk-layer-shell",
+ "handy-keys",
+ "hound",
+ "libpulse-binding",
+ "libpulse-simple-binding",
+ "log",
+ "mp3lame-encoder",
+ "natural",
+ "objc",
+ "objc2",
+ "objc2-event-kit",
+ "objc2-foundation",
+ "once_cell",
+ "rdev 0.5.0-2",
+ "regex",
+ "reqwest 0.12.28",
+ "ringbuf",
+ "rodio",
+ "rubato",
+ "rusqlite",
+ "rusqlite_migration",
+ "rustfft",
+ "serde",
+ "serde_json",
+ "sha2",
+ "signal-hook",
+ "specta",
+ "specta-typescript",
+ "strsim",
+ "symphonia",
+ "tar",
+ "tauri",
+ "tauri-build",
+ "tauri-nspanel",
+ "tauri-plugin-autostart",
+ "tauri-plugin-clipboard-manager",
+ "tauri-plugin-dialog",
+ "tauri-plugin-fs",
+ "tauri-plugin-global-shortcut",
+ "tauri-plugin-log",
+ "tauri-plugin-macos-permissions",
+ "tauri-plugin-opener",
+ "tauri-plugin-os",
+ "tauri-plugin-process",
+ "tauri-plugin-single-instance",
+ "tauri-plugin-store",
+ "tauri-plugin-updater",
+ "tauri-specta",
+ "tempfile",
+ "tokio",
+ "tokio-tungstenite",
+ "transcribe-rs",
+ "vad-rs",
+ "windows 0.61.3",
+ "winreg 0.55.0",
+ "zbus",
+]
+
+[[package]]
 name = "fixedbitset"
 version = "0.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2551,85 +2630,6 @@ dependencies = [
  "cfg-if",
  "crunchy",
  "zerocopy",
-]
-
-[[package]]
-name = "handy"
-version = "0.2.2"
-dependencies = [
- "anyhow",
- "ashpd",
- "base64 0.22.1",
- "block2",
- "chrono",
- "cidre",
- "clap",
- "cpal",
- "ebur128",
- "enigo",
- "enumflags2",
- "env_filter",
- "ferrous-opencc",
- "flate2",
- "futures-channel",
- "futures-util",
- "gtk",
- "gtk-layer-shell",
- "handy-keys",
- "hound",
- "libpulse-binding",
- "libpulse-simple-binding",
- "log",
- "mp3lame-encoder",
- "natural",
- "objc",
- "objc2",
- "objc2-event-kit",
- "objc2-foundation",
- "once_cell",
- "rdev 0.5.0-2",
- "regex",
- "reqwest 0.12.28",
- "ringbuf",
- "rodio",
- "rubato",
- "rusqlite",
- "rusqlite_migration",
- "rustfft",
- "serde",
- "serde_json",
- "sha2",
- "signal-hook",
- "specta",
- "specta-typescript",
- "strsim",
- "symphonia",
- "tar",
- "tauri",
- "tauri-build",
- "tauri-nspanel",
- "tauri-plugin-autostart",
- "tauri-plugin-clipboard-manager",
- "tauri-plugin-dialog",
- "tauri-plugin-fs",
- "tauri-plugin-global-shortcut",
- "tauri-plugin-log",
- "tauri-plugin-macos-permissions",
- "tauri-plugin-opener",
- "tauri-plugin-os",
- "tauri-plugin-process",
- "tauri-plugin-single-instance",
- "tauri-plugin-store",
- "tauri-plugin-updater",
- "tauri-specta",
- "tempfile",
- "tokio",
- "tokio-tungstenite",
- "transcribe-rs",
- "vad-rs",
- "windows 0.61.3",
- "winreg 0.55.0",
- "zbus",
 ]
 
 [[package]]
@@ -9094,18 +9094,3 @@ dependencies = [
  "syn 2.0.117",
  "winnow 1.0.3",
 ]
-
-[[patch.unused]]
-name = "tauri-runtime"
-version = "2.10.0"
-source = "git+https://github.com/cjpais/tauri.git?branch=handy-2.10.2#42dc4c5e8e63267f3a0d332178b9094cafaf1394"
-
-[[patch.unused]]
-name = "tauri-runtime-wry"
-version = "2.10.0"
-source = "git+https://github.com/cjpais/tauri.git?branch=handy-2.10.2#42dc4c5e8e63267f3a0d332178b9094cafaf1394"
-
-[[patch.unused]]
-name = "tauri-utils"
-version = "2.8.2"
-source = "git+https://github.com/cjpais/tauri.git?branch=handy-2.10.2#42dc4c5e8e63267f3a0d332178b9094cafaf1394"

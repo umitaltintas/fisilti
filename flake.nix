@@ -1,5 +1,5 @@
 {
-  description = "Fısıltı - private, local-first dictation & AI meeting notes (fork of Handy by cjpais)";
+  description = "Fısıltı - private, local-first dictation & AI meeting notes";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -223,11 +223,11 @@
             '';
 
             meta = {
-              description = "Fısıltı - private, local-first dictation & AI meeting notes (fork of Handy by cjpais)";
+              description = "Fısıltı - private, local-first dictation & AI meeting notes";
               homepage = "https://github.com/umitaltintas/fisilti";
               license = lib.licenses.mit;
               # mainProgram matches the Cargo binary name (src-tauri/Cargo.toml).
-              mainProgram = "handy";
+              mainProgram = "fisilti";
               platforms = supportedSystems;
             };
           };

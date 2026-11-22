@@ -9,7 +9,7 @@ import { errorMessage } from "@/lib/utils/errors";
 
 const KEYBOARD_IMPLEMENTATION_OPTIONS: DropdownOption[] = [
   { value: "tauri", label: "Tauri Global Shortcut" },
-  { value: "handy_keys", label: "Handy Keys" },
+  { value: "native", label: "Native" },
 ];
 
 interface KeyboardImplementationSelectorProps {

@@ -1,11 +1,11 @@
 [package]
-name = "handy"
+name = "fisilti"
 version = "0.2.2"
 description = "Fısıltı — local dictation & AI meeting notes"
 authors = ["Ümit Altıntaş", "cjpais"]
 edition = "2021"
 license = "MIT"
-default-run = "handy"
+default-run = "fisilti"
 
 [profile.dev]
 incremental = true # Compile your binary in smaller steps.
@@ -16,7 +16,7 @@ incremental = true # Compile your binary in smaller steps.
 # The `_lib` suffix may seem redundant but it is necessary
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
-name = "handy_app_lib"
+name = "fisilti_app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 # [[bin]]
@@ -74,7 +74,8 @@ tar = "0.4.44"
 flate2 = "1.0"
 sha2 = "0.10"
 transcribe-rs = { path = "vendor/transcribe-rs", features = ["whisper-cpp", "onnx"] }
-handy-keys = "0.2.4"
+# Native keyboard hooks (the crate is published as `handy-keys`).
+hotkeys = { package = "handy-keys", version = "0.2.4" }
 ferrous-opencc = "0.2.3"
 clap = { version = "4", features = ["derive"] }
 ringbuf = "0.4.8"
@@ -153,11 +154,6 @@ gtk-layer-shell = { version = "0.8", features = ["v0_6"] }
 gtk = "0.18"
 transcribe-rs = { path = "vendor/transcribe-rs", features = ["whisper-vulkan"] }
 ashpd = { version = "0.13.13", default-features = false, features = ["tokio", "global_shortcuts", "remote_desktop", "screencast"] }
-
-[patch.crates-io]
-tauri-runtime = { git = "https://github.com/cjpais/tauri.git", branch = "handy-2.10.2" }
-tauri-runtime-wry = { git = "https://github.com/cjpais/tauri.git", branch = "handy-2.10.2" }
-tauri-utils = { git = "https://github.com/cjpais/tauri.git", branch = "handy-2.10.2" }
 
 [dev-dependencies]
 tempfile = "3"

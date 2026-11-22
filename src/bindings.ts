@@ -598,9 +598,9 @@ async getAvailableAccelerators() : Promise<AvailableAccelerators> {
 /**
  * Start key recording mode
  */
-async startHandyKeysRecording(bindingId: string) : Promise<Result<null, string>> {
+async startNativeKeysRecording(bindingId: string) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("start_handy_keys_recording", { bindingId }) };
+    return { status: "ok", data: await TAURI_INVOKE("start_native_keys_recording", { bindingId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -609,9 +609,9 @@ async startHandyKeysRecording(bindingId: string) : Promise<Result<null, string>>
 /**
  * Stop key recording mode
  */
-async stopHandyKeysRecording() : Promise<Result<null, string>> {
+async stopNativeKeysRecording() : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("stop_handy_keys_recording") };
+    return { status: "ok", data: await TAURI_INVOKE("stop_native_keys_recording") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1684,7 +1684,7 @@ transcript: string;
  * partial transcript can be salvaged.
  */
 has_buffers: boolean }
-export type KeyboardImplementation = "tauri" | "handy_keys"
+export type KeyboardImplementation = "tauri" | "native"
 export type LLMPrompt = { id: string; name: string; prompt: string }
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error"
 /**

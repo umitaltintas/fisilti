@@ -78,18 +78,18 @@ This compiles a release binary and generates platform-specific bundles (deb, rpm
 
 ## Linux Install (from source)
 
-The raw binary (`src-tauri/target/release/handy`) cannot run standalone — it needs Tauri resource files (tray icons, sounds, VAD model) to be co-located at the expected path.
+The raw binary (`src-tauri/target/release/fisilti`) cannot run standalone — it needs Tauri resource files (tray icons, sounds, VAD model) to be co-located at the expected path.
 
 **Install from the deb bundle** (works on any Linux distro):
 
 > The bundle file names below derive from the Tauri `productName` ("Fısıltı"),
-> while the raw binary keeps the Cargo crate name (`handy`).
+> while the raw binary keeps the Cargo crate name (`fisilti`).
 
 ```bash
 cd /tmp
 ar x /path/to/fisilti/src-tauri/target/release/bundle/deb/Fısıltı_*_amd64.deb data.tar.gz
 tar xzf data.tar.gz
-sudo cp usr/bin/handy /usr/bin/
+sudo cp usr/bin/fisilti /usr/bin/
 sudo cp -r usr/lib/Fısıltı /usr/lib/
 sudo cp -r usr/share/icons/hicolor/* /usr/share/icons/hicolor/
 sudo cp usr/share/applications/Fısıltı.desktop /usr/share/applications/
@@ -98,7 +98,7 @@ sudo cp usr/share/applications/Fısıltı.desktop /usr/share/applications/
 After subsequent rebuilds, only the binary needs re-copying:
 
 ```bash
-sudo cp src-tauri/target/release/handy /usr/bin/
+sudo cp src-tauri/target/release/fisilti /usr/bin/
 ```
 
 Resources only need re-copying if they change upstream (new icons, sounds, etc.).

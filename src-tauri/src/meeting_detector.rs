@@ -31,17 +31,17 @@ use crate::meeting_prompt::{EndReason, MeetingPromptPayload};
 pub const MEETING_DETECTION_CHANGED_EVENT: &str = "meeting-detection-changed";
 
 /// Poll cadence of the background detector thread.
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 const POLL_INTERVAL: Duration = Duration::from_secs(3);
 
 /// Consecutive idle polls a meeting signal must persist before the "start"
 /// prompt appears. Debounces mic-test blips (~2 × 3s ≈ 6s).
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(meeting_capture, test))]
 const START_DEBOUNCE_POLLS: u32 = 2;
 
 /// Consecutive running polls the meeting signal must stay ABSENT before the
 /// app-closed auto-end fires (~5 × 3s ≈ 15s).
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(meeting_capture, test))]
 const AUTO_END_ABSENT_POLLS: u32 = 5;
 
 /// Detection status snapshot for the frontend (settings UI / debugging).
@@ -92,7 +92,7 @@ impl Default for MeetingDetector {
 
 /// What a poll tick decided the thread should do. Executed OUTSIDE the state
 /// lock so the prompt/stop calls (which re-enter the lock) can't deadlock.
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(meeting_capture, test))]
 #[derive(Debug, PartialEq, Eq)]
 enum PollAction {
     /// Nothing to do this tick.
@@ -129,7 +129,7 @@ pub(crate) struct DetectionSm {
     was_running: bool,
 }
 
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(meeting_capture, test))]
 impl DetectionSm {
     /// One poll tick while NO meeting session is running.
     ///
@@ -268,7 +268,7 @@ const MEETING_APPS: &[(&str, &str)] = &[
 ];
 
 /// A meeting app currently pulling mic input, matched against the allowlist.
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(meeting_capture, test))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct MeetingSignal {
     /// Human-readable display name (e.g. "Zoom", "Chrome").
@@ -294,6 +294,132 @@ fn meeting_app_match(bundle_id: &str) -> Option<MeetingSignal> {
             bundle_id: id,
         })
     })
+}
+
+/// Linux meeting apps: (match keys, display name). A recording stream matches
+/// when its executable name, client name or Flatpak app id equals one of the
+/// keys (case-insensitive). The first key doubles as the signal's id.
+/// Browsers count for the same reason as on macOS: Meet, Whereby, Jitsi and
+/// Teams-on-the-web all run in a tab.
+#[cfg(any(target_os = "linux", test))]
+const LINUX_MEETING_APPS: &[(&[&str], &str)] = &[
+    // Dedicated meeting / call apps.
+    (&["zoom", "us.zoom.zoom", "zoom voiceengine"], "Zoom"),
+    (
+        &[
+            "teams-for-linux",
+            "com.github.ismaelmartinez.teams_for_linux",
+            "teams",
+        ],
+        "Microsoft Teams",
+    ),
+    (&["webex", "ciscocollabhost", "com.cisco.webex"], "Webex"),
+    (&["slack", "com.slack.slack"], "Slack"),
+    (
+        &[
+            "discord",
+            "com.discordapp.discord",
+            "vesktop",
+            "dev.vencord.vesktop",
+        ],
+        "Discord",
+    ),
+    (&["skypeforlinux", "com.skype.client", "skype"], "Skype"),
+    (
+        &["telegram-desktop", "telegram", "org.telegram.desktop"],
+        "Telegram",
+    ),
+    (&["signal-desktop", "org.signal.signal", "signal"], "Signal"),
+    (&["element-desktop", "im.riot.riot", "element"], "Element"),
+    (&["jitsi-meet", "org.jitsi.jitsi-meet"], "Jitsi Meet"),
+    (
+        &[
+            "whatsapp-for-linux",
+            "com.github.eneshecan.whatsappforlinux",
+        ],
+        "WhatsApp",
+    ),
+    // Browsers.
+    (
+        &[
+            "firefox",
+            "firefox-bin",
+            "org.mozilla.firefox",
+            "firefox-esr",
+        ],
+        "Firefox",
+    ),
+    (
+        &[
+            "chrome",
+            "google-chrome",
+            "google chrome",
+            "com.google.chrome",
+        ],
+        "Chrome",
+    ),
+    (
+        &["chromium", "chromium-browser", "org.chromium.chromium"],
+        "Chromium",
+    ),
+    (&["brave", "brave-browser", "com.brave.browser"], "Brave"),
+    (&["msedge", "microsoft-edge", "com.microsoft.edge"], "Edge"),
+    (
+        &["vivaldi", "vivaldi-bin", "com.vivaldi.vivaldi"],
+        "Vivaldi",
+    ),
+    (&["opera", "com.opera.opera"], "Opera"),
+    (&["zen", "zen-bin", "app.zen_browser.zen"], "Zen"),
+    (&["librewolf", "io.gitlab.librewolf-community"], "LibreWolf"),
+    (&["epiphany", "org.gnome.epiphany"], "GNOME Web"),
+    (&["falkon", "org.kde.falkon"], "Falkon"),
+];
+
+/// Match one recording stream's identifiers against [`LINUX_MEETING_APPS`].
+#[cfg(any(target_os = "linux", test))]
+fn linux_meeting_app_match(candidates: &[Option<&str>]) -> Option<MeetingSignal> {
+    let candidates: Vec<String> = candidates
+        .iter()
+        .flatten()
+        .map(|c| c.trim().to_lowercase())
+        .filter(|c| !c.is_empty())
+        .collect();
+    LINUX_MEETING_APPS.iter().find_map(|&(keys, name)| {
+        candidates
+            .iter()
+            .any(|c| keys.contains(&c.as_str()))
+            .then_some(MeetingSignal {
+                name,
+                bundle_id: keys[0],
+            })
+    })
+}
+
+/// Linux: scan the sound server's recording streams for a known meeting app
+/// pulling from a real microphone (monitor captures and our own streams are
+/// already filtered out). Errors mean "no signal".
+#[cfg(target_os = "linux")]
+fn detect_meeting_signal() -> Option<MeetingSignal> {
+    let apps = match crate::audio_toolkit::audio::recording_apps() {
+        Ok(apps) => apps,
+        Err(e) => {
+            log::debug!("meeting-detector: recording stream list failed: {e}");
+            return None;
+        }
+    };
+    apps.iter().find_map(|app| {
+        linux_meeting_app_match(&[
+            app.binary.as_deref(),
+            app.name.as_deref(),
+            app.app_id.as_deref(),
+        ])
+    })
+}
+
+/// One-shot detection of the meeting app currently using the microphone.
+#[cfg(target_os = "linux")]
+pub(crate) fn current_meeting_signal() -> Option<MeetingSignal> {
+    detect_meeting_signal()
 }
 
 /// Scan CoreAudio process objects for a known meeting app actively using the
@@ -352,11 +478,11 @@ pub fn spawn_meeting_detector(app: AppHandle) {
     // Register the detector state on every platform (commands resolve it).
     app.manage(Arc::new(MeetingDetector::new()));
 
-    #[cfg(target_os = "macos")]
+    #[cfg(meeting_capture)]
     {
         std::thread::spawn(move || poll_loop(app));
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(meeting_capture))]
     {
         let _ = app;
     }
@@ -366,18 +492,27 @@ pub fn spawn_meeting_detector(app: AppHandle) {
 /// surviving every CoreAudio error (the loop must never crash — e.g. on macOS
 /// < 14 the process-object API is unavailable and every tick simply sees "no
 /// signal").
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 fn poll_loop(app: AppHandle) {
     use tauri::Emitter;
 
-    // One-time availability probe so an older macOS logs a single clear line
-    // instead of nothing.
+    // One-time availability probe so an unsupported system logs a single
+    // clear line instead of nothing.
+    #[cfg(target_os = "macos")]
     match cidre::core_audio::System::processes() {
         Ok(_) => log::info!("meeting-detector: started (process-object detection available)"),
         Err(e) => log::info!(
             "meeting-detector: process-object API unavailable ({:?}); auto-detection will stay idle",
             e
         ),
+    }
+    #[cfg(target_os = "linux")]
+    if crate::audio_toolkit::audio::sound_server_available() {
+        log::info!("meeting-detector: started (sound-server stream detection available)");
+    } else {
+        log::info!(
+            "meeting-detector: no PulseAudio/PipeWire server; auto-detection will stay idle"
+        );
     }
 
     loop {
@@ -567,7 +702,7 @@ pub fn request_auto_end(app: &AppHandle, reason: EndReason) {
 /// Handle the user's response to the "end meeting?" prompt. `continue_meeting`
 /// true → keep the session, reset the silence timer; false → stop the session.
 /// Always hides the prompt window (even when nothing was pending).
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 pub fn respond_auto_end(app: &AppHandle, continue_meeting: bool) -> Result<(), String> {
     let detector = app.try_state::<Arc<MeetingDetector>>();
 
@@ -615,7 +750,7 @@ pub fn respond_auto_end(app: &AppHandle, continue_meeting: bool) -> Result<(), S
 }
 
 /// Off-macOS: meetings never run, so there is nothing to end.
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(meeting_capture))]
 pub fn respond_auto_end(app: &AppHandle, continue_meeting: bool) -> Result<(), String> {
     let _ = (app, continue_meeting);
     Err("meeting auto-end is not available on this platform".to_string())
@@ -623,7 +758,7 @@ pub fn respond_auto_end(app: &AppHandle, continue_meeting: bool) -> Result<(), S
 
 /// User accepted the "start transcription?" prompt: hide it and start a
 /// meeting session.
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 pub fn accept_start_prompt(app: &AppHandle) -> Result<(), String> {
     if let Some(detector) = app.try_state::<Arc<MeetingDetector>>() {
         let mut st = detector.state.lock().unwrap();
@@ -642,7 +777,7 @@ pub fn accept_start_prompt(app: &AppHandle) -> Result<(), String> {
 }
 
 /// Off-macOS: auto-detection never runs, so there is no prompt to accept.
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(meeting_capture))]
 pub fn accept_start_prompt(app: &AppHandle) -> Result<(), String> {
     let _ = app;
     Err("meeting auto-detection is not available on this platform".to_string())
@@ -650,7 +785,7 @@ pub fn accept_start_prompt(app: &AppHandle) -> Result<(), String> {
 
 /// User dismissed the "start transcription?" prompt: hide it and snooze
 /// detection until the current meeting signal clears.
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 pub fn dismiss_start_prompt(app: &AppHandle) -> Result<(), String> {
     if let Some(detector) = app.try_state::<Arc<MeetingDetector>>() {
         let mut st = detector.state.lock().unwrap();
@@ -662,7 +797,7 @@ pub fn dismiss_start_prompt(app: &AppHandle) -> Result<(), String> {
 }
 
 /// Off-macOS: auto-detection never runs, so there is no prompt to dismiss.
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(meeting_capture))]
 pub fn dismiss_start_prompt(app: &AppHandle) -> Result<(), String> {
     let _ = app;
     Err("meeting auto-detection is not available on this platform".to_string())
@@ -687,6 +822,27 @@ pub fn detection_status(app: &AppHandle) -> MeetingDetectionStatus {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn linux_matching_uses_binary_client_name_or_flatpak_id() {
+        let name = |c: &[Option<&str>]| linux_meeting_app_match(c).map(|s| s.name);
+        assert_eq!(
+            name(&[Some("firefox"), Some("Firefox"), None]),
+            Some("Firefox")
+        );
+        assert_eq!(
+            name(&[Some("chrome"), Some("Google Chrome"), None]),
+            Some("Chrome")
+        );
+        assert_eq!(name(&[None, Some("ZOOM VoiceEngine"), None]), Some("Zoom"));
+        assert_eq!(
+            name(&[Some("bwrap"), None, Some("us.zoom.Zoom")]),
+            Some("Zoom")
+        );
+        // Prefixes don't count: "zoom" must not match "zoomer".
+        assert_eq!(name(&[Some("zoomer"), Some("arecord"), None]), None);
+        assert_eq!(name(&[None, None, None]), None);
+    }
 
     /// Test shim: display name of the matched allowlist entry.
     fn meeting_app_name(bundle_id: &str) -> Option<&'static str> {

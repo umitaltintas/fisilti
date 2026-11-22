@@ -7,7 +7,7 @@ use super::manager::{TranscriptSegment, TranscriptSource};
 /// Normalize a string for fuzzy text comparison: lowercase, strip punctuation,
 /// collapse whitespace. Used by `dedup_overlap` so casing/punctuation drift
 /// between two whisper passes over the same audio doesn't defeat the match.
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 fn normalize_for_match(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut last_space = true;
@@ -29,7 +29,7 @@ fn normalize_for_match(s: &str) -> String {
 
 /// Split text into sentences on `. ! ? …` boundaries, keeping the delimiter with
 /// the sentence. Trailing fragment (no terminal punctuation) is its own piece.
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 fn split_sentences(s: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut cur = String::new();
@@ -60,7 +60,7 @@ fn split_sentences(s: &str) -> Vec<String> {
 /// Falls back to a word-level longest-common-prefix trim when sentence matching
 /// finds nothing (e.g. one long unpunctuated window). Conservative: when in
 /// doubt it keeps text (a rare duplicate is less bad than dropping real words).
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 pub(super) fn dedup_overlap(prev: &str, curr: &str) -> String {
     let prev_sentences = split_sentences(prev);
     let curr_sentences = split_sentences(curr);
@@ -136,17 +136,17 @@ pub(super) fn dedup_overlap(prev: &str, curr: &str) -> String {
 /// windows are ~25-30 s and the two sources are segmented independently, so the
 /// same spoken passage can land in windows whose start timestamps differ by up
 /// to roughly one window length.
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 const CROSS_ECHO_MAX_GAP_MS: u64 = 35_000;
 /// Minimum normalized-token count for a mic segment to be eligible for
 /// cross-channel echo removal. Short utterances (e.g. "evet", "tamam") are NOT
 /// dropped even if they appear on both sides — a genuine local agreement with
 /// the remote party shouldn't be erased; only substantial verbatim copies are.
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 const CROSS_ECHO_MIN_TOKENS: usize = 6;
 /// Fraction of a mic segment's tokens that must also appear (in order, as a
 /// contiguous run) inside a nearby system segment for it to count as echo.
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 const CROSS_ECHO_CONTAINMENT: f32 = 0.8;
 
 /// CROSS-CHANNEL echo removal (complements the live echo duck + buffer zeroing).
@@ -160,7 +160,7 @@ const CROSS_ECHO_CONTAINMENT: f32 = 0.8;
 /// is the echo and is the one removed. Conservative by design (high containment
 /// threshold + minimum token count + time gate) so genuine local speech that
 /// merely echoes a phrase isn't erased.
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 pub(super) fn drop_cross_channel_echo(segments: Vec<TranscriptSegment>) -> Vec<TranscriptSegment> {
     // Pre-tokenize the system ("others") segments once.
     let system: Vec<(u64, Vec<String>)> = segments
@@ -206,7 +206,7 @@ pub(super) fn drop_cross_channel_echo(segments: Vec<TranscriptSegment>) -> Vec<T
 /// Longest run of `needle` tokens that appears as a contiguous subsequence of
 /// `haystack`. Used to detect a near-verbatim echo copy regardless of where in
 /// the (longer) system segment it sits.
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 fn longest_contiguous_run(needle: &[String], haystack: &[String]) -> usize {
     if needle.is_empty() || haystack.is_empty() {
         return 0;
@@ -234,7 +234,7 @@ fn longest_contiguous_run(needle: &[String], haystack: &[String]) -> usize {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(target_os = "macos")]
+    #[cfg(meeting_capture)]
     #[test]
     fn dedup_overlap_drops_repeated_leading_sentence() {
         use super::dedup_overlap;
@@ -253,7 +253,7 @@ mod tests {
         );
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(meeting_capture)]
     #[test]
     fn dedup_overlap_keeps_distinct_text() {
         use super::dedup_overlap;
@@ -263,7 +263,7 @@ mod tests {
         assert_eq!(out, curr, "distinct text must be preserved");
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(meeting_capture)]
     #[test]
     fn dedup_overlap_word_level_prefix_trim() {
         use super::dedup_overlap;
@@ -274,7 +274,7 @@ mod tests {
         assert!(out.starts_with("iota"), "overlap words trimmed, got: {out}");
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(meeting_capture)]
     #[test]
     fn cross_channel_echo_drops_mic_copy_of_nearby_system_segment() {
         use super::{drop_cross_channel_echo, TranscriptSegment, TranscriptSource};
@@ -302,7 +302,7 @@ mod tests {
         assert_eq!(out[0].source, TranscriptSource::System);
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(meeting_capture)]
     #[test]
     fn cross_channel_echo_keeps_genuine_local_speech() {
         use super::{drop_cross_channel_echo, TranscriptSegment, TranscriptSource};
@@ -327,7 +327,7 @@ mod tests {
         assert_eq!(out.len(), 2, "distinct local speech must be preserved");
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(meeting_capture)]
     #[test]
     fn cross_channel_echo_keeps_short_shared_phrases() {
         use super::{drop_cross_channel_echo, TranscriptSegment, TranscriptSource};
@@ -352,7 +352,7 @@ mod tests {
         assert_eq!(out.len(), 2, "short shared phrases must not be dropped");
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(meeting_capture)]
     #[test]
     fn cross_channel_echo_keeps_distant_match() {
         use super::{drop_cross_channel_echo, TranscriptSegment, TranscriptSource};

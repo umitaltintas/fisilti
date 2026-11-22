@@ -514,6 +514,24 @@ async changeKeyboardImplementationSetting(implementation: string) : Promise<Resu
 async getKeyboardImplementation() : Promise<string> {
     return await TAURI_INVOKE("get_keyboard_implementation");
 },
+/**
+ * Whether global shortcuts are managed by the desktop portal, plus the
+ * trigger it bound for each shortcut.
+ */
+async getPortalShortcutStatus() : Promise<PortalShortcutStatus> {
+    return await TAURI_INVOKE("get_portal_shortcut_status");
+},
+/**
+ * Open the desktop's own shortcut settings for this app (portal backend only).
+ */
+async configurePortalShortcuts() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("configure_portal_shortcuts") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeShowTrayIconSetting(enabled: boolean) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_show_tray_icon_setting", { enabled }) };
@@ -1406,10 +1424,8 @@ async updateRecordingRetentionPeriod(period: string) : Promise<Result<null, stri
 }
 },
 /**
- * Checks if the Mac is a laptop by detecting battery presence
- * 
- * This uses pmset to check for battery information.
- * Returns true if a battery is detected (laptop), false otherwise (desktop)
+ * Stub implementation for non-macOS platforms
+ * Always returns false since laptop detection is macOS-specific
  */
 async isLaptop() : Promise<Result<boolean, string>> {
     try {
@@ -1606,6 +1622,11 @@ export type BindingResponse = { success: boolean; binding: ShortcutBinding | nul
 export type ClipboardHandling = "dont_modify" | "copy_to_clipboard"
 export type CustomSounds = { start: boolean; stop: boolean }
 export type EngineType = "Whisper" | "Parakeet" | "Moonshine" | "MoonshineStreaming" | "SenseVoice" | "GigaAM" | "Canary" | 
+/**
+ * Qwen3-ASR, a speech LLM (audio encoder + Qwen3 decoder) run locally
+ * over ONNX. Downloaded as loose files, see `model/multi_file.rs`.
+ */
+"Qwen3Asr" | 
 /**
  * Cloud transcription via OpenRouter using an audio-capable **chat** model
  * (e.g. `google/gemini-2.5-flash-lite`) and the chat-completions endpoint.
@@ -1829,6 +1850,23 @@ export type OverlayPosition = "none" | "top" | "bottom"
 export type PaginatedHistory = { entries: HistoryEntry[]; has_more: boolean }
 export type PasteMethod = "ctrl_v" | "direct" | "none" | "shift_insert" | "ctrl_shift_v" | "external_script"
 export type PermissionAccess = "allowed" | "denied" | "unknown"
+/**
+ * State of the XDG GlobalShortcuts portal backend, for the shortcut settings UI.
+ */
+export type PortalShortcutStatus = { 
+/**
+ * The portal backend is handling global shortcuts.
+ */
+active: boolean; 
+/**
+ * Binding id → trigger the desktop actually bound, as a human readable
+ * description (e.g. `"Ctrl+Space"`). Missing or empty while unassigned.
+ */
+triggers: Partial<{ [key in string]: string }>; 
+/**
+ * Last binding failure (e.g. the user dismissed the system dialog).
+ */
+error: string | null }
 export type PostProcessProvider = { id: string; label: string; base_url: string; allow_base_url_edit?: boolean; models_endpoint?: string | null; supports_structured_output?: boolean }
 export type RecordingRetentionPeriod = "never" | "preserve_limit" | "days3" | "weeks2" | "months3"
 export type ShortcutBinding = { id: string; name: string; description: string; default_binding: string; current_binding: string }

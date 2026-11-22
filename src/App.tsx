@@ -14,7 +14,13 @@ import {
 import "./App.css";
 import AccessibilityPermissions from "./components/AccessibilityPermissions";
 import Onboarding, { AccessibilityOnboarding } from "./components/onboarding";
-import { Sidebar, SidebarSection, SECTIONS_CONFIG } from "./components/Sidebar";
+import { Sidebar, type AppSection } from "./components/Sidebar";
+import { MeetingsPage } from "./components/settings/meeting/MeetingSettings";
+import { HistorySettings } from "./components/settings/history/HistorySettings";
+import {
+  SettingsPage,
+  type SettingsTab,
+} from "./components/settings/SettingsPage";
 import { useSettingsStore } from "./stores/settingsStore";
 import { useTauriEvent } from "./hooks/useTauriEvent";
 import { commands } from "@/bindings";
@@ -22,22 +28,21 @@ import { getLanguageDirection, initializeRTL } from "@/lib/utils/rtl";
 
 type OnboardingStep = "accessibility" | "model" | "done";
 
-const renderSettingsContent = (
-  section: SidebarSection,
-  t: (key: string) => string,
-) => {
-  const config = SECTIONS_CONFIG[section] ?? SECTIONS_CONFIG.home;
-  const ActiveComponent = config.component;
-  // Home has its own greeting; every other page gets its name as a title.
-  if (section === "home") return <ActiveComponent />;
-  return (
-    <>
-      <h1 className="mx-auto w-full max-w-3xl font-serif text-[24px] leading-tight font-semibold tracking-tight">
-        {t(config.labelKey)}
-      </h1>
-      <ActiveComponent />
-    </>
-  );
+/** Where a `navigate-section` request lands. The names come from the backend
+ * (tray, mascot) and from links inside pages, some from the old sidebar. */
+const NAVIGATION_TARGETS: Record<string, [AppSection, SettingsTab?]> = {
+  meetings: ["meetings"],
+  meeting: ["meetings"],
+  home: ["meetings"],
+  dictation: ["dictation"],
+  history: ["dictation"],
+  settings: ["settings"],
+  general: ["settings", "general"],
+  advanced: ["settings", "general"],
+  about: ["settings", "general"],
+  models: ["settings", "models"],
+  postprocessing: ["settings", "ai"],
+  ai: ["settings", "ai"],
 };
 
 /** Mounted once for the whole app, so toasts raised during onboarding (or
@@ -65,7 +70,8 @@ function App() {
   // Track if this is a returning user who just needs to grant permissions
   // (vs a new user who needs full onboarding including model selection)
   const [isReturningUser, setIsReturningUser] = useState(false);
-  const [currentSection, setCurrentSection] = useState<SidebarSection>("home");
+  const [currentSection, setCurrentSection] = useState<AppSection>("meetings");
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("general");
   // Narrow selectors: App re-renders for these values only, not for every
   // settings change anywhere in the app.
   const debugMode = useSettingsStore((s) => s.settings?.debug_mode ?? false);
@@ -102,9 +108,10 @@ function App() {
   // Navigate to a sidebar section when the backend (the tray's "Meetings"
   // item) or a page (a "go to Models" link) asks for it.
   useTauriEvent<string>("navigate-section", (section) => {
-    if (section in SECTIONS_CONFIG) {
-      setCurrentSection(section as SidebarSection);
-    }
+    const target = NAVIGATION_TARGETS[section];
+    if (!target) return;
+    setCurrentSection(target[0]);
+    if (target[1]) setSettingsTab(target[1]);
   });
 
   // Handle keyboard shortcuts for debug mode toggle
@@ -119,11 +126,19 @@ function App() {
       if (isDebugShortcut) {
         event.preventDefault();
         void updateSetting("debug_mode", !debugMode);
-        // Debug settings are a group inside Advanced rather than their own
-        // sidebar entry, so jump there to show what the shortcut revealed.
+        // The Developer group sits at the bottom of Settings → General, so
+        // jump there to show what the shortcut revealed.
         if (!debugMode) {
-          setCurrentSection("advanced");
+          setCurrentSection("settings");
+          setSettingsTab("general");
         }
+        return;
+      }
+
+      // Cmd/Ctrl+, opens Settings, as in every Mac app.
+      if (event.key === "," && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault();
+        setCurrentSection("settings");
       }
     };
 
@@ -296,9 +311,16 @@ function App() {
           {/* Scrollable content area */}
           <main className="flex-1 flex flex-col overflow-hidden">
             <div className="flex-1 overflow-y-auto">
-              <div className="flex flex-col items-center gap-5 px-8 pt-6 pb-10">
+              <div className="flex flex-col items-center gap-5 px-8 pt-7 pb-10">
                 <AccessibilityPermissions />
-                {renderSettingsContent(currentSection, t)}
+                {currentSection === "meetings" && <MeetingsPage />}
+                {currentSection === "dictation" && <HistorySettings />}
+                {currentSection === "settings" && (
+                  <SettingsPage
+                    tab={settingsTab}
+                    onTabChange={setSettingsTab}
+                  />
+                )}
               </div>
             </div>
           </main>

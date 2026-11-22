@@ -344,13 +344,13 @@ impl MeetingManager {
     /// Start a meeting session. Ensures the transcription model is loading,
     /// creates a fresh session and spawns the capture loop.
     pub fn start(&self) -> Result<(), String> {
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(meeting_capture))]
         {
             let _ = (&self.transcription_manager, &self.next_generation);
             return Err("Meeting mode capture is only supported on macOS".to_string());
         }
 
-        #[cfg(target_os = "macos")]
+        #[cfg(meeting_capture)]
         {
             let session = {
                 let mut slot = self.slot.lock().unwrap();
@@ -427,7 +427,7 @@ impl MeetingManager {
     /// A failure before the sources came up leaves no row; its buffers are
     /// removed. A failure mid-meeting keeps the row (still `recording`) so the
     /// audio captured so far can be recovered.
-    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    #[cfg_attr(not(meeting_capture), allow(dead_code))]
     fn abort_session(&self, session: &Arc<Session>, error: &str) {
         let aborted = {
             let mut slot = self.slot.lock().unwrap();
@@ -449,7 +449,7 @@ impl MeetingManager {
             return;
         }
         session.stop_signal.store(true, Ordering::SeqCst);
-        #[cfg(target_os = "macos")]
+        #[cfg(meeting_capture)]
         self.clear_subtitles(session);
         match session.meeting_id() {
             None => {
@@ -537,14 +537,14 @@ impl MeetingManager {
 
         // Hybrid transcription: re-transcribe the FULL per-source audio for a
         // higher-quality, labeled transcript that REPLACES the live preview.
-        #[cfg(target_os = "macos")]
+        #[cfg(meeting_capture)]
         self.finalize_session(&session);
 
         // Persist. Failures are logged, never propagated, so a stop always
         // succeeds and returns the transcript.
         self.persist_session(&session);
 
-        #[cfg(target_os = "macos")]
+        #[cfg(meeting_capture)]
         self.save_session_audio(&session);
 
         // Best-effort LLM title + summary, spawned; they carry the row id they
@@ -708,20 +708,20 @@ impl MeetingManager {
         };
         self.persist_incremental_now(session);
         self.update_progress_clock(session);
-        #[cfg(target_os = "macos")]
+        #[cfg(meeting_capture)]
         if let Some(buffers) = session.buffers() {
             if let Err(e) = self.save_audio_from_raw(id, &buffers.mixed) {
                 log::error!("meeting: failed to save playback audio: {}", e);
             }
         }
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(meeting_capture))]
         let _ = id;
     }
 
     /// Save the playback audio of the meeting `persist_session` saved, then
     /// drop the capture buffers now that the session is fully on disk. When
     /// the audio cannot be written the buffers are kept (and swept later).
-    #[cfg(target_os = "macos")]
+    #[cfg(meeting_capture)]
     fn save_session_audio(&self, session: &Session) {
         let (Some(id), Some(buffers)) = (session.saved_id(), session.buffers()) else {
             return;
@@ -734,7 +734,7 @@ impl MeetingManager {
 
     /// Insert the in-progress row of `session` (status `recording`) with its
     /// buffer paths, once capture is up. Announces the row id.
-    #[cfg(target_os = "macos")]
+    #[cfg(meeting_capture)]
     pub(super) fn insert_session_row(
         &self,
         session: &Session,
@@ -781,7 +781,7 @@ impl MeetingManager {
     /// meeting). Scoped to its own session: a slow attempt that finishes after
     /// this meeting stopped (and another started) can no longer rename the
     /// wrong meeting.
-    #[cfg(target_os = "macos")]
+    #[cfg(meeting_capture)]
     fn resolve_session_title(&self, session: &Session) {
         for attempt in 0..2 {
             if attempt > 0 {
@@ -977,7 +977,7 @@ impl MeetingManager {
     /// and emit a synthetic update so the UI swaps the live preview for it.
     /// The emitted `segment` is the last one, for payload-shape compatibility;
     /// the authoritative content is `full_transcript` plus the saved record.
-    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    #[cfg_attr(not(meeting_capture), allow(dead_code))]
     pub(super) fn replace_transcript(&self, session: &Session, segments: Vec<TranscriptSegment>) {
         let (full, last) = {
             let mut transcript = session.transcript();
@@ -1101,7 +1101,7 @@ impl MeetingManager {
     }
 
     /// Emit only `"meeting-session-changed"` (the row id became known).
-    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    #[cfg_attr(not(meeting_capture), allow(dead_code))]
     pub(super) fn emit_session_changed(&self) {
         use tauri::Emitter;
         let _ = self.app_handle.emit(
@@ -1119,7 +1119,7 @@ impl MeetingManager {
 
     /// Emit a `"meeting-finalizing"` signal so the UI can show progress while
     /// the on-stop full-audio re-transcription runs.
-    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    #[cfg_attr(not(meeting_capture), allow(dead_code))]
     pub(super) fn emit_finalizing(&self, finalizing: bool) {
         use tauri::Emitter;
         let _ = self
@@ -1128,7 +1128,7 @@ impl MeetingManager {
     }
 
     /// Emit a throttled `"meeting-audio-level"` event for the live visualizer.
-    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    #[cfg_attr(not(meeting_capture), allow(dead_code))]
     pub(super) fn emit_audio_level(&self, bars: Vec<f32>, wave: Vec<f32>, peak: f32) {
         use tauri::Emitter;
         let _ = self.app_handle.emit(
@@ -1201,7 +1201,7 @@ fn empty_session_outcome(
 /// True when the time since the last observed speech frame has exceeded the
 /// configured prolonged-silence timeout. Pure, so the threshold logic is
 /// unit-testable without a running capture loop.
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 pub(super) fn silence_exceeded(anchor_elapsed: std::time::Duration, timeout_secs: u32) -> bool {
     anchor_elapsed > std::time::Duration::from_secs(timeout_secs as u64)
 }
@@ -1247,7 +1247,7 @@ mod tests {
         assert_eq!(seg.timestamp_ms, 1200);
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(meeting_capture)]
     #[test]
     fn silence_exceeded_fires_only_past_the_timeout() {
         use super::silence_exceeded;

@@ -322,7 +322,7 @@ pub fn is_recording(app: AppHandle) -> bool {
 #[tauri::command]
 #[specta::specta]
 pub async fn capture_system_audio_test(seconds: u32) -> Result<String, String> {
-    #[cfg(target_os = "macos")]
+    #[cfg(meeting_capture)]
     {
         use crate::audio_toolkit::audio::SystemAudioCapture;
         use futures_util::StreamExt;
@@ -378,7 +378,7 @@ pub async fn capture_system_audio_test(seconds: u32) -> Result<String, String> {
         Ok(out_path.to_string_lossy().to_string())
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(meeting_capture))]
     {
         let _ = seconds;
         Err("System audio capture is only supported on macOS".to_string())
@@ -405,7 +405,7 @@ pub async fn capture_system_audio_test(seconds: u32) -> Result<String, String> {
 #[tauri::command]
 #[specta::specta]
 pub async fn capture_mixed_audio_test(seconds: u32) -> Result<String, String> {
-    #[cfg(target_os = "macos")]
+    #[cfg(meeting_capture)]
     {
         use crate::audio_toolkit::audio::{
             FrameResampler, MeetingMixer, MixSource, SystemAudioCapture,
@@ -638,7 +638,7 @@ pub async fn capture_mixed_audio_test(seconds: u32) -> Result<String, String> {
         Ok(out_path.to_string_lossy().to_string())
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(meeting_capture))]
     {
         let _ = seconds;
         Err("Mixed audio capture is only supported on macOS".to_string())
@@ -647,7 +647,7 @@ pub async fn capture_mixed_audio_test(seconds: u32) -> Result<String, String> {
 
 /// Write mono f32 samples as a 32-bit float PCM WAV (format tag 3) with a
 /// manually constructed 44-byte header. Avoids pulling extra crates.
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 fn write_f32_wav(path: &std::path::Path, samples: &[f32], sample_rate: u32) -> std::io::Result<()> {
     use std::io::Write;
 

@@ -31,7 +31,7 @@ export const MoreOptions: React.FC<MoreOptionsProps> = ({ children }) => {
         aria-expanded={open}
         aria-controls={contentId}
         onClick={() => setOpen((value) => !value)}
-        className={`flex w-full cursor-pointer items-center gap-1.5 px-3.5 py-2 text-start text-xs font-medium text-sub transition-colors last:rounded-b-[10px] hover:bg-chip/60 hover:text-text focus:outline-none focus-visible:ring-2 focus-visible:ring-logo-primary/50 ${
+        className={`flex w-full cursor-pointer items-center gap-1.5 px-3.5 py-2 text-start text-xs font-medium text-sub transition-colors last:rounded-b-[12px] hover:bg-chip/60 hover:text-text focus:outline-none focus-visible:ring-2 focus-visible:ring-logo-primary/50 ${
           open ? "border-t border-line" : ""
         }`}
       >

@@ -1,9 +1,7 @@
 {
   "tray": {
     "settings": "Paramètres...",
-    "checkUpdates": "Rechercher des mises à jour...",
     "copyLastTranscript": "Copier la dernière transcription",
-    "history": "Historique de dictée…",
     "unloadModel": "Décharger le modèle",
     "model": "Modèle",
     "modelsOnDevice": "Sur cet appareil",
@@ -14,8 +12,7 @@
     "stopDictation": "Arrêter la dictée",
     "startMeeting": "Démarrer la réunion",
     "stopMeeting": "Arrêter la réunion",
-    "recordingIndicator": "Fısıltı — Enregistrement…",
-    "meetings": "Réunions..."
+    "recordingIndicator": "Fısıltı — Enregistrement…"
   },
   "mascot": {
     "label": "Mascotte Fısıltı",
@@ -279,7 +276,13 @@
           "set": "Échec de la définition du raccourci : {{error}}",
           "reset": "Échec de la réinitialisation du raccourci à sa valeur d'origine"
         },
-        "change": "Modifier le raccourci : {{shortcut}}"
+        "change": "Modifier le raccourci : {{shortcut}}",
+        "portal": {
+          "note": "Géré par votre bureau ; modifiez-le dans les paramètres système.",
+          "configure": "Paramètres système",
+          "notAssigned": "Non attribué",
+          "openFailed": "Impossible d'ouvrir les paramètres de raccourcis du système"
+        }
       },
       "language": {
         "title": "Langue",

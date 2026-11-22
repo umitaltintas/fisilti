@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Fısıltı
+Comment=Identifies Fısıltı to the desktop portal (global shortcuts)
+Exec=handy
+Icon=handy
+NoDisplay=true

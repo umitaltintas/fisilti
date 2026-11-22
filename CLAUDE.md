@@ -162,6 +162,7 @@ Fisilti supports command-line parameters on all platforms for integration with s
 | ------------------------ | ---------------------------------------------------------------------------------- |
 | `--toggle-transcription` | Toggle recording on/off on a running instance (via `tauri_plugin_single_instance`) |
 | `--toggle-post-process`  | Toggle recording with post-processing on/off on a running instance                 |
+| `--toggle-meeting`       | Start/stop a meeting session on a running instance                                 |
 | `--cancel`               | Cancel the current operation on a running instance                                 |
 | `--start-hidden`         | Launch without showing the main window (tray icon still visible)                   |
 | `--no-tray`              | Launch without the system tray icon (closing window quits the app)                 |
@@ -170,7 +171,7 @@ Fisilti supports command-line parameters on all platforms for integration with s
 **Key design decisions:**
 
 - CLI flags are runtime-only overrides — they do NOT modify persisted settings
-- Remote control flags (`--toggle-transcription`, `--toggle-post-process`, `--cancel`) work by launching a second instance that sends its args to the running instance via `tauri_plugin_single_instance`, then exits
+- Remote control flags (`--toggle-transcription`, `--toggle-post-process`, `--toggle-meeting`, `--cancel`) work by launching a second instance that sends its args to the running instance via `tauri_plugin_single_instance`, then exits
 - `send_transcription_input()` in `signal_handle.rs` is shared between signal handlers and CLI to avoid code duplication
 - `CliArgs` is stored in Tauri managed state (`.manage()`) so it's accessible in `on_window_event` and other handlers
 
@@ -179,6 +180,16 @@ Fisilti supports command-line parameters on all platforms for integration with s
 Opt-in feature: detect when a meeting app starts using the microphone, prompt
 to start a transcription session, and offer to end (then auto-end) the session
 on prolonged silence or when the meeting app releases the mic.
+
+**The live pass is the final transcript (local models).** Live segments are
+VAD-cut at natural pauses (≤ 22 s, merged up to 30 s) and transcribed by the
+meeting model with the finalize options (`transcribe_meeting_finalize`). When
+the worker falls behind, segments go to the session's `LiveBacklog` instead
+of being dropped; the worker drains it whenever it idles, failed segments are
+kept for one retry, and `finalize_session` only finishes the backlog — stop
+takes seconds, not a full re-read. Only an overflowing backlog (> 30 min of
+audio) falls back to the old full pass with `meeting_final_model`. Gemini
+(batch or Live) and other cloud meeting models are unchanged.
 
 **Session lifecycle:** each meeting is one `meeting/session.rs` `Session`
 owned by the manager's slot; the slot is `Idle → Running → Finalizing → Idle`.
@@ -201,8 +212,8 @@ in-progress row and survive navigation.
   window (label `meeting_prompt`); React page in `src/meeting-prompt/`
 - `src-tauri/src/meeting/manager.rs` - prolonged-silence tracking in the
   capture loop (`silence_anchor`, reset by speech frames from either VAD)
-- Settings UI: "Automatic meeting detection" section in
-  `src/components/settings/meeting/MeetingSettings.tsx`; helpers in
+- Settings UI: the Meetings group of Settings → General
+  (`src/components/settings/meeting/MeetingPreferences.tsx`); helpers in
   `src/lib/meeting.ts`
 
 **Settings (`AppSettings`):** `meeting_auto_detect` (default false),
@@ -230,7 +241,7 @@ in-progress row and survive navigation.
 - Commands: `accept_meeting_prompt`, `dismiss_meeting_prompt`,
   `respond_meeting_auto_end`, `get_meeting_detection_status`. Events:
   `meeting-prompt-update`, `meeting-detection-changed`.
-- Tray: the "Meetings" item opens the main window on the Meeting section via
+- Tray: "Open Fısıltı" opens the main window on the Meetings page via
   a `navigate-section` event (listener in `App.tsx`).
 
 ## Meeting Naming (macOS)
@@ -250,8 +261,8 @@ a bare Meet room code) → the existing LLM auto-title on stop → datetime.
 - The `meeting-title-update` event carries `{ id, title }` so the UI renames
   only the matching meeting
 - Commands: `get_calendar_access_status`, `request_calendar_access`,
-  `change_meeting_calendar_names_setting`. The toggle lives in the meeting
-  "Settings" tab (`MeetingPreferences.tsx`) and requests calendar access
+  `change_meeting_calendar_names_setting`. The toggle lives in the Meetings
+  group of Settings → General (`MeetingPreferences.tsx`) and requests calendar access
   before persisting the setting
 
 ## Recording Import & Markdown Export (macOS)
@@ -300,47 +311,52 @@ export_markdown(id)` rewrites the meeting's file whenever it completes or its
 title/summary/notes change; the previous file is found by date prefix +
 `fisilti_id` and removed after a rename. Only `completed` rows are exported.
 
-## Settings Information Architecture
+## App Structure (Information Architecture)
 
-The sidebar has a fixed set of always-visible sections, grouped into three
-clusters (`SECTIONS_CONFIG` in `src/components/Sidebar.tsx`):
+Apple-style: the sidebar holds only **content**, and all configuration lives
+in one Settings view, like a macOS Settings window.
 
-| Cluster   | Sections                                     |
-| --------- | -------------------------------------------- |
-| (unnamed) | General, Models                              |
-| Features  | Post-processing, Meetings, Dictation history |
-| System    | Advanced, About                              |
+| Sidebar entry       | Page                                                |
+| ------------------- | --------------------------------------------------- |
+| Meetings            | `meeting/MeetingSettings.tsx` (`MeetingsPage`)      |
+| Dictation history   | `history/HistorySettings.tsx`                       |
+| Settings (⌘/Ctrl+,) | `SettingsPage.tsx`: segmented General / Models / AI |
+
+`App.tsx` owns `AppSection` + `SettingsTab`; `navigate-section` events are
+mapped through `NAVIGATION_TARGETS` (old names like `models`, `meeting`,
+`history`, `advanced` still work, so backend emits need no change).
+
+**Meetings is one view, no tabs:** title + Import + Start in the header, the
+meeting list below; while recording, `LiveSession` (live workspace only)
+replaces the list; a meeting's detail opens on click, and the meeting that
+just finished opens by itself after finalize.
 
 **Rules to keep it from drifting back:**
 
-- **One home per setting.** A setting belongs to exactly one page. If it feels
-  like it belongs to two, the page split is wrong — don't duplicate it.
-- **A feature's on/off switch lives at the top of that feature's own page**,
-  never on another page. Sections must not appear/disappear from the sidebar
-  based on a toggle.
-- **Model-specific settings** (recognition language, translate-to-English,
-  cloud API key) live in `models/ActiveModelPanel.tsx`, next to the model
-  picker — not on General.
-- **Debug/low-level settings** are the "Developer" group at the bottom of
-  Advanced, shown only when `debug_mode` is on.
-- Long lists use `ui/CollapsibleGroup.tsx` so a page opens showing only what
-  is likely needed.
-- **Each group shows only its essentials.** Rows most people never change go
-  in a `ui/MoreOptions.tsx` at the bottom of their `SettingsGroup` (still the
-  same page — "one home per setting" holds). A row that only matters while
-  another setting is on (feedback sound/volume/output device, auto-end
-  timeouts, the cancel shortcut in push-to-talk) is not rendered at all while
-  it is off, rather than shown disabled.
-- **One set of settings primitives.** Anything that reads as a setting is built
-  from `SettingsGroup` + `SettingContainer` / `ToggleSwitch` / `Dropdown`, on
-  every page including the ones inside a feature workspace. Do not grow a
-  local toggle or select widget for one page — a toggle must look and behave
-  the same everywhere.
-- **"History" means dictation history.** The sidebar entry is _Dictation
-  history_ (`sidebar.history`); the meeting archive is the History tab inside
-  Meetings. Two archives, two names, no shared label.
+- **Few settings on screen.** Settings → General shows only Dictation
+  (shortcut, push-to-talk, microphone, feedback sound, paste method, custom
+  words), Meetings (`MeetingPreferences part="general"`) and App (language,
+  appearance, autostart). Everything else keeps its default and is listed
+  only in the **Developer** group at the bottom of General, visible with
+  `debug_mode` (⌘/Ctrl+Shift+D). Do not add a row to the visible groups
+  unless most users need to change it.
+- **One home per setting.** Model-specific options (language, translate, API
+  keys, the Gemini meeting options via `MeetingPreferences part="gemini"`,
+  shown only when Gemini is in use) live on Models.
+- **One set of primitives.** `SettingsGroup` + `SettingContainer` /
+  `ToggleSwitch` / `Dropdown`; tabs are `ui/SegmentedControl.tsx`. No serif
+  type: tokens in `App.css` are macOS neutral greys with the purple only as
+  the accent.
+- **"History" means dictation history.** The meeting archive is the Meetings
+  page.
 
-The models list (`models/ModelsSettings.tsx`) renders ~20 entries as compact
+The catalogue is curated: `CURATED_MODEL_IDS` in `managers/model.rs` (Whisper
+Large v3, Whisper Turbo, Gemini batch + Live). Every other built-in entry stays
+defined but is listed only when it is custom, already on disk, or selected
+(`prune_catalog`), so nobody loses a model they use. Add a model to the list
+only if it is genuinely good for this user's languages (Turkish first).
+
+The models list (`models/ModelsSettings.tsx`) renders the entries as compact
 `ModelRow`s bucketed into Installed / Cloud / Multilingual / English only /
 Specific languages. Only the first non-empty bucket is expanded. The search box
 matches names, descriptions **and** supported languages, which is why there is
@@ -353,6 +369,22 @@ meeting code path — go through `AppSettings::meeting_model_id()`, or the two
 silently diverge (the loader warms one engine while metadata lookups describe
 another). Both pickers live on the Models page: the big list sets the
 dictation model, `models/MeetingModelPanel.tsx` sets the meeting one.
+
+**Qwen3-ASR 1.7B** (`EngineType::Qwen3Asr`, id `qwen3-asr-1.7b`, not in the
+curated list: weak on Turkish) is a speech LLM run over ONNX by `vendor/transcribe-rs/src/onnx/qwen3_asr/` (Whisper
+128-mel front end, encoder + token-embedding + KV-cached decoder graphs, greedy
+decode). It uses the int8 export, which is unreliable past ~15 s, so audio is
+cut at the quietest point into ≤ 15 s pieces. It is not a tarball: it is
+downloaded file by file from a commit-pinned Hugging Face repo by
+`managers/model/multi_file.rs` into `{filename}.partial/`, which is renamed
+into place only when every file has passed its size/SHA-256 check. Add another
+loose-file model by giving it a `RemoteSet` in `remote_set()`. End-to-end check:
+`QWEN3_ASR_DIR=… QWEN3_ASR_WAV=a.wav[:lang] cargo test --release --features onnx
+--lib qwen3_asr::tests::real_model -- --ignored --nocapture` (in the vendor crate).
+
+**Dictation is off while a meeting is running or finalizing**
+(`meeting_in_progress` in `actions.rs`): a lost push-to-talk key-up used to
+record minutes of meeting as one dictation and paste it into the focused app.
 
 Only ONE engine is resident at a time, so `initiate_model_load_for` swaps
 whenever the resident model is not the requested one, and the dictation
@@ -406,34 +438,32 @@ password input with draft-then-commit-on-blur. Do not hand-roll a second key
 control (an earlier `CloudKeysPanel` mixed a bound field with a write-only one
 that showed its state in the placeholder; they read as unrelated widgets).
 
-Meetings is the one sidebar entry that is a **workspace** rather than a
-settings page, so it keeps its own Session / History / Settings tabs. Its
-Settings tab (`meeting/MeetingPreferences.tsx`) is still built from the shared
-primitives: a visible "General" group (shortcut, auto-summarize, calendar
-names) plus two `CollapsibleGroup`s — Gemini and automatic detection — that
-open only when they are already in use (`geminiInUse`, `autoDetect`). Those
-defaults are read from the backend, which is why the tab renders a spacer
-until the settings load instead of painting a collapsed group and expanding it
-a frame later.
+Meeting settings are one component, `meeting/MeetingPreferences.tsx`, in two
+parts: `part="general"` (shortcut, auto-summarize, calendar names, automatic
+detection / auto-end, export folder) on Settings → General, and
+`part="gemini"` (live mode, subtitles, diarize, smart) on Models, rendered
+only when Gemini is in use. The general part renders a spacer until settings
+load so the page does not jump.
 
 ## Desktop Mascot
 
-Opt-in (`show_mascot`, toggle in General → App): a draggable character in
+Opt-in (`show_mascot`, toggle in the Developer group of Settings → General): a draggable character in
 an always-on-top window that opens quick actions on click. `src-tauri/src/mascot.rs`
-+ `src/mascot/`. Every action reuses the tray's path (`mascot_action`). On
-macOS it is a **non-activating NSPanel that can never become key**, so a click
-does not take focus away from the app dictation pastes into. Do not replace it
-with a plain window. The window is 88×88 and only grows while the menu is open
-(`set_mascot_menu_open`): transparent areas still swallow clicks. After a drag
-the position is saved to `mascot_position` (debounced) and checked against the
-connected monitors at the next show. Dictation state reaches it through
-`dictation-state-changed`, which `tray::change_tray_icon` emits.
+
+- `src/mascot/`. Every action reuses the tray's path (`mascot_action`). On
+  macOS it is a **non-activating NSPanel that can never become key**, so a click
+  does not take focus away from the app dictation pastes into. Do not replace it
+  with a plain window. The window is 88×88 and only grows while the menu is open
+  (`set_mascot_menu_open`): transparent areas still swallow clicks. After a drag
+  the position is saved to `mascot_position` (debounced) and checked against the
+  connected monitors at the next show. Dictation state reaches it through
+  `dictation-state-changed`, which `tray::change_tray_icon` emits.
 
 ## Debug Mode
 
 Access debug features: `Cmd+Shift+D` (macOS) or `Ctrl+Shift+D` (Windows/Linux).
-This reveals the "Developer" group at the bottom of Settings → Advanced
-(there is no separate Debug section) and navigates there.
+This reveals the "Developer" group at the bottom of Settings → General
+(there is no separate Debug or Advanced section) and navigates there.
 
 ## Platform Notes
 

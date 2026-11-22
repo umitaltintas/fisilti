@@ -1,10 +1,8 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { emit } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 
 import {
-  CollapsibleGroup,
   Dropdown,
   SettingContainer,
   SettingsGroup,
@@ -21,6 +19,7 @@ import { useSettingsStore, type Settings } from "@/stores/settingsStore";
 import { cloudProviderOf, meetingModelId } from "@/lib/utils/model";
 import { errorMessage } from "@/lib/utils/errors";
 import { requestCalendarAccess, toLiveMode } from "@/lib/meeting";
+import { useOsType } from "@/hooks/useOsType";
 
 // Languages offered for live translation. BCP-47 codes, matching what the
 // Live API expects. Each is shown in its own language (an endonym), like the
@@ -50,7 +49,15 @@ const LIVE_TRANSLATE_LANGUAGES: DropdownOption[] = [
 // back that one value and says so, and the rest of the app sees changes made
 // here. The two cloud/automation blocks are collapsed unless they are actually
 // in use.
-export const MeetingPreferences: React.FC = () => {
+interface MeetingPreferencesProps {
+  /** "general": the meeting switches on Settings → General.
+   * "gemini": the Gemini options next to the meeting model on Models. */
+  part: "general" | "gemini";
+}
+
+export const MeetingPreferences: React.FC<MeetingPreferencesProps> = ({
+  part,
+}) => {
   const { t } = useTranslation();
   const models = useModelStore((s) => s.models);
   const settings = useSettingsStore((s) => s.settings);
@@ -59,6 +66,8 @@ export const MeetingPreferences: React.FC = () => {
   const refreshSettings = useSettingsStore((s) => s.refreshSettings);
   const updateSetting = useSettingsStore((s) => s.updateSetting);
   const isUpdating = useSettingsStore((s) => s.isUpdating);
+  // Calendar naming reads EventKit; there is no Linux/Windows source.
+  const hasCalendarNaming = useOsType() === "macos";
 
   const [calendarError, setCalendarError] = useState<string | null>(null);
   const [requestingCalendar, setRequestingCalendar] = useState(false);
@@ -68,9 +77,10 @@ export const MeetingPreferences: React.FC = () => {
   // not flip after the first paint, so nothing renders until settings exist.
   if (!settings) {
     if (isLoading) {
-      // Reserve roughly the collapsed height so switching tabs does not jump.
-      return <div className="h-48" />;
+      // Reserve roughly the group's height so switching tabs does not jump.
+      return part === "general" ? <div className="h-48" /> : null;
     }
+    if (part !== "general") return null;
     return (
       <div className="flex flex-col items-center gap-3 rounded-lg border border-line px-4 py-8 text-center">
         <InlineError>
@@ -173,33 +183,121 @@ export const MeetingPreferences: React.FC = () => {
   // empty key is normal, not an error.
   const needsKey =
     !hasGeminiKey && (meetingModelIsGemini || liveMode !== "off");
-  // Open the cloud block for anyone already using it, and leave it folded for
-  // the on-device-only case it does not apply to.
+  // Shown only to people already using Gemini; on-device users never see it.
   const geminiInUse =
     meetingModelIsGemini || liveMode !== "off" || hasGeminiKey;
 
-  return (
-    <div className="space-y-6">
-      <SettingsGroup title={t("meeting.generalSection")}>
-        {/* Optional global shortcut to start/stop a meeting without opening
-            the window. Unbound by default; mirrors the tray quick-start. */}
-        <ShortcutInput
-          shortcutId="toggle_meeting"
+  if (part === "gemini") {
+    // Only for people who use Gemini at all; the key itself lives in the
+    // API keys panel on the same page.
+    if (!geminiInUse) return null;
+    return (
+      <SettingsGroup title={t("meeting.geminiSection")}>
+        {/* Live streaming needs the key even when the meeting model is
+            local; the field is in the API keys panel on this page. */}
+        {needsKey && (
+          <div className="px-4 py-3">
+            <Alert variant="warning">
+              <span>{t("meeting.geminiNeedsKey")}</span>
+            </Alert>
+          </div>
+        )}
+
+        {/* Speaker attribution only exists on the Gemini on-stop pass. */}
+        {meetingModelIsGemini && (
+          <ToggleSwitch
+            checked={geminiDiarize}
+            isUpdating={busy("meeting_gemini_diarize")}
+            onChange={(value) =>
+              void updateSetting("meeting_gemini_diarize", value)
+            }
+            label={t("meeting.geminiDiarizeToggle")}
+            description={t("meeting.geminiDiarizeDescription")}
+            grouped
+          />
+        )}
+
+        {/* Live streaming: off, translate, or transcribe. */}
+        <SettingContainer
+          title={t("meeting.liveModeLabel")}
+          description={t(`meeting.liveModeNote.${liveMode}`)}
           descriptionMode="inline"
           grouped
-        />
+        >
+          <Dropdown
+            options={liveModeOptions}
+            selectedValue={liveMode}
+            disabled={busy("meeting_live_mode")}
+            onSelect={(v) => void updateSetting("meeting_live_mode", v)}
+          />
+        </SettingContainer>
 
+        {liveMode !== "off" && (
+          <ToggleSwitch
+            checked={subtitles}
+            isUpdating={busy("meeting_subtitles")}
+            onChange={(value) => void updateSetting("meeting_subtitles", value)}
+            label={t("meeting.subtitlesToggle")}
+            description={t("meeting.subtitlesDescription")}
+            grouped
+          />
+        )}
+
+        {liveMode === "translate" && (
+          <SettingContainer
+            title={t("meeting.liveTranslateTargetLabel")}
+            description={t("meeting.liveTranslateTargetDescription")}
+            descriptionMode="inline"
+            grouped
+          >
+            <Dropdown
+              options={LIVE_TRANSLATE_LANGUAGES}
+              selectedValue={liveTarget}
+              disabled={busy("meeting_live_translate_target")}
+              onSelect={(v) =>
+                void updateSetting("meeting_live_translate_target", v)
+              }
+            />
+          </SettingContainer>
+        )}
+
+        {/* Shared by every Gemini path. */}
         <ToggleSwitch
-          checked={autoSummarize}
-          isUpdating={busy("meeting_auto_summarize")}
+          checked={geminiSmart}
+          isUpdating={busy("meeting_gemini_smart")}
           onChange={(value) =>
-            void updateSetting("meeting_auto_summarize", value)
+            void updateSetting("meeting_gemini_smart", value)
           }
-          label={t("meeting.autoSummarize")}
-          description={t("meeting.autoSummarizeDescription")}
+          label={t("meeting.geminiSmartToggle")}
+          description={t("meeting.geminiSmartDescription")}
           grouped
         />
+      </SettingsGroup>
+    );
+  }
 
+  return (
+    <SettingsGroup title={t("sidebar.meeting")}>
+      {/* Optional global shortcut to start/stop a meeting without opening
+            the window. Unbound by default; mirrors the tray quick-start. */}
+      <ShortcutInput
+        shortcutId="toggle_meeting"
+        descriptionMode="inline"
+        grouped
+      />
+
+      <ToggleSwitch
+        checked={autoSummarize}
+        isUpdating={busy("meeting_auto_summarize")}
+        onChange={(value) =>
+          void updateSetting("meeting_auto_summarize", value)
+        }
+        label={t("meeting.autoSummarize")}
+        description={t("meeting.autoSummarizeDescription")}
+        grouped
+      />
+
+      {hasCalendarNaming && (
         <ToggleSwitch
           checked={calendarNames}
           isUpdating={requestingCalendar || busy("meeting_calendar_names")}
@@ -208,221 +306,109 @@ export const MeetingPreferences: React.FC = () => {
           description={t("meeting.calendarNamesDescription")}
           grouped
         />
-        {calendarError && (
-          <InlineError className="px-4 pb-2 text-xs">
-            {calendarError}
-          </InlineError>
-        )}
+      )}
+      {calendarError && (
+        <InlineError className="px-4 pb-2 text-xs">{calendarError}</InlineError>
+      )}
 
-        <MoreOptions>
-          <SettingContainer
-            title={t("meeting.exportDir.title")}
-            description={t("meeting.exportDir.description")}
-            descriptionMode="inline"
-            grouped
-          >
-            <div className="flex items-center gap-2 min-w-0">
-              {exportDir && (
-                <span
-                  className="max-w-56 truncate text-xs font-mono text-sub"
-                  title={exportDir}
-                  dir="rtl"
-                >
-                  {exportDir}
-                </span>
-              )}
+      <ToggleSwitch
+        checked={autoDetect}
+        isUpdating={busy("meeting_auto_detect")}
+        onChange={(value) => void updateSetting("meeting_auto_detect", value)}
+        label={t("meeting.autoDetectToggle")}
+        description={t("meeting.autoDetectDescription")}
+        grouped
+      />
+      {autoDetect && (
+        <ToggleSwitch
+          checked={autoEnd}
+          isUpdating={busy("meeting_auto_end")}
+          onChange={(value) => void updateSetting("meeting_auto_end", value)}
+          label={t("meeting.autoEndToggle")}
+          description={t("meeting.autoEndDescription")}
+          grouped
+        />
+      )}
+
+      <MoreOptions>
+        <SettingContainer
+          title={t("meeting.exportDir.title")}
+          description={t("meeting.exportDir.description")}
+          descriptionMode="inline"
+          grouped
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            {exportDir && (
+              <span
+                className="max-w-56 truncate text-xs font-mono text-sub"
+                title={exportDir}
+                dir="rtl"
+              >
+                {exportDir}
+              </span>
+            )}
+            <Button
+              onClick={() => void handleExportDir(true)}
+              variant="secondary"
+              size="sm"
+              disabled={busy("meeting_export_dir")}
+            >
+              {exportDir
+                ? t("meeting.exportDir.change")
+                : t("meeting.exportDir.choose")}
+            </Button>
+            {exportDir && (
               <Button
-                onClick={() => void handleExportDir(true)}
-                variant="secondary"
+                onClick={() => void handleExportDir(false)}
+                variant="ghost"
                 size="sm"
                 disabled={busy("meeting_export_dir")}
               >
-                {exportDir
-                  ? t("meeting.exportDir.change")
-                  : t("meeting.exportDir.choose")}
+                {t("meeting.exportDir.off")}
               </Button>
-              {exportDir && (
-                <Button
-                  onClick={() => void handleExportDir(false)}
-                  variant="ghost"
-                  size="sm"
-                  disabled={busy("meeting_export_dir")}
-                >
-                  {t("meeting.exportDir.off")}
-                </Button>
-              )}
-            </div>
-          </SettingContainer>
-          {exportDirError && (
-            <InlineError className="px-4 pb-2 text-xs">
-              {exportDirError}
-            </InlineError>
-          )}
-        </MoreOptions>
-      </SettingsGroup>
-
-      <CollapsibleGroup
-        title={t("meeting.geminiSection")}
-        defaultOpen={geminiInUse}
-      >
-        <SettingsGroup>
-          {/* The key lives on the Models page next to every other credential.
-              Live streaming needs it even when the meeting model is local, so
-              say so here and offer one click to get there rather than growing a
-              second field for the same setting. */}
-          {needsKey && (
-            <div className="px-4 py-3">
-              <Alert variant="warning">
-                <div className="flex flex-wrap items-center gap-3">
-                  <span>{t("meeting.geminiNeedsKey")}</span>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => void emit("navigate-section", "models")}
-                  >
-                    {t("meeting.geminiOpenModels")}
-                  </Button>
-                </div>
-              </Alert>
-            </div>
-          )}
-
-          {/* Speaker attribution only exists on the Gemini on-stop pass. */}
-          {meetingModelIsGemini && (
-            <ToggleSwitch
-              checked={geminiDiarize}
-              isUpdating={busy("meeting_gemini_diarize")}
-              onChange={(value) =>
-                void updateSetting("meeting_gemini_diarize", value)
-              }
-              label={t("meeting.geminiDiarizeToggle")}
-              description={t("meeting.geminiDiarizeDescription")}
-              grouped
-            />
-          )}
-
-          {/* Live streaming: off, translate, or transcribe. */}
-          <SettingContainer
-            title={t("meeting.liveModeLabel")}
-            description={t(`meeting.liveModeNote.${liveMode}`)}
-            descriptionMode="inline"
-            grouped
-          >
-            <Dropdown
-              options={liveModeOptions}
-              selectedValue={liveMode}
-              disabled={busy("meeting_live_mode")}
-              onSelect={(v) => void updateSetting("meeting_live_mode", v)}
-            />
-          </SettingContainer>
-
-          {liveMode !== "off" && (
-            <ToggleSwitch
-              checked={subtitles}
-              isUpdating={busy("meeting_subtitles")}
-              onChange={(value) =>
-                void updateSetting("meeting_subtitles", value)
-              }
-              label={t("meeting.subtitlesToggle")}
-              description={t("meeting.subtitlesDescription")}
-              grouped
-            />
-          )}
-
-          {liveMode === "translate" && (
+            )}
+          </div>
+        </SettingContainer>
+        {exportDirError && (
+          <InlineError className="px-4 pb-2 text-xs">
+            {exportDirError}
+          </InlineError>
+        )}
+        {autoDetect && autoEnd && (
+          <>
             <SettingContainer
-              title={t("meeting.liveTranslateTargetLabel")}
-              description={t("meeting.liveTranslateTargetDescription")}
+              title={t("meeting.silenceTimeoutLabel")}
+              description={t("meeting.silenceTimeoutDescription")}
               descriptionMode="inline"
               grouped
             >
               <Dropdown
-                options={LIVE_TRANSLATE_LANGUAGES}
-                selectedValue={liveTarget}
-                disabled={busy("meeting_live_translate_target")}
+                options={silenceTimeoutOptions}
+                selectedValue={String(silenceTimeoutSecs)}
                 onSelect={(v) =>
-                  void updateSetting("meeting_live_translate_target", v)
+                  void updateSetting("meeting_silence_timeout_secs", Number(v))
                 }
+                disabled={busy("meeting_silence_timeout_secs")}
               />
             </SettingContainer>
-          )}
-
-          {/* Shared by every Gemini path. */}
-          <ToggleSwitch
-            checked={geminiSmart}
-            isUpdating={busy("meeting_gemini_smart")}
-            onChange={(value) =>
-              void updateSetting("meeting_gemini_smart", value)
-            }
-            label={t("meeting.geminiSmartToggle")}
-            description={t("meeting.geminiSmartDescription")}
-            grouped
-          />
-        </SettingsGroup>
-      </CollapsibleGroup>
-
-      <CollapsibleGroup
-        title={t("meeting.autoDetectSection")}
-        defaultOpen={autoDetect}
-      >
-        <SettingsGroup>
-          <ToggleSwitch
-            checked={autoDetect}
-            isUpdating={busy("meeting_auto_detect")}
-            onChange={(value) =>
-              void updateSetting("meeting_auto_detect", value)
-            }
-            label={t("meeting.autoDetectToggle")}
-            description={t("meeting.autoDetectDescription")}
-            grouped
-          />
-          <ToggleSwitch
-            checked={autoEnd}
-            isUpdating={busy("meeting_auto_end")}
-            onChange={(value) => void updateSetting("meeting_auto_end", value)}
-            label={t("meeting.autoEndToggle")}
-            description={t("meeting.autoEndDescription")}
-            grouped
-          />
-          {autoEnd && (
-            <MoreOptions>
-              <SettingContainer
-                title={t("meeting.silenceTimeoutLabel")}
-                description={t("meeting.silenceTimeoutDescription")}
-                descriptionMode="inline"
-                grouped
-              >
-                <Dropdown
-                  options={silenceTimeoutOptions}
-                  selectedValue={String(silenceTimeoutSecs)}
-                  onSelect={(v) =>
-                    void updateSetting(
-                      "meeting_silence_timeout_secs",
-                      Number(v),
-                    )
-                  }
-                  disabled={busy("meeting_silence_timeout_secs")}
-                />
-              </SettingContainer>
-              <SettingContainer
-                title={t("meeting.autoEndGraceLabel")}
-                description={t("meeting.autoEndGraceDescription")}
-                descriptionMode="inline"
-                grouped
-              >
-                <Dropdown
-                  options={autoEndGraceOptions}
-                  selectedValue={String(autoEndGraceSecs)}
-                  onSelect={(v) =>
-                    void updateSetting("meeting_auto_end_grace_secs", Number(v))
-                  }
-                  disabled={busy("meeting_auto_end_grace_secs")}
-                />
-              </SettingContainer>
-            </MoreOptions>
-          )}
-        </SettingsGroup>
-      </CollapsibleGroup>
-    </div>
+            <SettingContainer
+              title={t("meeting.autoEndGraceLabel")}
+              description={t("meeting.autoEndGraceDescription")}
+              descriptionMode="inline"
+              grouped
+            >
+              <Dropdown
+                options={autoEndGraceOptions}
+                selectedValue={String(autoEndGraceSecs)}
+                onSelect={(v) =>
+                  void updateSetting("meeting_auto_end_grace_secs", Number(v))
+                }
+                disabled={busy("meeting_auto_end_grace_secs")}
+              />
+            </SettingContainer>
+          </>
+        )}
+      </MoreOptions>
+    </SettingsGroup>
   );
 };

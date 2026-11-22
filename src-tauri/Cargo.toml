@@ -57,7 +57,7 @@ hound = "3.5.1"
 symphonia = { version = "0.5.5", default-features = false, features = ["aac", "alac", "isomp4", "mp3", "flac", "vorbis", "ogg", "wav", "pcm", "adpcm", "aiff", "caf", "mkv"] }
 log = "0.4.25"
 env_filter = "0.1.0"
-tokio = "1.43.0"
+tokio = { version = "1.43.0", features = ["macros", "time", "sync"] }
 vad-rs = { git = "https://github.com/cjpais/vad-rs", default-features = false }
 enigo = "0.6.1"
 rodio = { git = "https://github.com/cjpais/rodio.git" }
@@ -111,10 +111,6 @@ transcribe-rs = { path = "vendor/transcribe-rs", features = ["whisper-metal"] }
 # Meeting mode: CoreAudio system-audio tap (Step 1). Isolated from dictation flow.
 cidre = { git = "https://github.com/yury/cidre", rev = "a9587fa", features = ["av"] }
 objc = "0.2.7"
-futures-channel = "0.3.31"
-# Meeting mode: EBU R128 loudness measurement for mic normalization (Item 5).
-# macOS-only because it's only used in the macOS meeting capture loop.
-ebur128 = "0.1.10"
 # Meeting naming: EventKit lookup of the ongoing calendar event so sessions can
 # be named after the real meeting (opt-in `meeting_calendar_names` setting).
 objc2 = "0.6"
@@ -137,10 +133,26 @@ objc2-foundation = { version = "0.3", features = [
 ] }
 block2 = "0.6"
 
+# Meeting mode capture (macOS CoreAudio tap / Linux PipeWire-Pulse monitor).
+[target.'cfg(any(target_os = "macos", target_os = "linux"))'.dependencies]
+futures-channel = "0.3.31"
+# EBU R128 loudness measurement for mic normalization in the meeting capture loop.
+ebur128 = "0.1.10"
+
 [target.'cfg(target_os = "linux")'.dependencies]
+# Meeting mode on Linux: system-audio capture from the default sink's monitor,
+# output-route detection and mic-using app detection, via the PulseAudio API
+# (served by pipewire-pulse on modern distros).
+libpulse-binding = "2.30"
+libpulse-simple-binding = "2.29"
+# Meeting naming on KDE: ask KWin for window captions over D-Bus. Already in
+# the tree via tauri-plugin-opener / single-instance.
+zbus = "5"
+enumflags2 = "0.7"
 gtk-layer-shell = { version = "0.8", features = ["v0_6"] }
 gtk = "0.18"
 transcribe-rs = { path = "vendor/transcribe-rs", features = ["whisper-vulkan"] }
+ashpd = { version = "0.13.13", default-features = false, features = ["tokio", "global_shortcuts", "remote_desktop", "screencast"] }
 
 [patch.crates-io]
 tauri-runtime = { git = "https://github.com/cjpais/tauri.git", branch = "handy-2.10.2" }

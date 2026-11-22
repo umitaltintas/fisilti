@@ -1,21 +1,23 @@
 {
   "tray": {
-    "settings": "Ayarlar...",
-    "checkUpdates": "Güncellemeleri Kontrol Et...",
-    "copyLastTranscript": "Son transkripti kopyala",
-    "history": "Dikte Geçmişi...",
+    "settings": "Ayarlar…",
+    "copyLastTranscript": "Son Dikteyi Kopyala",
     "unloadModel": "Modeli boşalt",
     "model": "Model",
     "modelsOnDevice": "Bu cihazda",
     "modelsCloud": "Bulut",
-    "quit": "Çıkış",
+    "quit": "Fısıltı'dan Çık",
     "cancel": "İptal",
     "startDictation": "Dikteyi Başlat",
     "stopDictation": "Dikteyi Durdur",
     "startMeeting": "Toplantıyı Başlat",
     "stopMeeting": "Toplantıyı Durdur",
     "recordingIndicator": "Fısıltı — Kaydediliyor…",
-    "meetings": "Toplantılar..."
+    "open": "Fısıltı'yı Aç",
+    "statusDictating": "Dikte kaydediliyor…",
+    "statusTranscribing": "Yazıya dökülüyor…",
+    "statusMeeting": "Toplantı kaydediliyor",
+    "statusFinalizing": "Toplantı tamamlanıyor…"
   },
   "mascot": {
     "label": "Fısıltı maskotu",
@@ -29,7 +31,7 @@
     "general": "Genel",
     "models": "Modeller",
     "advanced": "Gelişmiş",
-    "postProcessing": "AI Düzenleme",
+    "postProcessing": "Yapay zekâ",
     "history": "Dikte geçmişi",
     "debug": "Hata Ayıklama",
     "about": "Hakkında",
@@ -39,7 +41,8 @@
       "system": "Sistem"
     },
     "navigation": "Ayar bölümleri",
-    "home": "Ana sayfa"
+    "home": "Ana sayfa",
+    "settings": "Ayarlar"
   },
   "onboarding": {
     "subtitle": "Başlamak için bir transkripsiyon modeli seçin",
@@ -112,6 +115,10 @@
       "canary-1b-v2": {
         "name": "Canary 1B v2",
         "description": "Doğru çok dilli. 25 Avrupa dili. Çeviri desteği."
+      },
+      "qwen3-asr-1.7b": {
+        "name": "Qwen3-ASR 1.7B",
+        "description": "Çok dilli konuşma LLM'i, en güçlü olduğu diller Çince ve İngilizce. 30 dil, dili kendisi algılar. Yaklaşık 3 GB RAM ister."
       }
     },
     "errors": {
@@ -214,7 +221,13 @@
           "set": "Kısayol ayarlanamadı: {{error}}",
           "reset": "Kısayol orijinal değerine sıfırlanamadı"
         },
-        "change": "Kısayolu değiştir: {{shortcut}}"
+        "change": "Kısayolu değiştir: {{shortcut}}",
+        "portal": {
+          "note": "Masaüstünüz tarafından yönetilir; sistem ayarlarından değiştirin.",
+          "configure": "Sistem ayarları",
+          "notAssigned": "Atanmadı",
+          "openFailed": "Sistemin kısayol ayarları açılamadı"
+        }
       },
       "language": {
         "title": "Dil",
@@ -234,7 +247,7 @@
       },
       "appearance": {
         "title": "Görünüm",
-        "description": "macOS'u takip et ya da her zaman açık veya koyu tema kullan.",
+        "description": "Sistem görünümünü takip et ya da her zaman açık veya koyu tema kullan.",
         "system": "Sistem",
         "light": "Açık",
         "dark": "Koyu"
@@ -890,7 +903,8 @@
         "transcribing": "Yazıya dökülüyor",
         "summarizing": "Başlık ve özet yazılıyor"
       },
-      "failed": "Kayıt yazıya dökülemedi: {{error}}"
+      "failed": "Kayıt yazıya dökülemedi: {{error}}",
+      "button": "İçe aktar"
     },
     "exportDir": {
       "title": "Markdown olarak klasöre kaydet",

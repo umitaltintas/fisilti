@@ -291,7 +291,7 @@ impl MeetingManager {
 }
 
 /// The per-source Gemini Live sessions owned by a running capture loop.
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 pub(super) struct LiveSessions {
     pub(super) mic: crate::gemini_live::LiveSession,
     pub(super) system: crate::gemini_live::LiveSession,
@@ -304,10 +304,10 @@ pub(super) struct LiveSessions {
 }
 
 /// Shared handle on a source's segment accumulator.
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 pub(super) type LiveBuilder = Arc<Mutex<LiveSegmentBuilder>>;
 
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 impl LiveSessions {
     /// Ask both sessions to end their audio streams, then wait (bounded) for
     /// the server to flush the last turn and its usage report.
@@ -330,7 +330,7 @@ impl LiveSessions {
 /// so both are concatenated until the turn closes. The timestamp is taken from
 /// the FIRST fragment of a turn, so a segment is ordered by when its speech
 /// started rather than when the model finished translating it.
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 #[derive(Default)]
 pub(super) struct LiveSegmentBuilder {
     original: String,
@@ -346,14 +346,14 @@ pub(super) struct LiveSegmentBuilder {
     last_interim: String,
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 pub(super) struct LiveSegment {
     original: String,
     translation: Option<String>,
     timestamp_ms: u64,
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 impl LiveSegmentBuilder {
     fn absorb(&mut self, fragment: &crate::gemini_live::LiveTranscript, elapsed_ms: u64) {
         if fragment.original.is_some() || fragment.translation.is_some() {
@@ -426,7 +426,7 @@ impl LiveSegmentBuilder {
 /// Bounded on purpose: a strip that grows without limit either overflows its
 /// window or shrinks its own text, and the useful reading window during a
 /// conversation is the last sentence or two, not the meeting so far.
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 #[derive(Default)]
 pub struct SubtitleFeed {
     settled: std::collections::VecDeque<String>,
@@ -434,7 +434,7 @@ pub struct SubtitleFeed {
 }
 
 /// How many finalized lines stay on screen under the in-progress one.
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 const SUBTITLE_HISTORY_LINES: usize = 1;
 
 /// Hard cap on what the strip may show at once.
@@ -444,16 +444,16 @@ const SUBTITLE_HISTORY_LINES: usize = 1;
 /// silently stops applying (build tools are known to drop
 /// `-webkit-box-orient`) turns into text running off the bottom of the window
 /// with nothing to catch it.
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 pub(super) const SUBTITLE_MAX_CHARS: usize = 160;
 
 /// Below this many characters of leftover budget, history is dropped entirely
 /// rather than shown as a stump. A three-letter tail of a sentence that has
 /// scrolled away is not context, it is litter.
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 const SUBTITLE_MIN_HISTORY_CHARS: usize = 24;
 
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 impl SubtitleFeed {
     /// A speculative hypothesis REPLACES the pending line — the API resends the
     /// whole in-progress utterance each time, so appending would stutter the
@@ -504,7 +504,7 @@ impl SubtitleFeed {
 
 /// Last `max` characters of `text`, starting at a word boundary so the strip
 /// never opens mid-word.
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 pub(super) fn tail_chars(text: &str, max: usize) -> String {
     let text = text.trim();
     if max == 0 {
@@ -527,7 +527,7 @@ pub(super) fn tail_chars(text: &str, max: usize) -> String {
 mod tests {
     use super::*;
 
-    #[cfg(target_os = "macos")]
+    #[cfg(meeting_capture)]
     #[test]
     fn an_utterance_that_never_finalized_is_still_saved_at_stop() {
         // The regression this guards: the system side streamed a whole meeting
@@ -548,7 +548,7 @@ mod tests {
         assert_eq!(segment.timestamp_ms, 1_000);
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(meeting_capture)]
     #[test]
     fn a_finalized_utterance_is_never_stored_twice() {
         let mut builder = LiveSegmentBuilder::default();
@@ -561,7 +561,7 @@ mod tests {
         assert!(builder.take_final().is_none());
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(meeting_capture)]
     fn fragment_interim(text: &str) -> crate::gemini_live::LiveTranscript {
         crate::gemini_live::LiveTranscript {
             original: None,
@@ -572,7 +572,7 @@ mod tests {
         }
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(meeting_capture)]
     #[test]
     fn a_revised_hypothesis_replaces_the_pending_line_rather_than_appending() {
         use super::SubtitleFeed;
@@ -587,7 +587,7 @@ mod tests {
         assert_eq!(snapshot.settled, "");
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(meeting_capture)]
     #[test]
     fn settling_a_line_clears_the_guess_that_produced_it() {
         use super::SubtitleFeed;
@@ -600,7 +600,7 @@ mod tests {
         assert_eq!(snapshot.pending, "");
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(meeting_capture)]
     #[test]
     fn the_strip_keeps_only_the_most_recent_line() {
         use super::SubtitleFeed;
@@ -612,7 +612,7 @@ mod tests {
         assert_eq!(settled, "line6");
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(meeting_capture)]
     #[test]
     fn a_long_utterance_is_capped_keeping_the_words_being_spoken_now() {
         use super::{SubtitleFeed, SUBTITLE_MAX_CHARS};
@@ -632,7 +632,7 @@ mod tests {
         assert!(pending.starts_with("word"));
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(meeting_capture)]
     #[test]
     fn history_gives_way_before_the_line_being_spoken() {
         use super::{SubtitleFeed, SUBTITLE_MAX_CHARS};
@@ -650,7 +650,7 @@ mod tests {
         );
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(meeting_capture)]
     #[test]
     fn short_text_is_left_exactly_as_it_is() {
         use super::tail_chars;
@@ -659,7 +659,7 @@ mod tests {
         assert_eq!(tail_chars("herhangi bir şey", 0), "");
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(meeting_capture)]
     #[test]
     fn empty_finalized_text_does_not_add_a_blank_line() {
         use super::SubtitleFeed;
@@ -671,7 +671,7 @@ mod tests {
         assert!(feed.is_empty());
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(meeting_capture)]
     fn fragment(
         original: Option<&str>,
         translation: Option<&str>,
@@ -686,7 +686,7 @@ mod tests {
         }
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(meeting_capture)]
     #[test]
     fn live_fragments_accumulate_into_one_segment_per_turn() {
         // The Live API streams a sentence as several partial fragments. Emitting
@@ -707,7 +707,7 @@ mod tests {
         assert!(builder.take().is_none());
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(meeting_capture)]
     #[test]
     fn live_turn_without_text_produces_nothing() {
         // Audio-only turns arrive routinely; they must not create empty segments.
@@ -716,7 +716,7 @@ mod tests {
         assert!(builder.take().is_none());
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(meeting_capture)]
     #[test]
     fn live_translation_alone_becomes_the_transcript() {
         // If only the translated side came through, using it as the transcript

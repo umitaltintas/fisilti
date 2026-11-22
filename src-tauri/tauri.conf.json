@@ -30,6 +30,7 @@
     "targets": "all",
     "resources": ["resources/**/*"],
     "license": "MIT",
+    "category": "Productivity",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -46,9 +47,16 @@
     },
     "linux": {
       "deb": {
-        "depends": ["libgtk-layer-shell0"]
+        "depends": ["libgtk-layer-shell0", "libpulse0"],
+        "files": {
+          "/usr/share/applications/com.umitaltintas.fisilti.desktop": "linux/com.umitaltintas.fisilti.desktop"
+        }
       },
       "rpm": {
+        "depends": ["gtk-layer-shell", "pulseaudio-libs"],
+        "files": {
+          "/usr/share/applications/com.umitaltintas.fisilti.desktop": "linux/com.umitaltintas.fisilti.desktop"
+        },
         "compression": {
           "type": "none"
         }

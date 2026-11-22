@@ -23,4 +23,5 @@ pub mod canary;
 pub mod gigaam;
 pub mod moonshine;
 pub mod parakeet;
+pub mod qwen3_asr;
 pub mod sense_voice;

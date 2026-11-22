@@ -17,6 +17,8 @@ use std::time::{Duration, Instant};
 use tar::Archive;
 use tauri::{AppHandle, Emitter, Manager};
 
+mod multi_file;
+
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub enum EngineType {
     Whisper,
@@ -26,6 +28,9 @@ pub enum EngineType {
     SenseVoice,
     GigaAM,
     Canary,
+    /// Qwen3-ASR, a speech LLM (audio encoder + Qwen3 decoder) run locally
+    /// over ONNX. Downloaded as loose files, see `model/multi_file.rs`.
+    Qwen3Asr,
     /// Cloud transcription via OpenRouter using an audio-capable **chat** model
     /// (e.g. `google/gemini-2.5-flash-lite`) and the chat-completions endpoint.
     /// Not downloaded: `url`/`sha256` are `None`, `is_downloaded` is always
@@ -55,6 +60,9 @@ pub enum EngineType {
 /// Catalogue id of the direct-Gemini entry. Referenced by the settings
 /// migration that moves pre-existing "finalize with Gemini" users onto it.
 pub const GEMINI_MODEL_ID: &str = "gemini-transcribe";
+
+/// Catalogue id of the local Qwen3-ASR 1.7B entry.
+pub const QWEN3_ASR_MODEL_ID: &str = "qwen3-asr-1.7b";
 
 /// Catalogue id of the streaming-Gemini entry.
 pub const GEMINI_LIVE_MODEL_ID: &str = "gemini-transcribe-live";
@@ -103,6 +111,27 @@ pub struct DownloadProgress {
     pub downloaded: u64,
     pub total: u64,
     pub percentage: f64,
+}
+
+/// The models offered in the catalogue. The rest stay defined (and keep
+/// working for anyone who has them) but are not listed: most of them are
+/// English-only or weak on Turkish, and a long list made the good options hard
+/// to find.
+const CURATED_MODEL_IDS: &[&str] = &["large", "turbo", GEMINI_MODEL_ID, GEMINI_LIVE_MODEL_ID];
+
+/// Drop every catalogue entry that is not curated, custom, in use (`in_use`
+/// ids) or already on disk (`on_disk`).
+fn prune_catalog(
+    models: &mut HashMap<String, ModelInfo>,
+    in_use: &[&str],
+    on_disk: impl Fn(&ModelInfo) -> bool,
+) {
+    models.retain(|id, m| {
+        CURATED_MODEL_IDS.contains(&id.as_str())
+            || m.is_custom
+            || in_use.contains(&id.as_str())
+            || on_disk(m)
+    });
 }
 
 /// Copy `from` to `to` through a temporary sibling that is renamed into place,
@@ -581,7 +610,7 @@ impl ModelManager {
                 accuracy_score: 0.85,
                 speed_score: 0.30,
                 supports_translation: true,
-                is_recommended: false,
+                is_recommended: true,
                 supported_languages: whisper_languages.clone(),
                 supports_language_selection: true,
                 is_custom: false,
@@ -674,7 +703,7 @@ impl ModelManager {
                 accuracy_score: 0.80,
                 speed_score: 0.85,
                 supports_translation: false,
-                is_recommended: true,
+                is_recommended: false,
                 supported_languages: parakeet_v3_languages,
                 supports_language_selection: false,
                 is_custom: false,
@@ -931,9 +960,62 @@ impl ModelManager {
             },
         );
 
+        // Qwen3-ASR 1.7B: a speech LLM. Most accurate local option, and it
+        // detects the language itself; slower and heavier than the CTC/TDT
+        // models. Downloaded file by file from Hugging Face (no archive).
+        let qwen3_asr_languages: Vec<String> = vec![
+            "ar", "yue", "zh-Hans", "zh-Hant", "cs", "da", "nl", "en", "tl", "fi", "fr", "de",
+            "el", "hi", "hu", "id", "it", "ja", "ko", "mk", "ms", "fa", "pl", "pt", "ro", "ru",
+            "es", "sv", "th", "tr", "vi",
+        ]
+        .into_iter()
+        .map(String::from)
+        .collect();
+
+        available_models.insert(
+            QWEN3_ASR_MODEL_ID.to_string(),
+            ModelInfo {
+                id: QWEN3_ASR_MODEL_ID.to_string(),
+                name: "Qwen3-ASR 1.7B".to_string(),
+                description:
+                    "Multilingual speech LLM, strongest in Chinese and English. 30 languages, auto-detects the language. Needs ~3 GB RAM."
+                        .to_string(),
+                filename: QWEN3_ASR_MODEL_ID.to_string(),
+                url: Some(multi_file::QWEN3_ASR_1_7B.base.to_string()),
+                sha256: None,
+                size_mb: multi_file::QWEN3_ASR_1_7B.total_size() / 1_000_000,
+                is_downloaded: false,
+                is_downloading: false,
+                partial_size: 0,
+                is_directory: true,
+                engine_type: EngineType::Qwen3Asr,
+                accuracy_score: 0.92,
+                speed_score: 0.45,
+                supports_translation: false,
+                is_recommended: false,
+                supported_languages: qwen3_asr_languages,
+                supports_language_selection: true,
+                is_custom: false,
+            },
+        );
+
         // Auto-discover custom Whisper models (.bin files) in the models directory
         if let Err(e) = Self::discover_custom_whisper_models(&models_dir, &mut available_models) {
             warn!("Failed to discover custom models: {}", e);
+        }
+
+        // Show only the curated set (plus anything the user already has or
+        // has selected, so nothing they rely on vanishes).
+        {
+            let settings = get_settings(app_handle);
+            let in_use = [
+                settings.selected_model.as_str(),
+                settings.meeting_selected_model.as_str(),
+                settings.meeting_final_model.as_str(),
+            ];
+            prune_catalog(&mut available_models, &in_use, |m| {
+                !m.engine_type.is_cloud() && models_dir.join(&m.filename).exists()
+            });
         }
 
         let manager = Self {
@@ -1114,12 +1196,9 @@ impl ModelManager {
                 model.is_downloaded = model_path.exists() && model_path.is_dir();
                 model.is_downloading = downloading;
 
-                // Get partial file size if it exists (for the .tar.gz being downloaded)
-                if partial_path.exists() {
-                    model.partial_size = partial_path.metadata().map(|m| m.len()).unwrap_or(0);
-                } else {
-                    model.partial_size = 0;
-                }
+                // Partial size: the .tar.gz being downloaded, or the
+                // `.partial/` directory of a loose-file model.
+                model.partial_size = multi_file::partial_size(&partial_path);
             } else {
                 // For file-based models (existing logic)
                 let model_path = self.models_dir.join(&model.filename);
@@ -1372,6 +1451,10 @@ impl ModelManager {
 
         let model_info =
             model_info.ok_or_else(|| anyhow::anyhow!("Model not found: {}", model_id))?;
+
+        if let Some(set) = multi_file::remote_set(model_id) {
+            return self.download_multi_file_model(model_id, set).await;
+        }
 
         let url = model_info
             .url
@@ -1803,8 +1886,13 @@ impl ModelManager {
             }
         }
 
-        // Delete partial file if it exists (same for both types)
-        if partial_path.exists() {
+        // Delete the partial download: a file (archive / single model) or,
+        // for loose-file models, a directory.
+        if partial_path.is_dir() {
+            info!("Deleting partial directory at: {:?}", partial_path);
+            fs::remove_dir_all(&partial_path)?;
+            deleted_something = true;
+        } else if partial_path.exists() {
             info!("Deleting partial file at: {:?}", partial_path);
             fs::remove_file(&partial_path)?;
             info!("Partial file deleted successfully");
@@ -1908,7 +1996,7 @@ impl ModelManager {
             if let Some(model) = models.get_mut(model_id) {
                 model.is_downloading = false;
                 let partial_path = self.models_dir.join(format!("{}.partial", &model.filename));
-                model.partial_size = partial_path.metadata().map(|m| m.len()).unwrap_or(0);
+                model.partial_size = multi_file::partial_size(&partial_path);
             }
         }
 
@@ -1997,6 +2085,60 @@ mod tests {
         assert!(!models.contains_key(".hidden-model"));
         assert!(!models.contains_key("readme"));
         assert!(!models.contains_key("some-directory"));
+    }
+
+    #[test]
+    fn the_catalogue_keeps_curated_custom_used_and_downloaded_models() {
+        fn entry(id: &str, custom: bool) -> ModelInfo {
+            ModelInfo {
+                id: id.to_string(),
+                name: id.to_string(),
+                description: String::new(),
+                filename: format!("{id}.bin"),
+                url: None,
+                sha256: None,
+                size_mb: 0,
+                is_downloaded: false,
+                is_downloading: false,
+                partial_size: 0,
+                is_directory: false,
+                engine_type: EngineType::Whisper,
+                accuracy_score: 0.0,
+                speed_score: 0.0,
+                supports_translation: false,
+                is_recommended: false,
+                supported_languages: vec![],
+                supports_language_selection: false,
+                is_custom: custom,
+            }
+        }
+        let mut models: HashMap<String, ModelInfo> = [
+            ("large", false),
+            ("turbo", false),
+            ("small", false),
+            ("moonshine-base", false),
+            ("parakeet-tdt-0.6b-v2", false),
+            ("my-finetune", true),
+            ("canary-1b-v2", false),
+        ]
+        .into_iter()
+        .map(|(id, custom)| (id.to_string(), entry(id, custom)))
+        .collect();
+        prune_catalog(&mut models, &["canary-1b-v2", ""], |m| {
+            m.id == "parakeet-tdt-0.6b-v2"
+        });
+        let mut kept: Vec<_> = models.keys().map(String::as_str).collect();
+        kept.sort();
+        assert_eq!(
+            kept,
+            vec![
+                "canary-1b-v2",
+                "large",
+                "my-finetune",
+                "parakeet-tdt-0.6b-v2",
+                "turbo"
+            ]
+        );
     }
 
     #[test]

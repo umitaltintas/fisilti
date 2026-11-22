@@ -211,7 +211,7 @@ export const MeetingHistory: React.FC<MeetingHistoryProps> = ({
           onChange={(e) => setQuery(e.target.value)}
           placeholder={t("meeting.searchPlaceholder")}
           aria-label={t("meeting.search")}
-          className="w-full rounded-md border border-line bg-mid-gray/5 py-2 ps-9 pe-8 text-sm text-text placeholder:text-faint focus:border-logo-primary focus:outline-none focus:ring-1 focus:ring-logo-primary [&::-webkit-search-cancel-button]:hidden"
+          className="w-full rounded-lg border-0 bg-chip py-1.5 ps-9 pe-8 text-[13px] text-text placeholder:text-faint focus:outline-none focus:ring-2 focus:ring-logo-primary/40 [&::-webkit-search-cancel-button]:hidden"
         />
         {query.length > 0 && (
           <IconButton

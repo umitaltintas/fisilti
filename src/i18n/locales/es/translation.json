@@ -1,9 +1,7 @@
 {
   "tray": {
     "settings": "Configuración...",
-    "checkUpdates": "Buscar actualizaciones...",
     "copyLastTranscript": "Copiar la última transcripción",
-    "history": "Historial de dictado...",
     "unloadModel": "Descargar modelo",
     "model": "Modelo",
     "modelsOnDevice": "En este dispositivo",
@@ -14,8 +12,7 @@
     "stopDictation": "Detener dictado",
     "startMeeting": "Iniciar reunión",
     "stopMeeting": "Detener reunión",
-    "recordingIndicator": "Fısıltı — Grabando…",
-    "meetings": "Reuniones..."
+    "recordingIndicator": "Fısıltı — Grabando…"
   },
   "mascot": {
     "label": "Mascota de Fısıltı",
@@ -279,7 +276,13 @@
           "set": "Error al configurar el atajo: {{error}}",
           "reset": "Error al restablecer el atajo al valor original"
         },
-        "change": "Cambiar atajo: {{shortcut}}"
+        "change": "Cambiar atajo: {{shortcut}}",
+        "portal": {
+          "note": "Lo gestiona tu escritorio; cámbialo en los ajustes del sistema.",
+          "configure": "Ajustes del sistema",
+          "notAssigned": "Sin asignar",
+          "openFailed": "No se pudieron abrir los ajustes de atajos del sistema"
+        }
       },
       "language": {
         "title": "Idioma",

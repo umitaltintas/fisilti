@@ -33,9 +33,73 @@ pub fn resolve_session_title(app: &AppHandle) -> Option<String> {
     None
 }
 
+/// Linux: the meeting app's window caption (KDE Plasma, via KWin). There is
+/// no calendar source on Linux yet.
+#[cfg(target_os = "linux")]
+pub fn resolve_session_title(_app: &tauri::AppHandle) -> Option<String> {
+    let title = kwin_meeting_window_title();
+    if title.is_some() {
+        log::info!("meeting naming: using meeting-app window title (KWin)");
+    }
+    title
+}
+
+/// Window captions of the detected meeting app, from KWin's window search
+/// (`org.kde.KWin /WindowsRunner`, the KRunner "Windows" plugin). It matches
+/// captions and app names, needs no permission and works on Wayland, where
+/// clients cannot read other windows' titles. Other desktops yield `None`.
+#[cfg(target_os = "linux")]
+fn kwin_meeting_window_title() -> Option<String> {
+    use std::collections::HashMap;
+    use zbus::zvariant::OwnedValue;
+
+    type RemoteMatch = (
+        String,
+        String,
+        String,
+        i32,
+        f64,
+        HashMap<String, OwnedValue>,
+    );
+
+    let signal = crate::meeting_detector::current_meeting_signal()?;
+    if !crate::utils::is_kde_plasma() {
+        return None;
+    }
+    let conn = zbus::blocking::Connection::session().ok()?;
+    let mut captions: Vec<String> = Vec::new();
+    // Ask for the app name first ("Teams", "Firefox"), then common meeting
+    // words so a browser tab titled "Meet - …" is found even when the window
+    // caption doesn't mention the browser.
+    for query in [signal.name, signal.bundle_id, "meet", "zoom", "meeting"] {
+        let reply = conn.call_method(
+            Some("org.kde.KWin"),
+            "/WindowsRunner",
+            Some("org.kde.krunner1"),
+            "Match",
+            &(query,),
+        );
+        let Ok(reply) = reply else {
+            log::debug!("meeting naming: KWin window search unavailable");
+            return None;
+        };
+        let Ok(matches) = reply.body().deserialize::<Vec<RemoteMatch>>() else {
+            continue;
+        };
+        for (_, caption, ..) in matches {
+            if !captions.contains(&caption) {
+                captions.push(caption);
+            }
+        }
+    }
+    captions
+        .iter()
+        .find_map(|raw| clean_window_title(raw, signal.name))
+}
+
 /// Maximum length of a resolved title; longer window/event titles are cut at a
 /// word boundary with an ellipsis.
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(meeting_capture, test))]
 const MAX_TITLE_LEN: usize = 80;
 
 // ---------------------------------------------------------------------------
@@ -256,7 +320,7 @@ fn cast_ui_element(value: &cidre::arc::R<cidre::cf::Type>) -> Option<&cidre::ax:
 
 /// Product-name suffixes browsers and meeting apps append to window titles,
 /// stripped repeatedly from the end (e.g. "Weekly Sync - Google Chrome").
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(meeting_capture, test))]
 const TITLE_SUFFIXES: &[&str] = &[
     "Google Chrome",
     "Chromium",
@@ -283,7 +347,7 @@ const TITLE_SUFFIXES: &[&str] = &[
 
 /// Titles that carry no meeting-specific information; a cleaned title equal to
 /// one of these (case-insensitive) is rejected so a better source can win.
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(meeting_capture, test))]
 const GENERIC_TITLES: &[&str] = &[
     "zoom",
     "zoom meeting",
@@ -311,7 +375,7 @@ const GENERIC_TITLES: &[&str] = &[
 /// Clean a raw window title into a meeting name, or `None` when nothing
 /// meaningful remains. `app_name` is the detected app's display name (also
 /// treated as a strippable suffix / generic value).
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(meeting_capture, test))]
 fn clean_window_title(raw: &str, app_name: &str) -> Option<String> {
     // Notification badges: Chrome tab titles arrive as "⁷Meet - …" (a
     // superscript unread count) or "(3) Meet - …".
@@ -400,13 +464,13 @@ fn clean_window_title(raw: &str, app_name: &str) -> Option<String> {
 
 /// Display names (from `meeting_detector::MEETING_APPS`) of the browsers,
 /// whose window title is whatever tab is in front.
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(meeting_capture, test))]
 const BROWSER_APPS: &[&str] = &[
     "Chrome", "Safari", "Firefox", "Edge", "Arc", "Brave", "Vivaldi", "Opera", "Chromium", "Zen",
 ];
 
 /// Whether a browser tab title belongs to a web meeting service.
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(meeting_capture, test))]
 fn names_meeting_service(title: &str) -> bool {
     let lower = title.to_lowercase();
     ["meet – ", "meet - ", "meet — "]
@@ -427,7 +491,7 @@ fn names_meeting_service(title: &str) -> bool {
 
 /// True for Google Meet room codes like "abc-defg-hij" (3-4-3 lowercase
 /// letters), which appear as the tab title in unnamed Meet calls.
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(meeting_capture, test))]
 fn is_meet_code(s: &str) -> bool {
     let parts: Vec<&str> = s.split('-').collect();
     parts.len() == 3
@@ -441,7 +505,7 @@ fn is_meet_code(s: &str) -> bool {
 
 /// Cap a title at [`MAX_TITLE_LEN`], cutting at a word boundary with an
 /// ellipsis when it overflows.
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(meeting_capture, test))]
 fn truncate_title(title: &str) -> String {
     if title.chars().count() <= MAX_TITLE_LEN {
         return title.to_string();

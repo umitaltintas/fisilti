@@ -1,9 +1,7 @@
 {
   "tray": {
     "settings": "...الإعدادات",
-    "checkUpdates": "...التحقق من وجود تحديثات",
     "copyLastTranscript": "نسخ آخر نص تم تفريغه",
-    "history": "سجل الإملاء...",
     "unloadModel": "تفريغ النموذج",
     "model": "النموذج",
     "modelsOnDevice": "على هذا الجهاز",
@@ -14,8 +12,7 @@
     "stopDictation": "إيقاف الإملاء",
     "startMeeting": "بدء الاجتماع",
     "stopMeeting": "إيقاف الاجتماع",
-    "recordingIndicator": "Fısıltı — جارٍ التسجيل…",
-    "meetings": "الاجتماعات..."
+    "recordingIndicator": "Fısıltı — جارٍ التسجيل…"
   },
   "mascot": {
     "label": "تميمة Fısıltı",
@@ -210,7 +207,13 @@
           "set": "فشل تعيين الاختصار: {{error}}",
           "reset": "فشل إعادة تعيين الاختصار إلى قيمته الأصلية"
         },
-        "change": "تغيير الاختصار: {{shortcut}}"
+        "change": "تغيير الاختصار: {{shortcut}}",
+        "portal": {
+          "note": "تدير سطح المكتب هذا الاختصار؛ غيّره من إعدادات النظام.",
+          "configure": "إعدادات النظام",
+          "notAssigned": "غير معيّن",
+          "openFailed": "تعذّر فتح إعدادات اختصارات النظام"
+        }
       },
       "language": {
         "title": "اللغة",

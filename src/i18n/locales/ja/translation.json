@@ -1,9 +1,7 @@
 {
   "tray": {
     "settings": "設定...",
-    "checkUpdates": "アップデートを確認...",
     "copyLastTranscript": "最新の文字起こしをコピー",
-    "history": "音声入力の履歴...",
     "unloadModel": "モデルをアンロード",
     "model": "モデル",
     "modelsOnDevice": "このデバイス上",
@@ -14,8 +12,7 @@
     "stopDictation": "音声入力を停止",
     "startMeeting": "会議を開始",
     "stopMeeting": "会議を停止",
-    "recordingIndicator": "Fısıltı — 録音中…",
-    "meetings": "会議..."
+    "recordingIndicator": "Fısıltı — 録音中…"
   },
   "mascot": {
     "label": "Fısıltı マスコット",
@@ -279,7 +276,13 @@
           "set": "ショートカットを設定できませんでした: {{error}}",
           "reset": "ショートカットを元の値にリセットできませんでした"
         },
-        "change": "ショートカットを変更: {{shortcut}}"
+        "change": "ショートカットを変更: {{shortcut}}",
+        "portal": {
+          "note": "デスクトップ環境が管理しています。変更はシステム設定で行ってください。",
+          "configure": "システム設定",
+          "notAssigned": "未割り当て",
+          "openFailed": "システムのショートカット設定を開けませんでした"
+        }
       },
       "language": {
         "title": "言語",

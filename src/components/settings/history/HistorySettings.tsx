@@ -26,10 +26,6 @@ import { IconButton } from "../../ui/IconButton";
 import { useConfirm } from "../../ui/ConfirmDialog";
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
 import { errorMessage } from "@/lib/utils/errors";
-import { CollapsibleGroup } from "../../ui/CollapsibleGroup";
-import { SettingsGroup } from "../../ui/SettingsGroup";
-import { HistoryLimit } from "../HistoryLimit";
-import { RecordingRetentionPeriodSelector } from "../RecordingRetentionPeriod";
 
 const PAGE_SIZE = 30;
 
@@ -290,34 +286,18 @@ export const HistorySettings: React.FC = () => {
   }
 
   return (
-    <div className="max-w-3xl w-full mx-auto space-y-6">
+    <div className="mx-auto w-full max-w-3xl space-y-5">
       {dialog}
-      {/* How much history is kept used to be configured under Advanced, two
-          sections away from the list it governs. */}
-      <CollapsibleGroup title={t("settings.history.retentionSettings")}>
-        <SettingsGroup>
-          <HistoryLimit descriptionMode="inline" grouped={true} />
-          <RecordingRetentionPeriodSelector
-            descriptionMode="inline"
-            grouped={true}
-          />
-        </SettingsGroup>
-      </CollapsibleGroup>
-
-      <div className="space-y-2">
-        <div className="px-4 flex items-center justify-between">
-          <div>
-            <h2 className="text-xs font-medium text-mid-gray uppercase tracking-wide">
-              {t("settings.history.title")}
-            </h2>
-          </div>
-          <OpenRecordingsButton
-            onClick={() => void openRecordingsFolder()}
-            label={t("settings.history.openFolder")}
-          />
-        </div>
-        <div className="card overflow-visible">{content}</div>
-      </div>
+      <header className="flex items-center justify-between gap-3">
+        <h1 className="text-[26px] leading-tight font-bold tracking-tight">
+          {t("sidebar.history")}
+        </h1>
+        <OpenRecordingsButton
+          onClick={() => void openRecordingsFolder()}
+          label={t("settings.history.openFolder")}
+        />
+      </header>
+      <div className="card overflow-visible">{content}</div>
     </div>
   );
 };

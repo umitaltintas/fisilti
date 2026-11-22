@@ -1,9 +1,7 @@
 {
   "tray": {
     "settings": "Nastavení...",
-    "checkUpdates": "Zkontrolovat aktualizace...",
     "copyLastTranscript": "Zkopírovat poslední přepis",
-    "history": "Historie diktování...",
     "unloadModel": "Uvolnit model",
     "model": "Model",
     "modelsOnDevice": "V tomto zařízení",
@@ -14,8 +12,7 @@
     "stopDictation": "Zastavit diktování",
     "startMeeting": "Zahájit schůzku",
     "stopMeeting": "Ukončit schůzku",
-    "recordingIndicator": "Fısıltı — Nahrávání…",
-    "meetings": "Schůzky..."
+    "recordingIndicator": "Fısıltı — Nahrávání…"
   },
   "mascot": {
     "label": "Maskot Fısıltı",
@@ -279,7 +276,13 @@
           "set": "Nepodařilo se nastavit zkratku: {{error}}",
           "reset": "Nepodařilo se vrátit zkratku na původní hodnotu"
         },
-        "change": "Změnit zkratku: {{shortcut}}"
+        "change": "Změnit zkratku: {{shortcut}}",
+        "portal": {
+          "note": "Spravuje ho vaše pracovní prostředí; změňte ho v systémovém nastavení.",
+          "configure": "Nastavení systému",
+          "notAssigned": "Nepřiřazeno",
+          "openFailed": "Nepodařilo se otevřít systémové nastavení zkratek"
+        }
       },
       "language": {
         "title": "Jazyk",

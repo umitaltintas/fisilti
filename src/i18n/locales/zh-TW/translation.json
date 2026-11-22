@@ -1,9 +1,7 @@
 {
   "tray": {
     "settings": "設定...",
-    "checkUpdates": "檢查更新...",
     "copyLastTranscript": "複製最新轉錄",
-    "history": "聽寫記錄...",
     "unloadModel": "卸載模型",
     "model": "模型",
     "modelsOnDevice": "在本機上",
@@ -14,8 +12,7 @@
     "stopDictation": "停止聽寫",
     "startMeeting": "開始會議",
     "stopMeeting": "停止會議",
-    "recordingIndicator": "Fısıltı — 錄製中…",
-    "meetings": "會議..."
+    "recordingIndicator": "Fısıltı — 錄製中…"
   },
   "mascot": {
     "label": "Fısıltı 吉祥物",
@@ -214,7 +211,13 @@
           "set": "無法設定快捷鍵: {{error}}",
           "reset": "無法將快捷鍵重設為原始值"
         },
-        "change": "變更快速鍵：{{shortcut}}"
+        "change": "變更快速鍵：{{shortcut}}",
+        "portal": {
+          "note": "由桌面環境管理；請在系統設定中變更。",
+          "configure": "系統設定",
+          "notAssigned": "未指派",
+          "openFailed": "無法開啟系統快捷鍵設定"
+        }
       },
       "language": {
         "title": "語言",

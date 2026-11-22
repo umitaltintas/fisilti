@@ -21,6 +21,8 @@ mod meeting_naming;
 mod meeting_prompt;
 mod overlay;
 pub mod portable;
+#[cfg(target_os = "linux")]
+mod portal_input;
 mod settings;
 mod shortcut;
 mod signal_handle;
@@ -223,7 +225,7 @@ fn initialize_core_logic(app_handle: &AppHandle) -> bool {
 
     // One-off: older meetings were saved as 32-bit float WAV; shrink them to
     // MP3 in the background so they open quickly.
-    #[cfg(target_os = "macos")]
+    #[cfg(meeting_capture)]
     {
         let manager = meeting_manager.clone();
         std::thread::spawn(move || manager.convert_wav_audio_to_mp3());
@@ -285,27 +287,14 @@ fn initialize_core_logic(app_handle: &AppHandle) -> bool {
         .on_menu_event(|app, event| match event.id.as_ref() {
             "settings" => {
                 show_main_window(app);
-            }
-            "check_updates" => {
-                let settings = settings::get_settings(app);
-                if settings.update_checks_enabled {
-                    show_main_window(app);
-                    let _ = app.emit("check-for-updates", ());
-                }
+                let _ = app.emit("navigate-section", "settings");
             }
             "copy_last_transcript" => {
                 tray::copy_last_transcript(app);
             }
-            "meetings" => {
-                // Open the main window on the Meeting section so the past
-                // transcripts list is immediately visible.
+            "open" => {
                 show_main_window(app);
-                let _ = app.emit("navigate-section", "meeting");
-            }
-            "history" => {
-                // The dictation counterpart to "meetings".
-                show_main_window(app);
-                let _ = app.emit("navigate-section", "history");
+                let _ = app.emit("navigate-section", "meetings");
             }
             "toggle_dictation" => {
                 // Same path the global shortcut and the CLI take, so a tray
@@ -501,6 +490,8 @@ fn specta_builder() -> Builder<tauri::Wry> {
             shortcut::change_update_checks_setting,
             shortcut::change_keyboard_implementation_setting,
             shortcut::get_keyboard_implementation,
+            shortcut::get_portal_shortcut_status,
+            shortcut::configure_portal_shortcuts,
             shortcut::change_show_tray_icon_setting,
             mascot::change_show_mascot_setting,
             mascot::get_mascot_status,
@@ -672,6 +663,8 @@ pub fn run(cli_args: CliArgs) {
                 signal_handle::send_transcription_input(app, "transcribe", "CLI");
             } else if args.iter().any(|a| a == "--toggle-post-process") {
                 signal_handle::send_transcription_input(app, "transcribe_with_post_process", "CLI");
+            } else if args.iter().any(|a| a == "--toggle-meeting") {
+                commands::meeting::toggle_meeting_from_app(app);
             } else if args.iter().any(|a| a == "--cancel") {
                 crate::utils::cancel_current_operation(app);
             } else {

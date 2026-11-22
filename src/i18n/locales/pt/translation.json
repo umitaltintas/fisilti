@@ -1,9 +1,7 @@
 {
   "tray": {
     "settings": "Configurações...",
-    "checkUpdates": "Verificar Atualizações...",
     "copyLastTranscript": "Copiar última transcrição",
-    "history": "Histórico de ditado...",
     "unloadModel": "Descarregar modelo",
     "model": "Modelo",
     "modelsOnDevice": "Neste dispositivo",
@@ -14,8 +12,7 @@
     "stopDictation": "Parar ditado",
     "startMeeting": "Iniciar reunião",
     "stopMeeting": "Parar reunião",
-    "recordingIndicator": "Fısıltı — Gravando…",
-    "meetings": "Reuniões..."
+    "recordingIndicator": "Fısıltı — Gravando…"
   },
   "mascot": {
     "label": "Mascote do Fısıltı",
@@ -214,7 +211,13 @@
           "set": "Falha ao definir atalho: {{error}}",
           "reset": "Falha ao redefinir atalho para o valor original"
         },
-        "change": "Alterar atalho: {{shortcut}}"
+        "change": "Alterar atalho: {{shortcut}}",
+        "portal": {
+          "note": "Gerido pelo seu ambiente de trabalho; altere-o nas definições do sistema.",
+          "configure": "Definições do sistema",
+          "notAssigned": "Não atribuído",
+          "openFailed": "Não foi possível abrir as definições de atalhos do sistema"
+        }
       },
       "language": {
         "title": "Idioma",

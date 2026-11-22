@@ -498,7 +498,7 @@ export const PostProcessingSettings: React.FC = () => {
   const enabled = getSetting("post_process_enabled") || false;
 
   return (
-    <div className="mx-auto w-full max-w-3xl space-y-6">
+    <div className="space-y-7">
       <SettingsGroup
         title={t("settings.postProcessing.title")}
         description={t("settings.postProcessing.description")}

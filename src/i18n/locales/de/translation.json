@@ -1,9 +1,7 @@
 {
   "tray": {
     "settings": "Einstellungen...",
-    "checkUpdates": "Nach Updates suchen...",
     "copyLastTranscript": "Letzte Transkription kopieren",
-    "history": "Diktat-Verlauf ...",
     "unloadModel": "Modell entladen",
     "model": "Modell",
     "modelsOnDevice": "Auf diesem Gerät",
@@ -14,8 +12,7 @@
     "stopDictation": "Diktat beenden",
     "startMeeting": "Meeting starten",
     "stopMeeting": "Meeting stoppen",
-    "recordingIndicator": "Fısıltı — Aufnahme…",
-    "meetings": "Meetings..."
+    "recordingIndicator": "Fısıltı — Aufnahme…"
   },
   "mascot": {
     "label": "Fısıltı-Maskottchen",
@@ -279,7 +276,13 @@
           "set": "Tastenkürzel konnte nicht gesetzt werden: {{error}}",
           "reset": "Tastenkürzel konnte nicht auf Originalwert zurückgesetzt werden"
         },
-        "change": "Kurzbefehl ändern: {{shortcut}}"
+        "change": "Kurzbefehl ändern: {{shortcut}}",
+        "portal": {
+          "note": "Wird von Ihrem Desktop verwaltet; in den Systemeinstellungen änderbar.",
+          "configure": "Systemeinstellungen",
+          "notAssigned": "Nicht zugewiesen",
+          "openFailed": "Die Tastenkürzel-Einstellungen des Systems konnten nicht geöffnet werden"
+        }
       },
       "language": {
         "title": "Sprache",

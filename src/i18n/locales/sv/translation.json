@@ -1,9 +1,7 @@
 {
   "tray": {
     "settings": "Inställningar...",
-    "checkUpdates": "Sök efter uppdateringar...",
     "copyLastTranscript": "Kopiera senaste transkriptionen",
-    "history": "Dikteringshistorik...",
     "unloadModel": "Avlasta modell",
     "model": "Modell",
     "modelsOnDevice": "På den här enheten",
@@ -14,8 +12,7 @@
     "stopDictation": "Stoppa diktering",
     "startMeeting": "Starta möte",
     "stopMeeting": "Stoppa möte",
-    "recordingIndicator": "Fısıltı — Spelar in…",
-    "meetings": "Möten..."
+    "recordingIndicator": "Fısıltı — Spelar in…"
   },
   "mascot": {
     "label": "Fısıltı-maskot",
@@ -214,7 +211,13 @@
           "set": "Misslyckades med att ställa in kortkommando: {{error}}",
           "reset": "Misslyckades med att återställa kortkommando till ursprungsvärdet"
         },
-        "change": "Ändra kortkommando: {{shortcut}}"
+        "change": "Ändra kortkommando: {{shortcut}}",
+        "portal": {
+          "note": "Hanteras av ditt skrivbord; ändra i systeminställningarna.",
+          "configure": "Systeminställningar",
+          "notAssigned": "Inte tilldelad",
+          "openFailed": "Det gick inte att öppna systemets genvägsinställningar"
+        }
       },
       "language": {
         "title": "Språk",

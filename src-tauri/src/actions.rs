@@ -397,10 +397,35 @@ fn reset_dictation_ui(app: &AppHandle) {
     change_tray_icon(app, TrayIconState::Idle);
 }
 
+/// Whether a meeting is recording or being saved. Dictation is off for that
+/// time: the microphone hears the whole conversation, and a push-to-talk
+/// release that never arrives (a game or another app swallowing the key-up)
+/// used to turn minutes of meeting into one "dictation" pasted into whatever
+/// had focus.
+fn meeting_in_progress(app: &AppHandle) -> bool {
+    app.try_state::<Arc<crate::meeting::MeetingManager>>()
+        .is_some_and(|m| {
+            matches!(
+                m.status(),
+                crate::meeting::MeetingState::Running | crate::meeting::MeetingState::Finalizing
+            )
+        })
+}
+
 impl ShortcutAction for TranscribeAction {
     fn start(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
         let start_time = Instant::now();
         debug!("TranscribeAction::start called for binding: {}", binding_id);
+
+        if meeting_in_progress(app) {
+            debug!("Dictation ignored: a meeting is in progress");
+            emit_dictation_error(
+                app,
+                crate::utils::DictationStage::Recording,
+                "Dictation is off while a meeting is recording.",
+            );
+            return;
+        }
 
         // Load model in the background
         let tm = app.state::<Arc<TranscriptionManager>>();
@@ -481,6 +506,12 @@ impl ShortcutAction for TranscribeAction {
     }
 
     fn stop(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
+        // `start` refused because of a meeting: there is nothing to stop, and
+        // the stop sound / transcribing overlay would only confuse.
+        if meeting_in_progress(app) && !app.state::<Arc<AudioRecordingManager>>().is_recording() {
+            return;
+        }
+
         // Unregister the cancel shortcut when transcription stops
         shortcut::unregister_cancel_shortcut(app);
 

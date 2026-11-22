@@ -1,9 +1,7 @@
 {
   "tray": {
     "settings": "设置...",
-    "checkUpdates": "检查更新...",
     "copyLastTranscript": "复制最新转录",
-    "history": "听写记录...",
     "unloadModel": "卸载模型",
     "model": "模型",
     "modelsOnDevice": "在本设备上",
@@ -14,8 +12,7 @@
     "stopDictation": "停止听写",
     "startMeeting": "开始会议",
     "stopMeeting": "停止会议",
-    "recordingIndicator": "Fısıltı — 录制中…",
-    "meetings": "会议..."
+    "recordingIndicator": "Fısıltı — 录制中…"
   },
   "mascot": {
     "label": "Fısıltı 吉祥物",
@@ -279,7 +276,13 @@
           "set": "无法设置快捷键: {{error}}",
           "reset": "无法将快捷键重置为原始值"
         },
-        "change": "更改快捷键：{{shortcut}}"
+        "change": "更改快捷键：{{shortcut}}",
+        "portal": {
+          "note": "由桌面环境管理；请在系统设置中更改。",
+          "configure": "系统设置",
+          "notAssigned": "未分配",
+          "openFailed": "无法打开系统快捷键设置"
+        }
       },
       "language": {
         "title": "语言",

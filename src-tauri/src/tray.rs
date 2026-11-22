@@ -162,40 +162,17 @@ pub fn update_tray_menu(app: &AppHandle, state: &TrayIconState, locale: Option<&
     let locale = locale.unwrap_or(&settings.app_language);
     let strings = get_tray_translations(Some(locale.to_string()));
 
-    // Dictation quick-toggle. Dictation is the app's primary feature but used
-    // to be reachable only through the global shortcut — the tray offered
-    // "Cancel" and nothing to start with. Mirrors the meeting item below.
-    //
-    // No accelerator: the binding is user-configurable and lives in the global
-    // shortcut plugin, so hard-coding one here would either lie or fight it.
-    let dictation_label = if *state == TrayIconState::Recording {
-        &strings.stop_dictation
-    } else {
-        &strings.start_dictation
-    };
-    // While a transcription is already running there is nothing to start or
-    // stop — only "Cancel" applies, and it is in the same menu.
-    let toggle_dictation_i = MenuItem::with_id(
-        app,
-        "toggle_dictation",
-        dictation_label,
-        *state != TrayIconState::Transcribing,
-        None::<&str>,
-    )
-    .expect("failed to create toggle dictation item");
-
     // Meeting quick-start item: "Start Meeting" when idle, "Stop Meeting" while
-    // a meeting is running. Capture is macOS-only; on other platforms keep the
-    // item present but disabled so the menu layout stays cross-platform and the
-    // user gets a visible hint rather than a silent no-op.
+    // a meeting is running. Capture exists on macOS and Linux; elsewhere keep
+    // the item present but disabled so the menu layout stays cross-platform.
     let meeting_active = meeting_is_active(app);
-    // While the last meeting is being saved there is nothing to start or stop.
-    #[cfg(target_os = "macos")]
-    let meeting_enabled = app
+    #[cfg(meeting_capture)]
+    let meeting_finalizing = app
         .try_state::<Arc<MeetingManager>>()
-        .is_none_or(|m| m.status() != MeetingState::Finalizing);
-    #[cfg(not(target_os = "macos"))]
-    let meeting_enabled = false;
+        .is_some_and(|m| m.status() == MeetingState::Finalizing);
+    #[cfg(not(meeting_capture))]
+    let meeting_finalizing = false;
+    let meeting_enabled = cfg!(meeting_capture) && !meeting_finalizing;
     let meeting_label = if meeting_active {
         &strings.stop_meeting
     } else {
@@ -210,14 +187,53 @@ pub fn update_tray_menu(app: &AppHandle, state: &TrayIconState, locale: Option<&
     )
     .expect("failed to create toggle meeting item");
 
-    // Opens the main window on the Meeting section (past transcripts list).
-    let meetings_i = MenuItem::with_id(app, "meetings", &strings.meetings, true, None::<&str>)
-        .expect("failed to create meetings item");
+    // Dictation quick-toggle. Dictation is the app's primary feature but used
+    // to be reachable only through the global shortcut — the tray offered
+    // "Cancel" and nothing to start with. Mirrors the meeting item below.
+    //
+    // No accelerator: the binding is user-configurable and lives in the global
+    // shortcut plugin, so hard-coding one here would either lie or fight it.
+    // The tray icon shows "recording" for a meeting too, so tell the two
+    // apart; dictation is off for the whole meeting (see `actions.rs`).
+    let dictating = *state == TrayIconState::Recording && !meeting_active;
+    let dictation_label = if dictating {
+        &strings.stop_dictation
+    } else {
+        &strings.start_dictation
+    };
+    // While a transcription is already running there is nothing to start or
+    // stop — only "Cancel" applies, and it is in the same menu.
+    let toggle_dictation_i = MenuItem::with_id(
+        app,
+        "toggle_dictation",
+        dictation_label,
+        *state != TrayIconState::Transcribing && !meeting_active && !meeting_finalizing,
+        None::<&str>,
+    )
+    .expect("failed to create toggle dictation item");
 
-    // The dictation counterpart to "Meetings…". Both archives are one click
-    // from the tray, and both say which archive they are.
-    let history_i = MenuItem::with_id(app, "history", &strings.history, true, None::<&str>)
-        .expect("failed to create history item");
+    // First row: what Fısıltı is doing right now, so a glance at the menu
+    // answers "is it recording?". Idle shows just the name.
+    let status_label = if meeting_finalizing {
+        format!("● {}", strings.status_finalizing)
+    } else if meeting_active {
+        format!("● {}", strings.status_meeting)
+    } else if dictating {
+        format!("● {}", strings.status_dictating)
+    } else if *state == TrayIconState::Transcribing {
+        strings.status_transcribing.clone()
+    } else if cfg!(debug_assertions) || settings.debug_mode {
+        format!("Fısıltı {} (Dev)", env!("CARGO_PKG_VERSION"))
+    } else {
+        "Fısıltı".to_string()
+    };
+    let status_i = MenuItem::with_id(app, "status", &status_label, false, None::<&str>)
+        .expect("failed to create status item");
+
+    // One entry into the app; meetings and dictation history are both a
+    // click away inside it.
+    let open_i = MenuItem::with_id(app, "open", &strings.open, true, None::<&str>)
+        .expect("failed to create open item");
 
     // Platform-specific accelerators
     #[cfg(target_os = "macos")]
@@ -225,14 +241,6 @@ pub fn update_tray_menu(app: &AppHandle, state: &TrayIconState, locale: Option<&
     #[cfg(not(target_os = "macos"))]
     let (settings_accelerator, quit_accelerator) = (Some("Ctrl+,"), Some("Ctrl+Q"));
 
-    // Create common menu items
-    let version_label = if cfg!(debug_assertions) {
-        format!("Fısıltı v{} (Dev)", env!("CARGO_PKG_VERSION"))
-    } else {
-        format!("Fısıltı v{}", env!("CARGO_PKG_VERSION"))
-    };
-    let version_i = MenuItem::with_id(app, "version", &version_label, false, None::<&str>)
-        .expect("failed to create version item");
     let settings_i = MenuItem::with_id(
         app,
         "settings",
@@ -241,14 +249,6 @@ pub fn update_tray_menu(app: &AppHandle, state: &TrayIconState, locale: Option<&
         settings_accelerator,
     )
     .expect("failed to create settings item");
-    let check_updates_i = MenuItem::with_id(
-        app,
-        "check_updates",
-        &strings.check_updates,
-        settings.update_checks_enabled,
-        None::<&str>,
-    )
-    .expect("failed to create check updates item");
     let copy_last_transcript_i = MenuItem::with_id(
         app,
         "copy_last_transcript",
@@ -307,19 +307,21 @@ pub fn update_tray_menu(app: &AppHandle, state: &TrayIconState, locale: Option<&
         let submenu = Submenu::with_id(app, "model_submenu", &submenu_label, true)
             .expect("failed to create model submenu");
 
-        let section = |heading: &str, group: &[crate::managers::model::ModelInfo]| {
+        let section = |heading: &str, group: &[crate::managers::model::ModelInfo], headed: bool| {
             if group.is_empty() {
                 return;
             }
-            let header = MenuItem::with_id(
-                app,
-                format!("model_heading:{heading}"),
-                heading,
-                false,
-                None::<&str>,
-            )
-            .expect("failed to create model heading");
-            let _ = submenu.append(&header);
+            if headed {
+                let header = MenuItem::with_id(
+                    app,
+                    format!("model_heading:{heading}"),
+                    heading,
+                    false,
+                    None::<&str>,
+                )
+                .expect("failed to create model heading");
+                let _ = submenu.append(&header);
+            }
             for model in group {
                 let is_active = model.id == *current_model_id;
                 let item_id = format!("model_select:{}", model.id);
@@ -336,15 +338,18 @@ pub fn update_tray_menu(app: &AppHandle, state: &TrayIconState, locale: Option<&
             }
         };
 
-        section(&strings.models_on_device, &on_device_models);
-        section(&strings.models_cloud, &cloud_models);
+        // Headings only help when both kinds are present; with the curated
+        // catalogue there are often only on-device models.
+        let headed = !on_device_models.is_empty() && !cloud_models.is_empty();
+        section(&strings.models_on_device, &on_device_models, headed);
+        section(&strings.models_cloud, &cloud_models, headed);
 
         submenu
     };
 
     // Unloading a model by hand is a memory-management chore the app already
     // does on a timer (`model_unload_timeout`), so it only earns a menu slot in
-    // debug mode — same rule as the Developer group under Advanced.
+    // debug mode — same rule as the Developer group in Settings.
     let unload_model_i = MenuItem::with_id(
         app,
         "unload_model",
@@ -354,41 +359,33 @@ pub fn update_tray_menu(app: &AppHandle, state: &TrayIconState, locale: Option<&
     )
     .expect("failed to create unload model item");
 
-    // One layout for every state, in a fixed order: what you can do now, then
-    // what you can open, then what you can configure. Items change label or go
-    // disabled between states instead of appearing and disappearing, so muscle
-    // memory keeps working while a recording runs.
+    // One layout for every state, in a fixed order: status, what you can do
+    // now, the app, its configuration. Items change label or go disabled
+    // between states instead of moving, so muscle memory keeps working while a
+    // recording runs; only Cancel appears, and only while there is something
+    // to cancel.
     let cancel_i = MenuItem::with_id(app, "cancel", &strings.cancel, true, None::<&str>)
         .expect("failed to create cancel item");
     // A separator is a real platform menu item and cannot sit in two places, so
     // each one is its own instance rather than a reused reference.
-    let (sep1, sep2, sep3, sep4, sep5) = (
-        separator(),
-        separator(),
-        separator(),
-        separator(),
-        separator(),
-    );
+    let (sep1, sep2, sep3, sep4) = (separator(), separator(), separator(), separator());
 
-    let mut items: Vec<&dyn IsMenuItem<tauri::Wry>> = vec![&version_i, &sep1];
-    items.push(&toggle_dictation_i);
+    let mut items: Vec<&dyn IsMenuItem<tauri::Wry>> = vec![&status_i, &sep1];
     items.push(&toggle_meeting_i);
-    if *state != TrayIconState::Idle {
+    items.push(&toggle_dictation_i);
+    if *state != TrayIconState::Idle && !meeting_active {
         items.push(&cancel_i);
     }
     items.push(&sep2);
     items.push(&copy_last_transcript_i);
-    items.push(&history_i);
-    items.push(&meetings_i);
+    items.push(&open_i);
     items.push(&sep3);
     items.push(&model_submenu);
     if settings.debug_mode {
         items.push(&unload_model_i);
     }
-    items.push(&sep4);
     items.push(&settings_i);
-    items.push(&check_updates_i);
-    items.push(&sep5);
+    items.push(&sep4);
     items.push(&quit_i);
 
     let menu = Menu::with_items(app, &items).expect("failed to create menu");

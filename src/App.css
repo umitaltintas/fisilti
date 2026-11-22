@@ -1,32 +1,34 @@
 @import "tailwindcss";
 
 @theme {
-  /* Design tokens. Warm neutral paper with the Fisilti purple used only for
-   * active state and emphasis. Dark values are set in the media query below. */
-  --color-text: #1d1b18;
-  --color-background: #f7f6f3; /* page */
-  --color-surface: #ffffff; /* cards, menus, the active sidebar row */
-  --color-sidebar: #efede8;
-  --color-line: #e6e3dc; /* hairlines and card outlines */
-  --color-chip: #efede8; /* select fields, key caps, quiet buttons */
-  --color-sub: #6f6a62; /* secondary text */
-  --color-faint: #9c968c; /* tertiary text, placeholders */
-  --color-mid-gray: #8a847a;
-  --color-background-ui: #6d28d9;
-  --color-logo-primary: #6d28d9;
+  /* Design tokens. macOS-style neutral greys with the Fisilti purple used
+   * only as the accent. Dark values are set in the media query below. */
+  --color-text: #1d1d1f;
+  --color-background: #f5f5f7; /* page */
+  --color-surface: #ffffff; /* grouped lists, menus */
+  --color-sidebar: #ebebed;
+  --color-line: #e3e3e8; /* hairlines and card outlines */
+  --color-chip: #ececf0; /* select fields, key caps, quiet buttons */
+  --color-sub: #6e6e73; /* secondary text */
+  --color-faint: #a1a1a6; /* tertiary text, placeholders */
+  --color-mid-gray: #8e8e93;
+  --color-background-ui: #7c3aed;
+  --color-logo-primary: #7c3aed;
   --color-logo-stroke: #4c1d95;
-  --color-brand-soft: #efe8fd;
-  --color-brand-text: #5b21b6;
-  --color-rec: #e5484d;
-  --color-ok: #2f9e6b;
+  --color-brand-soft: #f1ebfe;
+  --color-brand-text: #6d28d9;
+  --color-rec: #ff3b30;
+  --color-ok: #34c759;
   --color-text-stroke: #f6f6f6;
 
   --font-sans:
     -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI",
     system-ui, sans-serif;
-  /* Meeting titles, notes and summaries read as a notebook, not a form. */
+  /* One typeface everywhere, as on macOS; `font-serif` is kept as an alias so
+   * older markup does not switch fonts. */
   --font-serif:
-    "New York", "Iowan Old Style", "Charter", Georgia, "Times New Roman", serif;
+    -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", "Segoe UI",
+    system-ui, sans-serif;
 }
 
 :root {
@@ -71,47 +73,47 @@
   text-align: center;
 }
 
-/* Dark palette: warm charcoal, the same paper feel as the light theme.
+/* Dark palette: macOS dark-mode greys.
  * Follows the system unless the user picked a theme (data-theme on <html>). */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --color-text: #f1ede6;
-    --color-background: #1c1a17;
-    --color-surface: #272420;
-    --color-sidebar: #151311;
-    --color-line: #35312b;
-    --color-chip: #312d28;
-    --color-sub: #aaa398;
-    --color-faint: #7b756c;
-    --color-mid-gray: #8f887d;
-    --color-background-ui: #8b5cf6;
-    --color-logo-primary: #9b6dff;
+    --color-text: #f5f5f7;
+    --color-background: #1e1e20;
+    --color-surface: #2c2c2e;
+    --color-sidebar: #252527;
+    --color-line: #3a3a3c;
+    --color-chip: #3a3a3c;
+    --color-sub: #98989d;
+    --color-faint: #6e6e73;
+    --color-mid-gray: #8e8e93;
+    --color-background-ui: #9b6dff;
+    --color-logo-primary: #a37bff;
     --color-logo-stroke: #ddd6fe;
-    --color-brand-soft: #2e2541;
+    --color-brand-soft: #2f2645;
     --color-brand-text: #c4b5fd;
-    --color-rec: #ff5a5f;
-    --color-ok: #3fbf86;
+    --color-rec: #ff453a;
+    --color-ok: #30d158;
   }
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --color-text: #f1ede6;
-  --color-background: #1c1a17;
-  --color-surface: #272420;
-  --color-sidebar: #151311;
-  --color-line: #35312b;
-  --color-chip: #312d28;
-  --color-sub: #aaa398;
-  --color-faint: #7b756c;
-  --color-mid-gray: #8f887d;
-  --color-background-ui: #8b5cf6;
-  --color-logo-primary: #9b6dff;
+  --color-text: #f5f5f7;
+  --color-background: #1e1e20;
+  --color-surface: #2c2c2e;
+  --color-sidebar: #252527;
+  --color-line: #3a3a3c;
+  --color-chip: #3a3a3c;
+  --color-sub: #98989d;
+  --color-faint: #6e6e73;
+  --color-mid-gray: #8e8e93;
+  --color-background-ui: #9b6dff;
+  --color-logo-primary: #a37bff;
   --color-logo-stroke: #ddd6fe;
-  --color-brand-soft: #2e2541;
+  --color-brand-soft: #2f2645;
   --color-brand-text: #c4b5fd;
-  --color-rec: #ff5a5f;
-  --color-ok: #3fbf86;
+  --color-rec: #ff453a;
+  --color-ok: #30d158;
 }
 :root[data-theme="light"] {
   color-scheme: light;
@@ -180,8 +182,8 @@
 /* Hairline card used across settings and meeting pages. */
 .card {
   background: var(--color-surface);
-  border-radius: 10px;
+  border-radius: 12px;
   box-shadow:
-    0 0 0 1px var(--color-line),
-    0 1px 2px rgb(0 0 0 / 0.03);
+    0 0 0 0.5px var(--color-line),
+    0 1px 2px rgb(0 0 0 / 0.04);
 }

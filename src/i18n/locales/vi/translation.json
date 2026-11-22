@@ -1,9 +1,7 @@
 {
   "tray": {
     "settings": "Cài đặt...",
-    "checkUpdates": "Kiểm tra cập nhật...",
     "copyLastTranscript": "Sao chép bản chép lời mới nhất",
-    "history": "Lịch sử đọc chính tả...",
     "unloadModel": "Dỡ mô hình",
     "model": "Mô hình",
     "modelsOnDevice": "Trên thiết bị này",
@@ -14,8 +12,7 @@
     "stopDictation": "Dừng đọc chính tả",
     "startMeeting": "Bắt đầu cuộc họp",
     "stopMeeting": "Dừng cuộc họp",
-    "recordingIndicator": "Fısıltı — Đang ghi…",
-    "meetings": "Cuộc họp..."
+    "recordingIndicator": "Fısıltı — Đang ghi…"
   },
   "mascot": {
     "label": "Linh vật Fısıltı",
@@ -279,7 +276,13 @@
           "set": "Không thể đặt phím tắt: {{error}}",
           "reset": "Không thể đặt lại phím tắt về giá trị gốc"
         },
-        "change": "Đổi phím tắt: {{shortcut}}"
+        "change": "Đổi phím tắt: {{shortcut}}",
+        "portal": {
+          "note": "Do máy tính để bàn của bạn quản lý; hãy đổi trong cài đặt hệ thống.",
+          "configure": "Cài đặt hệ thống",
+          "notAssigned": "Chưa gán",
+          "openFailed": "Không thể mở cài đặt phím tắt của hệ thống"
+        }
       },
       "language": {
         "title": "Ngôn ngữ",

@@ -9,9 +9,12 @@ mod visualizer;
 // the dictation flow and only compiled on macOS.
 #[cfg(target_os = "macos")]
 mod core_audio;
-// Meeting mode (Step 2): macOS-only mic+system audio mixer.
-#[cfg(target_os = "macos")]
+// Meeting mode (Step 2): mic+system audio mixer.
+#[cfg(meeting_capture)]
 mod mixer;
+// Meeting mode on Linux: PipeWire/PulseAudio system capture + device queries.
+#[cfg(target_os = "linux")]
+mod pulse;
 #[cfg(target_os = "macos")]
 mod system_audio;
 
@@ -25,7 +28,12 @@ pub use visualizer::AudioVisualiser;
 
 #[cfg(target_os = "macos")]
 pub use core_audio::{detect_output_route, CoreAudioCapture, CoreAudioStream, OutputRoute};
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 pub use mixer::{AudioMixerRingBuffer, MeetingMixer, MixSource, ProfessionalAudioMixer};
+#[cfg(target_os = "linux")]
+pub use pulse::{
+    detect_output_route, recording_apps, sound_server_available, OutputRoute, RecordingApp,
+    SystemAudioCapture, SystemAudioStream,
+};
 #[cfg(target_os = "macos")]
 pub use system_audio::{SystemAudioCapture, SystemAudioStream};

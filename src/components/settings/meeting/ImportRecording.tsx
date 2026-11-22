@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 import { open } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import type { UnlistenFn } from "@tauri-apps/api/event";
@@ -24,6 +25,9 @@ interface ImportRecordingProps {
   disabled: boolean;
   /** Called with the new meeting id once an import is saved. */
   onImported: (id: number) => void;
+  /** A toolbar button instead of the dashed card: progress shows as a pill,
+   * a drag shows a window-wide drop target and errors become toasts. */
+  compact?: boolean;
 }
 
 const extensionOf = (path: string) =>
@@ -36,6 +40,7 @@ const extensionOf = (path: string) =>
 export const ImportRecording: React.FC<ImportRecordingProps> = ({
   disabled,
   onImported,
+  compact = false,
 }) => {
   const { t } = useTranslation();
   const [progress, setProgress] = useState<MeetingImportProgress | null>(null);
@@ -141,6 +146,14 @@ export const ImportRecording: React.FC<ImportRecordingProps> = ({
     };
   }, [startImport]);
 
+  // A toolbar button has no room for an inline error.
+  useEffect(() => {
+    if (compact && error) {
+      toast.error(error);
+      setError(null);
+    }
+  }, [compact, error]);
+
   const handlePick = async () => {
     try {
       const picked = await open({
@@ -165,6 +178,61 @@ export const ImportRecording: React.FC<ImportRecordingProps> = ({
       setError(`${t("meeting.errors.cancelFailed")} (${errorMessage(e)})`);
     }
   };
+
+  if (compact) {
+    const pct =
+      progress?.progress != null ? Math.round(progress.progress * 100) : null;
+    return (
+      <>
+        {dragging && (
+          <div className="pointer-events-none fixed inset-3 z-50 grid place-items-center rounded-2xl border-2 border-dashed border-logo-primary bg-logo-primary/10 backdrop-blur-[2px]">
+            <p className="flex items-center gap-2 text-[15px] font-semibold text-brand-text">
+              <FileAudio width={18} height={18} aria-hidden />
+              {t("meeting.import.dropHere")}
+            </p>
+          </div>
+        )}
+        {progress ? (
+          <div
+            role="status"
+            className="flex max-w-72 items-center gap-2 rounded-full bg-chip py-1 ps-3 pe-1 text-xs"
+            title={progress.file_name}
+          >
+            <Loader2
+              width={13}
+              height={13}
+              className="shrink-0 animate-spin text-logo-primary"
+              aria-hidden
+            />
+            <span className="truncate text-sub">
+              {t(`meeting.import.stage.${progress.stage}`)}
+              {pct != null && ` · ${pct}%`}
+            </span>
+            <button
+              type="button"
+              onClick={() => void handleCancel()}
+              disabled={cancelling}
+              aria-label={t("meeting.cancel")}
+              className="grid h-5 w-5 shrink-0 cursor-pointer place-items-center rounded-full text-sub hover:bg-mid-gray/20 hover:text-text disabled:opacity-50"
+            >
+              <X width={12} height={12} aria-hidden />
+            </button>
+          </div>
+        ) : (
+          <Button
+            onClick={() => void handlePick()}
+            variant="secondary"
+            size="md"
+            disabled={disabled || extensions.length === 0}
+            title={t("meeting.import.description")}
+          >
+            <Upload width={13} height={13} aria-hidden />
+            <span>{t("meeting.import.button")}</span>
+          </Button>
+        )}
+      </>
+    );
+  }
 
   if (progress) {
     const pct =

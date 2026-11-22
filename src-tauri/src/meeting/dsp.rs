@@ -17,38 +17,38 @@
 /// system audio). -15 dB ≈ ×0.178 linear. Chosen to strongly suppress leakage
 /// without fully gating, so a person talking OVER the remote audio (double-talk)
 /// is still partially captured rather than dropped entirely.
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 const ECHO_DUCK_GAIN_DB: f32 = -15.0;
 /// System-audio running-RMS threshold above which we consider remote audio to
 /// be "actively playing" and enable ducking. ~0.02 RMS on the 16 kHz system
 /// stream — above ambient tap noise/silence, below normal speech level.
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 const ECHO_DUCK_SYS_RMS_THRESHOLD: f32 = 0.02;
 /// Smoothing factor for the system running RMS (per mic-frame batch). Closer to
 /// 1.0 = slower/steadier; 0.2 reacts within ~5 ticks (~0.5 s).
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 const ECHO_DUCK_RMS_SMOOTH: f32 = 0.2;
 /// Target integrated loudness for mic normalization (EBU R128). -23 LUFS is the
 /// EBU broadcast reference; Whisper was trained on roughly this level of speech.
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 const MIC_TARGET_LUFS: f64 = -23.0;
 /// Clamp the normalization gain so a near-silent block isn't amplified into
 /// noise (and a hot block isn't over-attenuated). ±12 dB.
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 const MIC_NORM_MAX_GAIN_DB: f64 = 12.0;
 /// High-pass cutoff applied to the mic before normalization (Hz).
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 pub(super) const MIC_HIGHPASS_HZ: f32 = 80.0;
 
 /// One-pole high-pass filter (DC/rumble removal). Stateful across frames.
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 pub(super) struct HighPass {
     alpha: f32,
     prev_in: f32,
     prev_out: f32,
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 impl HighPass {
     pub(super) fn new(cutoff_hz: f32, sample_rate: f32) -> Self {
         // Standard one-pole HPF coefficient.
@@ -77,12 +77,12 @@ impl HighPass {
 /// every mic frame into the meter, read the shortterm (3 s) loudness, and apply
 /// a clamped gain. Using shortterm keeps it adaptive to a moving talker without
 /// pumping on every sample.
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 pub(super) struct MicLoudnessNorm {
     meter: ebur128::EbuR128,
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 impl MicLoudnessNorm {
     pub(super) fn new(sample_rate: u32) -> Option<Self> {
         match ebur128::EbuR128::new(1, sample_rate, ebur128::Mode::S) {
@@ -130,7 +130,7 @@ impl MicLoudnessNorm {
 /// interjections over loud playback may be missed. This is the accepted cost of
 /// preventing the (worse) duplicated/echoed transcript. Headphone output is
 /// detected separately and skips ducking entirely.
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 pub(super) struct EchoDuck {
     /// Whether the current output route is echo-prone (speakers/unknown).
     enabled: bool,
@@ -139,7 +139,7 @@ pub(super) struct EchoDuck {
     duck_gain: f32,
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 impl EchoDuck {
     pub(super) fn new(route: crate::audio_toolkit::audio::OutputRoute) -> Self {
         use crate::audio_toolkit::audio::OutputRoute;

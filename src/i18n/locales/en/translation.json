@@ -1,21 +1,23 @@
 {
   "tray": {
-    "settings": "Settings...",
-    "checkUpdates": "Check for Updates...",
-    "copyLastTranscript": "Copy Last Transcript",
-    "history": "Dictation History...",
+    "settings": "Settings…",
+    "copyLastTranscript": "Copy Last Dictation",
     "unloadModel": "Unload Model",
     "model": "Model",
     "modelsOnDevice": "On this device",
     "modelsCloud": "Cloud",
-    "quit": "Quit",
+    "quit": "Quit Fısıltı",
     "cancel": "Cancel",
     "startDictation": "Start Dictation",
     "stopDictation": "Stop Dictation",
     "startMeeting": "Start Meeting",
     "stopMeeting": "Stop Meeting",
     "recordingIndicator": "Fisilti — Recording…",
-    "meetings": "Meetings..."
+    "open": "Open Fısıltı",
+    "statusDictating": "Dictating…",
+    "statusTranscribing": "Transcribing…",
+    "statusMeeting": "Meeting recording",
+    "statusFinalizing": "Saving meeting…"
   },
   "mascot": {
     "label": "Fısıltı mascot",
@@ -29,7 +31,7 @@
     "general": "General",
     "models": "Models",
     "advanced": "Advanced",
-    "postProcessing": "Post-processing",
+    "postProcessing": "AI",
     "history": "Dictation history",
     "debug": "Debug",
     "about": "About",
@@ -39,7 +41,8 @@
       "system": "System"
     },
     "navigation": "Settings sections",
-    "home": "Home"
+    "home": "Home",
+    "settings": "Settings"
   },
   "onboarding": {
     "subtitle": "To get started, choose a transcription model",
@@ -112,6 +115,10 @@
       "canary-1b-v2": {
         "name": "Canary 1B v2",
         "description": "Accurate multilingual. 25 European languages. Supports translation."
+      },
+      "qwen3-asr-1.7b": {
+        "name": "Qwen3-ASR 1.7B",
+        "description": "Multilingual speech LLM, strongest in Chinese and English. 30 languages, detects the language itself. Needs about 3 GB of RAM."
       }
     },
     "errors": {
@@ -214,7 +221,13 @@
           "set": "Failed to set shortcut: {{error}}",
           "reset": "Failed to reset shortcut to original value"
         },
-        "change": "Change shortcut: {{shortcut}}"
+        "change": "Change shortcut: {{shortcut}}",
+        "portal": {
+          "note": "Managed by your desktop; change it in system settings.",
+          "configure": "System settings",
+          "notAssigned": "Not assigned",
+          "openFailed": "Couldn't open the system shortcut settings"
+        }
       },
       "language": {
         "title": "Language",
@@ -234,7 +247,7 @@
       },
       "appearance": {
         "title": "Appearance",
-        "description": "Follow macOS, or always use a light or dark theme.",
+        "description": "Follow the system appearance, or always use a light or dark theme.",
         "system": "System",
         "light": "Light",
         "dark": "Dark"
@@ -890,7 +903,8 @@
         "transcribing": "Transcribing",
         "summarizing": "Writing title and summary"
       },
-      "failed": "Couldn't transcribe the recording: {{error}}"
+      "failed": "Couldn't transcribe the recording: {{error}}",
+      "button": "Import"
     },
     "exportDir": {
       "title": "Save as Markdown to a folder",

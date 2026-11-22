@@ -1,9 +1,7 @@
 {
   "tray": {
     "settings": "Ustawienia...",
-    "checkUpdates": "Sprawdź aktualizacje...",
     "copyLastTranscript": "Kopiuj ostatnią transkrypcję",
-    "history": "Historia dyktowania...",
     "unloadModel": "Zwolnij model",
     "model": "Model",
     "modelsOnDevice": "Na tym urządzeniu",
@@ -14,8 +12,7 @@
     "stopDictation": "Zatrzymaj dyktowanie",
     "startMeeting": "Rozpocznij spotkanie",
     "stopMeeting": "Zatrzymaj spotkanie",
-    "recordingIndicator": "Fısıltı — Nagrywanie…",
-    "meetings": "Spotkania..."
+    "recordingIndicator": "Fısıltı — Nagrywanie…"
   },
   "mascot": {
     "label": "Maskotka Fısıltı",
@@ -279,7 +276,13 @@
           "set": "Nie udało się ustawić skrótu: {{error}}",
           "reset": "Nie udało się zresetować skrótu do wartości domyślnej"
         },
-        "change": "Zmień skrót: {{shortcut}}"
+        "change": "Zmień skrót: {{shortcut}}",
+        "portal": {
+          "note": "Zarządzany przez pulpit; zmień go w ustawieniach systemu.",
+          "configure": "Ustawienia systemu",
+          "notAssigned": "Nie przypisano",
+          "openFailed": "Nie można otworzyć systemowych ustawień skrótów"
+        }
       },
       "language": {
         "title": "Język",

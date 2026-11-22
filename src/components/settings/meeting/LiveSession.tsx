@@ -2,54 +2,29 @@ import React, { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useShallow } from "zustand/react/shallow";
 import { toast } from "sonner";
-import {
-  ChevronRight,
-  Loader2,
-  Mic,
-  RefreshCw,
-  Sparkles,
-  Square,
-} from "lucide-react";
+import { Loader2, RefreshCw, Square } from "lucide-react";
 
 import { Button } from "../../ui/Button";
 import { useConfirm } from "../../ui/ConfirmDialog";
-import type { SelectOption } from "../../ui/Select";
 import { MeetingSignal } from "./MeetingSignal";
-import { Markdown } from "./Markdown";
 import {
   CopyButton,
   InlineError,
   NotesSaveIndicator,
-  OnDeviceBadge,
   PlainTranscript,
   SectionHeading,
-  SummaryControls,
-  SummaryLocationNote,
   formatElapsed,
   formatMeetingDate,
   formatDuration,
   plainTranscriptText,
 } from "./shared";
-import type {
-  InterruptedMeeting,
-  MeetingSummaryTemplate,
-  SummaryProviderInfo,
-} from "@/lib/meeting";
+import type { InterruptedMeeting } from "@/lib/meeting";
 import { useMeetingStore } from "@/stores/meetingStore";
 import { errorMessage } from "@/lib/utils/errors";
-
-const RECENT_MEETINGS_COUNT = 3;
 
 interface LiveSessionProps {
   /** The meeting model is a cloud engine: there is no live preview. */
   selectedIsCloud: boolean;
-  templates: MeetingSummaryTemplate[];
-  providerInfo: SummaryProviderInfo | null;
-  onOpenMeeting: (id: number) => void;
-  onViewAllMeetings: () => void;
-  /** The "import a recording" card, shown under the idle hero as the other
-   * way to get a meeting transcript. */
-  importSlot?: React.ReactNode;
 }
 
 /** Seconds since `startedAtMs`, ticking while `active`. Derived from the
@@ -74,7 +49,7 @@ const useElapsedSeconds = (startedAtMs: number | null, active: boolean) => {
 // All session state comes from the meeting store, which lives for the whole
 // app — switching pages mid-meeting loses nothing.
 export const LiveSession: React.FC<LiveSessionProps> = (props) => {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const session = useMeetingStore(
     useShallow((s) => ({
       status: s.status,
@@ -95,16 +70,6 @@ export const LiveSession: React.FC<LiveSessionProps> = (props) => {
   const isRunning = session.status === "running";
   const finalizing = session.status === "finalizing";
   const elapsed = useElapsedSeconds(session.startedAtMs, isRunning);
-
-  // Whether there is a live or just-finished session worth showing the full
-  // workspace for; otherwise the idle hero takes over.
-  const hasSession =
-    isRunning ||
-    finalizing ||
-    session.meetingId != null ||
-    session.transcript.trim().length > 0 ||
-    session.summary.trim().length > 0 ||
-    session.notes.trim().length > 0;
 
   const errorLine = session.error && <InlineError>{session.error}</InlineError>;
 
@@ -161,74 +126,7 @@ export const LiveSession: React.FC<LiveSessionProps> = (props) => {
             </button>
           </div>
         </div>
-      ) : hasSession ? (
-        <div className="space-y-4">
-          <div className="px-1 flex items-center justify-between gap-3 flex-wrap">
-            <SectionHeading>{t("meeting.lastSession")}</SectionHeading>
-            <div className="flex items-center gap-2">
-              <OnDeviceBadge />
-              <Button
-                onClick={() => void session.start()}
-                variant="primary"
-                size="sm"
-                disabled={session.busy}
-                className="flex items-center gap-1.5"
-              >
-                <Mic width={14} height={14} aria-hidden />
-                <span>{t("meeting.newMeeting")}</span>
-              </Button>
-            </div>
-          </div>
-
-          {errorLine}
-
-          <SessionHeader />
-          <Workspace selectedIsCloud={props.selectedIsCloud} />
-          <SummaryPanel
-            templates={props.templates}
-            providerInfo={props.providerInfo}
-          />
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {/* Idle: one clear action, set like a settings row. */}
-          <div className="card flex items-center gap-3 px-4 py-3.5">
-            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-brand-soft text-brand-text">
-              <Mic width={17} height={17} aria-hidden />
-            </span>
-            <div className="min-w-0 flex-1">
-              <h3 className="text-[13px] font-semibold">
-                {t("meeting.idleTitle")}
-              </h3>
-              <p className="text-xs text-sub">{t("meeting.idleDescription")}</p>
-            </div>
-            <Button
-              onClick={() => void session.start()}
-              variant="primary"
-              size="md"
-              disabled={session.busy}
-            >
-              {session.busy ? (
-                <Loader2
-                  width={14}
-                  height={14}
-                  className="animate-spin"
-                  aria-hidden
-                />
-              ) : (
-                <Mic width={14} height={14} aria-hidden />
-              )}
-              <span>{t("meeting.startMeeting")}</span>
-            </Button>
-          </div>
-          {errorLine}
-          <div className="flex justify-center">
-            <OnDeviceBadge />
-          </div>
-
-          {props.importSlot}
-        </div>
-      )}
+      ) : null}
     </div>
   );
 };
@@ -373,112 +271,6 @@ const SessionHeader: React.FC = () => {
         {sessionTitle?.trim() || t("meeting.untitledMeeting")}
       </h2>
     </header>
-  );
-};
-
-// One-click summary generation; template + custom prompt live behind a small
-// "options" disclosure so the default flow stays a single button.
-const SummaryPanel: React.FC<{
-  templates: MeetingSummaryTemplate[];
-  providerInfo: SummaryProviderInfo | null;
-}> = ({ templates, providerInfo }) => {
-  const { t } = useTranslation();
-  const { transcript, status, summary, summarizing, summaryError, summarize } =
-    useMeetingStore(
-      useShallow((s) => ({
-        transcript: s.transcript,
-        status: s.status,
-        summary: s.summary,
-        summarizing: s.summarizing,
-        summaryError: s.summaryError,
-        summarize: s.summarize,
-      })),
-    );
-  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
-  const [customPrompt, setCustomPrompt] = useState("");
-
-  useEffect(() => {
-    setSelectedTemplate((cur) => cur ?? templates[0]?.id ?? null);
-  }, [templates]);
-
-  const hasTranscript = transcript.trim().length > 0;
-  const hasSummary = summary.trim().length > 0;
-  const disabled = !hasTranscript || status !== "idle" || summarizing;
-
-  const templateOptions: SelectOption[] = templates.map((tpl) => ({
-    value: tpl.id,
-    label: tpl.name,
-  }));
-
-  const handleSummarize = () => {
-    // A free-text custom prompt overrides the dropdown selection.
-    const custom = customPrompt.trim();
-    void summarize(
-      custom.length > 0 ? custom : (selectedTemplate ?? undefined),
-    );
-  };
-
-  return (
-    <div className="space-y-2">
-      <div className="px-1 flex items-center justify-between">
-        <SectionHeading>{t("meeting.summary")}</SectionHeading>
-        {hasSummary && (
-          <CopyButton text={summary} label={t("meeting.copySummary")} />
-        )}
-      </div>
-      <div className="card p-4 space-y-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <Button
-            onClick={handleSummarize}
-            variant="primary-soft"
-            size="md"
-            disabled={disabled}
-            className="flex items-center gap-2"
-          >
-            {hasSummary ? (
-              <RefreshCw
-                width={16}
-                height={16}
-                className={summarizing ? "animate-spin" : ""}
-                aria-hidden
-              />
-            ) : (
-              <Sparkles
-                width={16}
-                height={16}
-                className={summarizing ? "animate-pulse" : ""}
-                aria-hidden
-              />
-            )}
-            <span>
-              {summarizing
-                ? t("meeting.summarizing")
-                : hasSummary
-                  ? t("meeting.regenerate")
-                  : t("meeting.generateSummary")}
-            </span>
-          </Button>
-          <SummaryLocationNote info={providerInfo} />
-        </div>
-
-        <p className="text-[11px] text-faint">
-          {t("meeting.generateSummaryHint")}
-        </p>
-
-        <SummaryControls
-          templateOptions={templateOptions}
-          selectedTemplate={selectedTemplate}
-          onSelectTemplate={setSelectedTemplate}
-          customPrompt={customPrompt}
-          onCustomPromptChange={setCustomPrompt}
-          disabled={disabled}
-        />
-
-        {summaryError && <InlineError>{summaryError}</InlineError>}
-
-        {hasSummary && <Markdown>{summary}</Markdown>}
-      </div>
-    </div>
   );
 };
 

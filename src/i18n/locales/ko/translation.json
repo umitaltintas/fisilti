@@ -1,9 +1,7 @@
 {
   "tray": {
     "settings": "설정...",
-    "checkUpdates": "업데이트 확인...",
     "copyLastTranscript": "마지막 녹음 내용 복사",
-    "history": "받아쓰기 기록...",
     "unloadModel": "모델 언로드",
     "model": "모델",
     "modelsOnDevice": "이 기기에서",
@@ -14,8 +12,7 @@
     "stopDictation": "받아쓰기 중지",
     "startMeeting": "회의 시작",
     "stopMeeting": "회의 중지",
-    "recordingIndicator": "Fısıltı — 녹음 중…",
-    "meetings": "회의..."
+    "recordingIndicator": "Fısıltı — 녹음 중…"
   },
   "mascot": {
     "label": "Fısıltı 마스코트",
@@ -214,7 +211,13 @@
           "set": "단축키 설정 실패: {{error}}",
           "reset": "단축키를 원래 값으로 재설정하는데 실패했습니다"
         },
-        "change": "단축키 변경: {{shortcut}}"
+        "change": "단축키 변경: {{shortcut}}",
+        "portal": {
+          "note": "데스크톱에서 관리합니다. 시스템 설정에서 변경하세요.",
+          "configure": "시스템 설정",
+          "notAssigned": "할당되지 않음",
+          "openFailed": "시스템 단축키 설정을 열 수 없습니다"
+        }
       },
       "language": {
         "title": "언어",

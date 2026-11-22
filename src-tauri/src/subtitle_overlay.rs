@@ -18,10 +18,16 @@
 //!   is a different feature with different consent questions.
 //! * **Wide and short.** A subtitle strip, not a badge.
 //!
-//! macOS only, like the meeting capture it renders.
+//! On Linux it is a plain transparent, always-on-top window that ignores the
+//! cursor; where the compositor supports wlr-layer-shell it is pinned to the
+//! bottom edge as an overlay layer (so it also floats over fullscreen calls).
+//! Screen-share exclusion has no Linux equivalent: portals capture whatever
+//! the compositor draws.
 
 #[cfg(target_os = "macos")]
-use tauri::{AppHandle, Emitter, Listener, Manager, WebviewUrl};
+use tauri::Listener;
+#[cfg(meeting_capture)]
+use tauri::{AppHandle, Emitter, Manager, WebviewUrl};
 
 #[cfg(target_os = "macos")]
 use tauri_nspanel::{tauri_panel, CollectionBehavior, PanelBuilder, PanelLevel};
@@ -32,20 +38,20 @@ pub const SUBTITLE_WINDOW: &str = "subtitle_overlay";
 /// Fraction of the screen width the strip occupies. Wide enough for a long
 /// sentence at a readable size, narrow enough not to span an ultrawide edge to
 /// edge, where the eye cannot take a line in at a glance.
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 const WIDTH_FRACTION: f64 = 0.6;
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 const MAX_WIDTH: f64 = 1100.0;
 /// Tall enough that the capped text (see `SUBTITLE_MAX_CHARS`) always fits with
 /// room to spare. The window is transparent and click-through, so unused height
 /// costs nothing — whereas being one line too short clips the newest words,
 /// which are the only ones that matter.
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 const HEIGHT: f64 = 200.0;
 /// Distance from the bottom of the visible screen area. Clears the Dock and
 /// sits roughly where video-call captions and player subtitles already live, so
 /// it lands where the eye expects them.
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 const BOTTOM_MARGIN: f64 = 90.0;
 
 #[cfg(target_os = "macos")]
@@ -77,7 +83,7 @@ pub struct SubtitleUpdate {
 /// Uses the cursor's monitor rather than the primary one. On a two-display
 /// setup those are routinely different, and a subtitle strip on the screen you
 /// are not watching is indistinguishable from a broken feature.
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 fn strip_geometry(app_handle: &AppHandle) -> Option<(f64, f64, f64)> {
     let monitor = crate::overlay::get_monitor_with_cursor(app_handle)?;
     // Monitor position/size are physical; dividing by the scale factor gives
@@ -100,7 +106,7 @@ fn strip_geometry(app_handle: &AppHandle) -> Option<(f64, f64, f64)> {
 /// Move and size the strip for the display the user is on. Called before every
 /// show, not just at creation: the panel is built once at startup, and by the
 /// time a meeting starts the user may well be on another screen.
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 fn position_strip(app_handle: &AppHandle, window: &tauri::WebviewWindow) {
     let Some((x, y, width)) = strip_geometry(app_handle) else {
         log::warn!("subtitle overlay: no monitor available; leaving the strip where it is");
@@ -193,11 +199,75 @@ fn exclude_from_screen_capture(app_handle: &AppHandle) {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+/// Linux: create the strip window, hidden.
+#[cfg(target_os = "linux")]
+pub fn create_subtitle_overlay(app_handle: &AppHandle) {
+    if app_handle.get_webview_window(SUBTITLE_WINDOW).is_some() {
+        return;
+    }
+    // Wayland may not report monitors to us; the layer-shell path doesn't
+    // need coordinates, so fall back to a sane default width.
+    let (x, y, width) = strip_geometry(app_handle).unwrap_or((0.0, 0.0, MAX_WIDTH));
+    let mut builder = tauri::WebviewWindowBuilder::new(
+        app_handle,
+        SUBTITLE_WINDOW,
+        WebviewUrl::App("src/subtitle/index.html".into()),
+    )
+    .title("Subtitles")
+    .inner_size(width, HEIGHT)
+    .position(x, y)
+    .resizable(false)
+    .decorations(false)
+    .transparent(true)
+    .shadow(false)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .focused(false)
+    .focusable(false)
+    .visible(false);
+    if let Some(data_dir) = crate::portable::data_dir() {
+        builder = builder.data_directory(data_dir.join("webview"));
+    }
+    match builder.build() {
+        Ok(window) => {
+            // Click-through is applied on show: tao panics setting the input
+            // shape of a window that was never realized.
+            if init_layer_shell(&window) {
+                log::debug!("subtitle overlay: pinned with layer shell");
+            }
+            log::debug!("subtitle overlay: window created (hidden)");
+        }
+        Err(e) => log::error!("subtitle overlay: failed to create window: {}", e),
+    }
+}
+
+/// Pin the strip to the bottom edge as an overlay layer when the compositor
+/// supports wlr-layer-shell (wlroots compositors, Hyprland, GNOME doesn't).
+/// Skipped on KDE, where the recording overlay saw layer-shell instability.
+#[cfg(target_os = "linux")]
+fn init_layer_shell(window: &tauri::WebviewWindow) -> bool {
+    use gtk_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
+
+    if crate::utils::is_kde_wayland() || !gtk_layer_shell::is_supported() {
+        return false;
+    }
+    let Ok(gtk_window) = window.gtk_window() else {
+        return false;
+    };
+    gtk_window.init_layer_shell();
+    gtk_window.set_layer(Layer::Overlay);
+    gtk_window.set_keyboard_mode(KeyboardMode::None);
+    gtk_window.set_exclusive_zone(0);
+    gtk_window.set_anchor(Edge::Bottom, true);
+    gtk_window.set_layer_shell_margin(Edge::Bottom, BOTTOM_MARGIN as i32);
+    true
+}
+
+#[cfg(not(meeting_capture))]
 pub fn create_subtitle_overlay(_app_handle: &tauri::AppHandle) {}
 
 /// Push new text to the strip, showing it if it was hidden.
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 pub fn show_subtitle(app_handle: &AppHandle, update: SubtitleUpdate) {
     let Some(window) = app_handle.get_webview_window(SUBTITLE_WINDOW) else {
         log::warn!("subtitle overlay: panel missing; cannot show subtitles");
@@ -213,18 +283,20 @@ pub fn show_subtitle(app_handle: &AppHandle, update: SubtitleUpdate) {
             Ok(()) => log::debug!("subtitle overlay: shown"),
             Err(e) => log::warn!("subtitle overlay: failed to show panel: {}", e),
         }
+        #[cfg(target_os = "linux")]
+        let _ = window.set_ignore_cursor_events(true);
     }
     if let Err(e) = window.emit("subtitle-update", update) {
         log::warn!("subtitle overlay: failed to emit update: {}", e);
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(meeting_capture))]
 pub fn show_subtitle(_app_handle: &tauri::AppHandle, _update: SubtitleUpdate) {}
 
 /// Hide the strip and clear it, so the next meeting does not flash the tail of
 /// the previous one before its first subtitle arrives.
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 pub fn hide_subtitle(app_handle: &AppHandle) {
     let Some(window) = app_handle.get_webview_window(SUBTITLE_WINDOW) else {
         return;
@@ -239,5 +311,5 @@ pub fn hide_subtitle(app_handle: &AppHandle) {
     let _ = window.hide();
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(meeting_capture))]
 pub fn hide_subtitle(_app_handle: &tauri::AppHandle) {}

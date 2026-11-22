@@ -163,7 +163,7 @@ fn paste_via_clipboard(
 
     // Send paste key combo
     #[cfg(target_os = "linux")]
-    let key_combo_sent = try_send_key_combo_linux(&paste_method)?;
+    let key_combo_sent = try_send_key_combo_linux(app_handle, &paste_method)?;
 
     #[cfg(not(target_os = "linux"))]
     let key_combo_sent = false;
@@ -184,14 +184,27 @@ fn paste_via_clipboard(
 /// Attempts to send a key combination using Linux-native tools.
 /// Returns `Ok(true)` if a native tool handled it, `Ok(false)` to fall back to enigo.
 #[cfg(target_os = "linux")]
-fn try_send_key_combo_linux(paste_method: &PasteMethod) -> Result<bool, String> {
+fn try_send_key_combo_linux(
+    app_handle: &AppHandle,
+    paste_method: &PasteMethod,
+) -> Result<bool, String> {
     if is_wayland() {
-        // Wayland: prefer wtype (but not on KDE), then dotool, then ydotool
+        // Wayland: prefer wtype (but not on KDE), then the RemoteDesktop
+        // portal (no extra tools needed), then dotool, then ydotool.
         // Note: wtype doesn't work on KDE (no zwp_virtual_keyboard_manager_v1 support)
         if !is_kde_wayland() && is_wtype_available() {
             info!("Using wtype for key combo");
             send_key_combo_via_wtype(paste_method)?;
             return Ok(true);
+        }
+        if crate::portal_input::is_supported() {
+            match crate::portal_input::send_paste(app_handle, paste_method) {
+                Ok(()) => {
+                    info!("Sent key combo through the remote desktop portal");
+                    return Ok(true);
+                }
+                Err(e) => warn!("Remote desktop portal key combo failed: {e}"),
+            }
         }
         if is_dotool_available() {
             info!("Using dotool for key combo");
@@ -347,11 +360,26 @@ fn is_dotool_available() -> bool {
 /// Check if ydotool is available (uinput-based, works on both Wayland and X11)
 #[cfg(target_os = "linux")]
 fn is_ydotool_available() -> bool {
-    Command::new("which")
+    let installed = Command::new("which")
         .arg("ydotool")
         .output()
         .map(|output| output.status.success())
-        .unwrap_or(false)
+        .unwrap_or(false);
+    // ydotool 1.x does nothing without its daemon; a bare binary used to win
+    // the fallback chain and then fail every paste.
+    installed && ydotool_daemon_socket_exists()
+}
+
+#[cfg(target_os = "linux")]
+fn ydotool_daemon_socket_exists() -> bool {
+    let mut candidates = vec![std::path::PathBuf::from("/tmp/.ydotool_socket")];
+    if let Some(socket) = std::env::var_os("YDOTOOL_SOCKET") {
+        candidates.insert(0, socket.into());
+    }
+    if let Some(runtime) = std::env::var_os("XDG_RUNTIME_DIR") {
+        candidates.push(std::path::Path::new(&runtime).join(".ydotool_socket"));
+    }
+    candidates.iter().any(|p| p.exists())
 }
 
 #[cfg(target_os = "linux")]
@@ -693,6 +721,14 @@ fn paste_direct(
     {
         if try_direct_typing_linux(text, typing_tool)? {
             return Ok(());
+        }
+        // No typing tool on Wayland: enigo would only reach XWayland windows.
+        // Paste through the clipboard instead; the chord goes through the
+        // RemoteDesktop portal and the user's clipboard is restored after.
+        if is_wayland() && typing_tool == TypingTool::Auto {
+            info!("No Wayland typing tool; inserting via clipboard + portal paste");
+            let delay = get_settings(app_handle).paste_delay_ms;
+            return paste_via_clipboard(text, app_handle, PasteMethod::CtrlV, delay);
         }
         info!("Falling back to enigo for direct text input");
     }

@@ -20,6 +20,7 @@ use transcribe_rs::{
         gigaam::GigaAMModel,
         moonshine::{MoonshineModel, MoonshineVariant, StreamingModel},
         parakeet::{ParakeetModel, ParakeetParams, TimestampGranularity},
+        qwen3_asr::{Qwen3AsrModel, Qwen3AsrParams},
         sense_voice::{SenseVoiceModel, SenseVoiceParams},
         Quantization,
     },
@@ -43,6 +44,7 @@ enum LoadedEngine {
     SenseVoice(SenseVoiceModel),
     GigaAM(GigaAMModel),
     Canary(CanaryModel),
+    Qwen3Asr(Qwen3AsrModel),
     /// Cloud transcription via OpenRouter. A lightweight marker: no model is
     /// loaded into memory. The OpenRouter model slug is resolved from the
     /// selected model's `filename` at transcription time, and the actual HTTP
@@ -55,7 +57,7 @@ enum LoadedEngine {
 /// Turkish diacritics (ç ğ ı ö ş ü) nudges whisper toward proper punctuation,
 /// casing and diacritics in the output. Kept short so it doesn't crowd out the
 /// real audio context.
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 const MEETING_TURKISH_STYLE_PROMPT: &str =
     "Merhaba, toplantıya hoş geldiniz. Bugünkü gündem maddelerini gözden geçirelim ve kararları netleştirelim.";
 
@@ -68,19 +70,19 @@ const MEETING_TURKISH_STYLE_PROMPT: &str =
 /// Initial decoding temperature. 0.0 = deterministic/greedy first pass; combined
 /// with `MEETING_TEMPERATURE_INC` this enables the temperature fallback loop,
 /// the single biggest lever against repetition loops.
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 const MEETING_TEMPERATURE: f32 = 0.0;
 /// Temperature increment for the fallback loop. When a decode fails the entropy
 /// or logprob gate, whisper retries at temperature += this step.
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 const MEETING_TEMPERATURE_INC: f32 = 0.2;
 /// Entropy (compression-ratio-like) threshold that triggers a temperature-fallback
 /// retry. whisper.cpp's documented default.
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 const MEETING_ENTROPY_THOLD: f32 = 2.4;
 /// Average-logprob threshold that triggers a temperature-fallback retry.
 /// whisper.cpp's documented default.
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 const MEETING_LOGPROB_THOLD: f32 = -1.0;
 
 /// Options that distinguish the meeting transcription path from dictation.
@@ -125,14 +127,11 @@ impl MeetingTranscribeOpts {
         Self::default()
     }
 
-    /// Meeting-mode options derived from settings.
-    ///
-    /// `finalize` distinguishes the on-stop / recovery finalize windows (which
-    /// transcribe chronologically independent audio slices) from the live rough
-    /// pass. Finalize windows additionally set `no_context=true` so a
-    /// hallucination in one window can't bleed into the next.
-    #[cfg(target_os = "macos")]
-    fn meeting(settings: &crate::settings::AppSettings, finalize: bool) -> Self {
+    /// Meeting-mode options derived from settings. Every meeting call is an
+    /// independent slice, so `no_context` keeps a hallucination in one from
+    /// bleeding into the next.
+    #[cfg(meeting_capture)]
+    fn meeting(settings: &crate::settings::AppSettings) -> Self {
         Self {
             language_override: Some(settings.meeting_language.clone()),
             no_speech_thold: Some(0.5),
@@ -141,7 +140,7 @@ impl MeetingTranscribeOpts {
             temperature_inc: Some(MEETING_TEMPERATURE_INC),
             entropy_thold: Some(MEETING_ENTROPY_THOLD),
             logprob_thold: Some(MEETING_LOGPROB_THOLD),
-            no_context: if finalize { Some(true) } else { None },
+            no_context: Some(true),
             model_override: Some(settings.meeting_model_id().to_string()),
         }
     }
@@ -629,6 +628,11 @@ impl TranscriptionManager {
                     |e| anyhow::anyhow!("Failed to load canary model {}: {}", model_id, e),
                 )?)
             }
+            EngineType::Qwen3Asr => LoadedEngine::Qwen3Asr(
+                Qwen3AsrModel::load(&model_path, &Quantization::Int8).map_err(|e| {
+                    anyhow::anyhow!("Failed to load Qwen3-ASR model {}: {}", model_id, e)
+                })?,
+            ),
             EngineType::OpenRouter
             | EngineType::OpenRouterAsr
             | EngineType::Gemini
@@ -779,26 +783,17 @@ impl TranscriptionManager {
         self.transcribe_with_opts(audio, opts)
     }
 
-    /// Meeting-mode transcription entry point (ADDITIVE; does not affect
-    /// dictation). Forces the configured meeting language, primes punctuation
-    /// with a Turkish style exemplar, and raises `no_speech_thold` so silent /
-    /// near-silent windows don't hallucinate text. Only the Whisper engine path
-    /// honors these knobs; other engines behave exactly as in dictation.
-    #[cfg(target_os = "macos")]
-    pub fn transcribe_meeting(&self, audio: Vec<f32>) -> Result<String> {
-        let settings = get_settings(&self.app_handle);
-        self.transcribe_with_opts(audio, MeetingTranscribeOpts::meeting(&settings, false))
-    }
-
-    /// Meeting-mode transcription for the on-stop / recovery FINALIZE windows.
-    /// Identical to [`transcribe_meeting`] but additionally disables cross-call
-    /// decoder context (`no_context`), because finalize windows are
-    /// chronologically independent slices and carrying context between them
-    /// risks propagating a hallucination forward. ADDITIVE; dictation unaffected.
-    #[cfg(target_os = "macos")]
+    /// Meeting-mode transcription, used for live segments and finalize windows
+    /// alike. Forces the configured meeting language, primes punctuation with a
+    /// Turkish style exemplar, raises `no_speech_thold` so near-silent windows
+    /// don't hallucinate, and disables cross-call decoder context
+    /// (`no_context`) because every call is an independent slice and carried
+    /// context could propagate a hallucination forward. Only the Whisper
+    /// engine honours these knobs. ADDITIVE; dictation unaffected.
+    #[cfg(meeting_capture)]
     pub fn transcribe_meeting_finalize(&self, audio: Vec<f32>) -> Result<String> {
         let settings = get_settings(&self.app_handle);
-        self.transcribe_with_opts(audio, MeetingTranscribeOpts::meeting(&settings, true))
+        self.transcribe_with_opts(audio, MeetingTranscribeOpts::meeting(&settings))
     }
 
     /// Cloud (OpenRouter) transcription path. Encodes the audio and sends it to
@@ -1188,6 +1183,16 @@ impl TranscriptionManager {
                                 };
                                 canary_engine.transcribe(&audio, &options).map_err(|e| {
                                     anyhow::anyhow!("Canary transcription failed: {}", e)
+                                })
+                            }
+                            LoadedEngine::Qwen3Asr(qwen_engine) => {
+                                // "auto" lets the model detect the language itself.
+                                let params = Qwen3AsrParams {
+                                    language: (validated_language != "auto")
+                                        .then(|| validated_language.clone()),
+                                };
+                                qwen_engine.transcribe_with(&audio, &params).map_err(|e| {
+                                    anyhow::anyhow!("Qwen3-ASR transcription failed: {}", e)
                                 })
                             }
                             LoadedEngine::OpenRouter => Err(anyhow::anyhow!(

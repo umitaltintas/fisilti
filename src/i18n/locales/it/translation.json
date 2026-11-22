@@ -1,9 +1,7 @@
 {
   "tray": {
     "settings": "Impostazioni...",
-    "checkUpdates": "Verifica aggiornamenti...",
     "copyLastTranscript": "Copia l'ultima trascrizione",
-    "history": "Cronologia dettature...",
     "unloadModel": "Rilascia modello",
     "model": "Modello",
     "modelsOnDevice": "Su questo dispositivo",
@@ -14,8 +12,7 @@
     "stopDictation": "Interrompi dettatura",
     "startMeeting": "Avvia riunione",
     "stopMeeting": "Ferma riunione",
-    "recordingIndicator": "Fısıltı — Registrazione…",
-    "meetings": "Riunioni..."
+    "recordingIndicator": "Fısıltı — Registrazione…"
   },
   "mascot": {
     "label": "Mascotte di Fısıltı",
@@ -279,7 +276,13 @@
           "set": "Errore nella configurazione della scorciatoia: {{error}}",
           "reset": "Errore nella reinizializzazione della scorciatoia al valore originale"
         },
-        "change": "Cambia scorciatoia: {{shortcut}}"
+        "change": "Cambia scorciatoia: {{shortcut}}",
+        "portal": {
+          "note": "Gestito dal tuo desktop; modificalo nelle impostazioni di sistema.",
+          "configure": "Impostazioni di sistema",
+          "notAssigned": "Non assegnato",
+          "openFailed": "Impossibile aprire le impostazioni delle scorciatoie di sistema"
+        }
       },
       "language": {
         "title": "Lingua",

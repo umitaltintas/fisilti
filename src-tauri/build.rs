@@ -1,4 +1,12 @@
 fn main() {
+    // `meeting_capture`: platforms with a meeting-mode capture backend
+    // (CoreAudio tap on macOS, PipeWire/PulseAudio monitor on Linux).
+    println!("cargo::rustc-check-cfg=cfg(meeting_capture)");
+    let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    if target_os == "macos" || target_os == "linux" {
+        println!("cargo:rustc-cfg=meeting_capture");
+    }
+
     #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     build_apple_intelligence_bridge();
 
@@ -71,7 +79,14 @@ fn generate_tray_translations() {
     for (lang, tray) in &translations {
         out.push_str(&format!("    m.insert(\"{lang}\", TrayStrings {{\n"));
         for (rust_field, json_key) in &fields {
-            let val = tray.get(json_key).and_then(|v| v.as_str()).unwrap_or("");
+            // A key a locale has not translated yet falls back to English
+            // instead of rendering an empty menu item.
+            let val = tray
+                .get(json_key)
+                .and_then(|v| v.as_str())
+                .filter(|v| !v.is_empty())
+                .or_else(|| english.get(json_key).and_then(|v| v.as_str()))
+                .unwrap_or("");
             out.push_str(&format!(
                 "        {rust_field}: \"{}\".to_string(),\n",
                 escape_string(val)

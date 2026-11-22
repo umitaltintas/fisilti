@@ -9,22 +9,22 @@
 // It is ADDITIVE and ISOLATED from the dictation flow.
 
 mod buffers;
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 mod capture;
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 mod dsp;
 mod exclusive;
 pub mod export;
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 mod finalize;
 pub mod import;
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 mod live;
 pub mod manager;
 pub mod session;
 pub mod store;
 pub mod summarize;
-#[cfg(target_os = "macos")]
+#[cfg(meeting_capture)]
 mod text;
 
 pub use manager::{MeetingImportProgress, MeetingManager};

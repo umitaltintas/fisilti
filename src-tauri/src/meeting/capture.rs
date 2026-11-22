@@ -47,6 +47,16 @@ pub(super) struct LiveJob {
     source: TranscriptSource,
 }
 
+impl LiveJob {
+    pub fn len(&self) -> usize {
+        self.audio.len()
+    }
+
+    pub fn start_samples(&self) -> u64 {
+        self.start_samples
+    }
+}
+
 /// Producer side of the live-transcription queue.
 struct LiveQueue {
     tx: mpsc::SyncSender<LiveJob>,
@@ -59,11 +69,12 @@ struct LiveQueue {
 impl LiveQueue {
     /// Queue a segment for the rough live transcription.
     ///
-    /// DROP POLICY: when the worker is behind and the queue is full, the
-    /// segment is dropped from the live preview (logged). Blocking instead
-    /// would stall the capture thread and overflow the audio channels, and
-    /// nothing is lost for good: the audio is in the capture buffers and the
-    /// finalize pass re-transcribes all of it on stop.
+    /// BACKLOG POLICY: when the worker is behind and the queue is full, the
+    /// segment goes to the session's [`LiveBacklog`], which the worker works
+    /// through whenever it idles and stop() finishes. Blocking instead would
+    /// stall the capture thread and overflow the audio channels. Only if the
+    /// backlog itself overflows does stop() fall back to re-transcribing the
+    /// whole recording from the capture buffers.
     fn submit(
         &mut self,
         session: &Session,
@@ -85,13 +96,19 @@ impl LiveQueue {
             source,
         }) {
             Ok(()) => {}
-            Err(mpsc::TrySendError::Full(_)) => {
+            Err(mpsc::TrySendError::Full(job)) => {
                 self.dropped += 1;
+                let kept = session.live_backlog.lock().unwrap().push_pending(job);
                 if self.dropped == 1 || self.dropped.is_multiple_of(10) {
                     log::warn!(
-                        "meeting: live transcription is behind; dropped {} segment(s) from the \
-                         preview (the final pass still covers them)",
-                        self.dropped
+                        "meeting: live transcription is behind; {} segment(s) deferred to the \
+                         backlog{}",
+                        self.dropped,
+                        if kept {
+                            ""
+                        } else {
+                            " (backlog full: stop() will re-transcribe the whole meeting)"
+                        }
                     );
                 }
             }
@@ -936,14 +953,27 @@ impl MeetingManager {
         let mut last_persist = Instant::now();
         let mut last_clock = Instant::now();
         loop {
-            match jobs.recv_timeout(Duration::from_secs(1)) {
-                Ok(job) => {
-                    if !session.shutting_down.load(Ordering::Relaxed) {
-                        self.transcribe_live_segment(session, job);
+            // New segments first; when there are none, catch up on the
+            // backlog; only when both are empty, wait.
+            let job = match jobs.try_recv() {
+                Ok(job) => Some(job),
+                Err(mpsc::TryRecvError::Disconnected) => break,
+                Err(mpsc::TryRecvError::Empty) => {
+                    let deferred = session.live_backlog.lock().unwrap().pop_pending();
+                    match deferred {
+                        Some(job) => Some(job),
+                        None => match jobs.recv_timeout(Duration::from_secs(1)) {
+                            Ok(job) => Some(job),
+                            Err(mpsc::RecvTimeoutError::Timeout) => None,
+                            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                        },
                     }
                 }
-                Err(mpsc::RecvTimeoutError::Timeout) => {}
-                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            };
+            if let Some(job) = job {
+                if !session.shutting_down.load(Ordering::Relaxed) {
+                    self.transcribe_live_segment(session, job);
+                }
             }
             if last_persist.elapsed() >= PERSIST_INTERVAL {
                 last_persist = Instant::now();
@@ -961,11 +991,15 @@ impl MeetingManager {
         }
     }
 
-    /// Transcribe one live segment (the rough preview pass; the on-stop
-    /// finalize replaces these with full-audio re-transcription).
-    fn transcribe_live_segment(&self, session: &Session, job: LiveJob) {
+    /// Transcribe one live segment with the meeting model. This IS the final
+    /// transcript for local models: stop() only finishes the backlog. A
+    /// failed segment is kept for one retry on stop.
+    pub(super) fn transcribe_live_segment(&self, session: &Session, job: LiveJob) {
         let timestamp_ms = job.start_samples.saturating_mul(1000) / WHISPER_SAMPLE_RATE as u64;
-        match self.transcription_manager.transcribe_meeting(job.audio) {
+        match self
+            .transcription_manager
+            .transcribe_meeting_finalize(job.audio.clone())
+        {
             Ok(text) => {
                 if !text.trim().is_empty() {
                     log::info!(
@@ -977,7 +1011,13 @@ impl MeetingManager {
                     self.push_segment_with(session, text, None, None, timestamp_ms, job.source);
                 }
             }
-            Err(e) => log::warn!("meeting segment transcription failed: {}", e),
+            Err(e) => {
+                log::warn!(
+                    "meeting segment transcription failed (retried on stop): {}",
+                    e
+                );
+                session.live_backlog.lock().unwrap().push_failed(job);
+            }
         }
     }
 }
@@ -1042,5 +1082,43 @@ mod tests {
         assert!(released.iter().all(|&len| len <= cfg.max_pending_samples));
         let (pending, _) = merger.take().unwrap();
         assert!(pending.len() <= cfg.max_pending_samples);
+    }
+
+    fn job(start_secs: u64, secs: usize) -> super::LiveJob {
+        super::LiveJob {
+            audio: vec![0.0; secs * 16_000],
+            start_samples: start_secs * 16_000,
+            source: super::TranscriptSource::System,
+        }
+    }
+
+    #[test]
+    fn backlog_returns_deferred_and_failed_segments_in_time_order() {
+        let mut backlog = super::super::session::LiveBacklog::default();
+        assert!(backlog.push_pending(job(60, 20)));
+        assert!(backlog.push_failed(job(10, 20)));
+        assert!(backlog.push_pending(job(90, 20)));
+        assert_eq!(backlog.pop_pending().unwrap().start_samples(), 60 * 16_000);
+        let left: Vec<u64> = backlog
+            .take_all()
+            .unwrap()
+            .iter()
+            .map(|j| j.start_samples() / 16_000)
+            .collect();
+        assert_eq!(left, vec![10, 90]);
+        assert!(backlog.take_all().unwrap().is_empty());
+    }
+
+    #[test]
+    fn an_overflowing_backlog_asks_for_the_full_pass() {
+        let mut backlog = super::super::session::LiveBacklog::default();
+        let mut start = 0;
+        while backlog.push_pending(job(start, 30)) {
+            start += 30;
+        }
+        // 30 minutes fit, the next segment does not.
+        assert_eq!(start, 30 * 60);
+        assert!(!backlog.push_failed(job(start, 1)));
+        assert!(backlog.take_all().is_none());
     }
 }

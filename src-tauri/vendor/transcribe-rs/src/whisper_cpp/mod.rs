@@ -261,15 +261,19 @@ impl WhisperEngine {
         let num_segments = self.state.full_n_segments();
 
         let mut segments = Vec::new();
-        let mut full_text = String::new();
+        // Raw bytes, decoded once at the end: whisper can split a multi-byte
+        // character (Turkish ğ/ş/ı, any CJK) across two tokens or even two
+        // segments, so a strict per-segment decode failed the whole window and
+        // a lossy per-segment one would still mangle that character.
+        let mut full_bytes: Vec<u8> = Vec::new();
 
         for i in 0..num_segments {
             let segment = self
                 .state
                 .get_segment(i)
                 .ok_or_else(|| TranscribeError::Inference(format!("segment {i} out of bounds")))?;
-            let text = segment
-                .to_str()
+            let bytes = segment
+                .to_bytes()
                 .map_err(|e| TranscribeError::Inference(e.to_string()))?;
             let start = segment.start_timestamp() as f32 / 100.0;
             let end = segment.end_timestamp() as f32 / 100.0;
@@ -277,13 +281,13 @@ impl WhisperEngine {
             segments.push(TranscriptionSegment {
                 start,
                 end,
-                text: text.to_string(),
+                text: String::from_utf8_lossy(bytes).into_owned(),
             });
-            full_text.push_str(text);
+            full_bytes.extend_from_slice(bytes);
         }
 
         Ok(TranscriptionResult {
-            text: full_text.trim().to_string(),
+            text: decode_whisper_text(&full_bytes),
             segments: Some(segments),
         })
     }
@@ -317,5 +321,30 @@ impl SpeechModel for WhisperEngine {
             ..Default::default()
         };
         self.infer(samples, &params)
+    }
+}
+
+/// Decode whisper's output bytes, replacing (not failing on) invalid UTF-8.
+fn decode_whisper_text(bytes: &[u8]) -> String {
+    String::from_utf8_lossy(bytes).trim().to_string()
+}
+
+#[cfg(test)]
+mod utf8_tests {
+    use super::decode_whisper_text;
+
+    #[test]
+    fn a_character_split_across_segments_is_reassembled() {
+        // "değil": 'ğ' is C4 9F, split between two segments' bytes.
+        let first = b" de\xC4";
+        let second = b"\x9Fil";
+        let mut all = first.to_vec();
+        all.extend_from_slice(second);
+        assert_eq!(decode_whisper_text(&all), "değil");
+    }
+
+    #[test]
+    fn invalid_bytes_do_not_fail_the_window() {
+        assert_eq!(decode_whisper_text(b"ok \xFF yes"), "ok \u{FFFD} yes");
     }
 }

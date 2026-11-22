@@ -97,9 +97,9 @@ impl MeetingManager {
     /// the file and can simply try again.
     pub fn import_recording(&self, path: &std::path::Path) -> Result<i64, String> {
         let result = self.run_exclusive(|| {
-            #[cfg(target_os = "macos")]
+            #[cfg(meeting_capture)]
             return self.run_import(path);
-            #[cfg(not(target_os = "macos"))]
+            #[cfg(not(meeting_capture))]
             {
                 let _ = path;
                 Err("Importing recordings is only supported on macOS".to_string())
@@ -118,9 +118,9 @@ impl MeetingManager {
     pub fn retranscribe_meeting(&self, id: i64) -> Result<i64, String> {
         let result = self.ensure_not_live(id).and_then(|()| {
             self.run_exclusive(|| {
-                #[cfg(target_os = "macos")]
+                #[cfg(meeting_capture)]
                 return self.run_retranscribe(id);
-                #[cfg(not(target_os = "macos"))]
+                #[cfg(not(meeting_capture))]
                 {
                     let _ = id;
                     Err("Re-transcription is only supported on macOS".to_string())
@@ -162,7 +162,7 @@ impl MeetingManager {
         let mut final_transcript = record.transcript.clone();
         let usage = Mutex::new(crate::ai_usage::MeetingUsage::default());
 
-        #[cfg(target_os = "macos")]
+        #[cfg(meeting_capture)]
         {
             let buffers = self
                 .store
@@ -235,7 +235,7 @@ impl MeetingManager {
         Ok(final_transcript)
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(meeting_capture)]
     fn run_retranscribe(&self, id: i64) -> Result<i64, String> {
         use super::import;
 
@@ -329,7 +329,7 @@ impl MeetingManager {
         Ok(id)
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(meeting_capture)]
     fn run_import(&self, path: &std::path::Path) -> Result<i64, String> {
         use super::import;
 
@@ -425,7 +425,7 @@ impl MeetingManager {
     /// phone on the table cannot tell "you" from "others", so everything is
     /// labelled as the room ("others"), which is also the stream Gemini may
     /// diarize (only when the whole recording fits in one request).
-    #[cfg(target_os = "macos")]
+    #[cfg(meeting_capture)]
     fn transcribe_import(
         &self,
         audio: &[f32],
@@ -487,7 +487,7 @@ impl MeetingManager {
     }
 
     /// Directory of saved playback audio: `{app_data}/meetings`.
-    #[cfg(target_os = "macos")]
+    #[cfg(meeting_capture)]
     fn audio_dir(&self) -> Result<std::path::PathBuf, String> {
         let dir = crate::portable::app_data_dir(&self.app_handle)
             .map_err(|e| e.to_string())?
@@ -497,7 +497,7 @@ impl MeetingManager {
     }
 
     /// Point row `id` at its new playback file and drop any older WAV copy.
-    #[cfg(target_os = "macos")]
+    #[cfg(meeting_capture)]
     fn adopt_audio(&self, id: i64, path: &std::path::Path) -> Result<(), String> {
         self.store
             .update_audio_path(id, &path.to_string_lossy())
@@ -510,7 +510,7 @@ impl MeetingManager {
 
     /// Write 16 kHz mono `samples` as the playback audio of meeting `id`
     /// (`{app_data_dir}/meetings/{id}.mp3`) and record the path on the row.
-    #[cfg(target_os = "macos")]
+    #[cfg(meeting_capture)]
     fn write_meeting_audio(&self, id: i64, samples: &[f32]) -> Result<std::path::PathBuf, String> {
         use crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE;
         use crate::audio_toolkit::mp3;
@@ -523,7 +523,7 @@ impl MeetingManager {
     /// Encode a raw capture buffer as the playback audio of meeting `id`,
     /// streaming (a multi-hour buffer is never loaded whole). `Ok(None)` when
     /// the buffer held no audio.
-    #[cfg(target_os = "macos")]
+    #[cfg(meeting_capture)]
     pub(super) fn save_audio_from_raw(
         &self,
         id: i64,
@@ -575,7 +575,7 @@ impl MeetingManager {
     /// Startup maintenance, on a background thread: convert meetings still
     /// stored as WAV to MP3, then remove capture buffers no meeting refers to
     /// any more (left by a stop whose audio save failed, or by older builds).
-    #[cfg(target_os = "macos")]
+    #[cfg(meeting_capture)]
     pub fn convert_wav_audio_to_mp3(&self) {
         self.convert_legacy_wavs();
         self.sweep_orphan_buffers();
@@ -585,7 +585,7 @@ impl MeetingManager {
     /// Meetings recorded before MP3 storage kept 32-bit float WAVs (~230 MB
     /// per hour). Each file is replaced only after its MP3 is written and the
     /// row points at it, so an interrupted run just resumes next launch.
-    #[cfg(target_os = "macos")]
+    #[cfg(meeting_capture)]
     fn convert_legacy_wavs(&self) {
         let pending = match self.store.list_wav_audio() {
             Ok(rows) => rows,
@@ -630,7 +630,7 @@ impl MeetingManager {
     /// Delete capture buffers in the buffer dir that no `recording` row refers
     /// to. Only files untouched for an hour: a session that just started
     /// writes its buffers before its row exists.
-    #[cfg(target_os = "macos")]
+    #[cfg(meeting_capture)]
     fn sweep_orphan_buffers(&self) {
         const MIN_AGE: std::time::Duration = std::time::Duration::from_secs(60 * 60);
         let referenced = match self.store.referenced_buffer_paths() {

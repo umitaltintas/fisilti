@@ -2,6 +2,8 @@ import React from "react";
 import { useSettings } from "../../hooks/useSettings";
 import { GlobalShortcutInput } from "./GlobalShortcutInput";
 import { HandyKeysShortcutInput } from "./HandyKeysShortcutInput";
+import { PortalShortcutInput } from "./PortalShortcutInput";
+import { usePortalShortcuts } from "../../hooks/usePortalShortcuts";
 
 interface ShortcutInputProps {
   descriptionMode?: "inline" | "tooltip";
@@ -16,10 +18,25 @@ interface ShortcutInputProps {
  *
  * - "tauri" (default): Uses GlobalShortcutInput with JS keyboard events
  * - "handy_keys": Uses HandyKeysShortcutInput with backend key events
+ *
+ * On Linux/Wayland the XDG GlobalShortcuts portal takes over regardless of
+ * that setting: the desktop owns the key choice, so the row only displays it.
  */
 export const ShortcutInput: React.FC<ShortcutInputProps> = (props) => {
   const { getSetting } = useSettings();
+  const portal = usePortalShortcuts();
   const keyboardImplementation = getSetting("keyboard_implementation");
+
+  if (portal.active) {
+    return (
+      <PortalShortcutInput
+        {...props}
+        trigger={portal.triggers[props.shortcutId]}
+        error={portal.error}
+        openSystemSettings={portal.openSystemSettings}
+      />
+    );
+  }
 
   // Default to Tauri implementation if not set
   if (keyboardImplementation === "handy_keys") {

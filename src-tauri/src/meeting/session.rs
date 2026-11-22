@@ -154,6 +154,92 @@ fn append_text(text: &mut String, piece: &str) {
     text.push_str(piece);
 }
 
+/// Most audio the live backlog may hold (30 min, ~115 MB of f32). Past this the
+/// live pass has fallen too far behind to be worth catching up, so the backlog
+/// is dropped and stop() re-transcribes the whole meeting instead.
+#[cfg(meeting_capture)]
+const MAX_BACKLOG_SAMPLES: usize =
+    crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE as usize * 60 * 30;
+
+/// Live segments the live pass has not transcribed yet: segments that arrived
+/// while the worker was busy (`pending`, caught up whenever the worker idles)
+/// and segments whose transcription failed (`failed`, retried once on stop).
+///
+/// This is what lets the live transcript BE the final transcript: as long as
+/// nothing overflowed, every live segment ends up transcribed by the meeting
+/// model, and stop() only has to finish the backlog instead of re-reading the
+/// whole recording.
+#[cfg(meeting_capture)]
+#[derive(Default)]
+pub struct LiveBacklog {
+    pending: std::collections::VecDeque<super::capture::LiveJob>,
+    failed: Vec<super::capture::LiveJob>,
+    samples: usize,
+    overflowed: bool,
+}
+
+#[cfg(meeting_capture)]
+impl LiveBacklog {
+    /// Queue a segment the worker had no room for. Returns false once the
+    /// backlog has overflowed (the segment is then covered by the full pass).
+    pub(super) fn push_pending(&mut self, job: super::capture::LiveJob) -> bool {
+        if self.admit(job.len()) {
+            self.pending.push_back(job);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Keep a segment whose live transcription failed, for one retry on stop.
+    pub(super) fn push_failed(&mut self, job: super::capture::LiveJob) -> bool {
+        if self.admit(job.len()) {
+            self.failed.push(job);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Oldest segment still waiting, for the worker to catch up on.
+    pub(super) fn pop_pending(&mut self) -> Option<super::capture::LiveJob> {
+        let job = self.pending.pop_front()?;
+        self.samples -= job.len();
+        Some(job)
+    }
+
+    /// Everything left (oldest first), or `None` when the backlog overflowed
+    /// and the live transcript has holes only a full pass can fill.
+    pub(super) fn take_all(&mut self) -> Option<Vec<super::capture::LiveJob>> {
+        if self.overflowed {
+            return None;
+        }
+        let mut jobs: Vec<_> = self
+            .pending
+            .drain(..)
+            .chain(self.failed.drain(..))
+            .collect();
+        jobs.sort_by_key(|j| j.start_samples());
+        self.samples = 0;
+        Some(jobs)
+    }
+
+    fn admit(&mut self, len: usize) -> bool {
+        if self.overflowed {
+            return false;
+        }
+        if self.samples + len > MAX_BACKLOG_SAMPLES {
+            self.overflowed = true;
+            self.pending.clear();
+            self.failed.clear();
+            self.samples = 0;
+            return false;
+        }
+        self.samples += len;
+        true
+    }
+}
+
 /// Everything one meeting owns. Shared (`Arc`) between the manager slot, the
 /// capture thread, the live-transcription worker, the naming thread and the
 /// `stop()` that finalizes it.
@@ -194,7 +280,10 @@ pub struct Session {
     pub buffer_error_reported: AtomicBool,
     /// The capture thread.
     pub worker: Mutex<Option<std::thread::JoinHandle<()>>>,
-    #[cfg(target_os = "macos")]
+    /// Live segments not transcribed yet; see [`LiveBacklog`].
+    #[cfg(meeting_capture)]
+    pub live_backlog: Mutex<LiveBacklog>,
+    #[cfg(meeting_capture)]
     pub subtitles: Mutex<crate::meeting::live::SubtitleFeed>,
 }
 
@@ -219,7 +308,9 @@ impl Session {
             persist_dirty: AtomicBool::new(false),
             buffer_error_reported: AtomicBool::new(false),
             worker: Mutex::new(None),
-            #[cfg(target_os = "macos")]
+            #[cfg(meeting_capture)]
+            live_backlog: Mutex::new(LiveBacklog::default()),
+            #[cfg(meeting_capture)]
             subtitles: Mutex::new(Default::default()),
         }
     }

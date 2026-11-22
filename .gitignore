@@ -40,3 +40,6 @@ blob-report/
 
 # Nix build output
 result
+
+# Build output of vendored crates tested on their own
+src-tauri/vendor/*/target

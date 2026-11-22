@@ -165,6 +165,14 @@ impl MeetingManager {
             return;
         }
 
+        // Local meeting model: the live pass already transcribed the meeting
+        // with it, segment by segment at natural pauses. Only what it did not
+        // get to (the backlog) is left, so stop() takes seconds instead of
+        // re-reading the whole recording.
+        if gemini.is_none() && !self.meeting_model_is_cloud() && self.finish_live_backlog(session) {
+            return;
+        }
+
         let Some(buffers) = session.buffers() else {
             return;
         };
@@ -225,6 +233,49 @@ impl MeetingManager {
                 "meeting finalize: full re-transcription yielded no text; keeping live transcript"
             ),
         }
+    }
+
+    /// Transcribe whatever the live pass left in the backlog and merge it into
+    /// the transcript. Returns false when the backlog overflowed, in which case
+    /// the caller re-transcribes the whole recording.
+    fn finish_live_backlog(&self, session: &Session) -> bool {
+        let Some(jobs) = session.live_backlog.lock().unwrap().take_all() else {
+            log::warn!("meeting finalize: live backlog overflowed; re-transcribing everything");
+            return false;
+        };
+        if jobs.is_empty() {
+            log::info!("meeting finalize: live transcript is complete; nothing to redo");
+            return true;
+        }
+
+        log::info!(
+            "meeting finalize: finishing {} backlog segment(s) ({:.0}s of audio)",
+            jobs.len(),
+            jobs.iter().map(|j| j.len()).sum::<usize>() as f32 / WHISPER_SAMPLE_RATE as f32
+        );
+        self.emit_finalizing(true);
+        for job in jobs {
+            self.transcribe_live_segment(session, job);
+        }
+        self.emit_finalizing(false);
+
+        // Anything that failed twice is a hole in the transcript; say so.
+        let still_failed = session.live_backlog.lock().unwrap().take_all();
+        match still_failed {
+            Some(left) if !left.is_empty() => {
+                let secs =
+                    left.iter().map(|j| j.len()).sum::<usize>() / WHISPER_SAMPLE_RATE as usize;
+                self.emit_error(&format!(
+                    "Part of the meeting could not be transcribed ({} s). Re-transcribe it from the meeting's page.",
+                    secs
+                ));
+            }
+            _ => {}
+        }
+        if session.persist_dirty.swap(false, Ordering::SeqCst) {
+            self.persist_incremental_now(session);
+        }
+        true
     }
 
     /// Transcribe a session's mic + system capture buffers through Gemini (when
@@ -741,17 +792,46 @@ fn windows_for_source(audio: &mut AudioSource<'_>, vad_path: &Path) -> Vec<(usiz
     windows_from_voice(len, &flags)
 }
 
-/// Split `n` samples into time-ordered `[start, end)` windows from per-frame
-/// voice decisions (`FINALIZE_FRAME_SAMPLES` per flag). A window closes once it
-/// is past `FINALIZE_TARGET_SAMPLES` AND a run of
-/// `FINALIZE_SILENCE_SPLIT_FRAMES` silent frames is seen (a natural pause), or
-/// unconditionally at `FINALIZE_MAX_SAMPLES`. Windows with no speech at all
-/// are dropped. Pure, so the windowing is testable without a VAD model.
+// Silence longer than this (~1.5 s) ends a window and is skipped entirely:
+// sending it costs time and is where Whisper invents text.
+const FINALIZE_SKIP_SILENCE_FRAMES: usize = 50;
+// Audio kept on each side of the speech around a skipped silence (~300 ms), so
+// a soft word onset or tail the VAD scored as silence is not clipped.
+const FINALIZE_EDGE_PAD_SAMPLES: usize = (WHISPER_SAMPLE_RATE as usize * 3) / 10;
+// A window needs at least this much speech (~300 ms) to be sent. Shorter is a
+// click, cough or VAD blip, and tiny windows are what Whisper hallucinates on.
+const FINALIZE_MIN_VOICED_FRAMES: usize = 10;
+
+/// Split `n` samples into time-ordered `[start, end)` windows that cover the
+/// SPEECH in the audio, from per-frame voice decisions
+/// (`FINALIZE_FRAME_SAMPLES` per flag):
+///
+/// - silence longer than `FINALIZE_SKIP_SILENCE_FRAMES` closes the window
+///   (trimmed to the speech plus `FINALIZE_EDGE_PAD_SAMPLES`) and is skipped;
+///   the next window opens at the next speech;
+/// - past `FINALIZE_TARGET_SAMPLES`, a short pause
+///   (`FINALIZE_SILENCE_SPLIT_FRAMES`) closes the window at that pause;
+/// - at `FINALIZE_MAX_SAMPLES` the window is force-closed mid-speech, and the
+///   next one starts `FINALIZE_OVERLAP_SAMPLES` earlier so the cut word is
+///   recovered (de-duplicated at merge time);
+/// - windows with less than `FINALIZE_MIN_VOICED_FRAMES` of speech are dropped.
+///
+/// Pure, so the windowing is testable without a VAD model.
 pub(super) fn windows_from_voice(n: usize, flags: &[bool]) -> Vec<(usize, usize)> {
+    struct Open {
+        start: usize,
+        last_voice_end: usize,
+        voiced: usize,
+    }
+
     let mut windows: Vec<(usize, usize)> = Vec::new();
-    let mut win_start = 0usize;
+    let mut open: Option<Open> = None;
     let mut silence_run = 0usize;
-    let mut win_has_speech = false;
+    let close = |windows: &mut Vec<(usize, usize)>, w: &Open, end: usize| {
+        if w.voiced >= FINALIZE_MIN_VOICED_FRAMES && end > w.start {
+            windows.push((w.start, end));
+        }
+    };
 
     for (i, &is_voice) in flags.iter().enumerate() {
         let pos = i * FINALIZE_FRAME_SAMPLES;
@@ -759,33 +839,52 @@ pub(super) fn windows_from_voice(n: usize, flags: &[bool]) -> Vec<(usize, usize)
             break;
         }
         let end = (pos + FINALIZE_FRAME_SAMPLES).min(n);
+
         if is_voice {
-            win_has_speech = true;
             silence_run = 0;
+            let w = open.get_or_insert_with(|| Open {
+                // Never reach back into the previous window's audio.
+                start: pos
+                    .saturating_sub(FINALIZE_EDGE_PAD_SAMPLES)
+                    .max(windows.last().map_or(0, |w| w.1)),
+                last_voice_end: end,
+                voiced: 0,
+            });
+            w.voiced += 1;
+            w.last_voice_end = end;
         } else {
             silence_run += 1;
         }
 
-        let win_len = end - win_start;
-        let past_target = win_len >= FINALIZE_TARGET_SAMPLES;
-        let safe_split = past_target && silence_run >= FINALIZE_SILENCE_SPLIT_FRAMES;
-        let force_split = win_len >= FINALIZE_MAX_SAMPLES;
+        let Some(w) = open.as_ref() else {
+            continue;
+        };
+        let win_len = end - w.start;
 
-        if safe_split || force_split {
-            if win_has_speech {
-                windows.push((win_start, end));
-            }
-            // Start the next window before this one's end so a word cut at a
-            // force-split is recovered. Guarded so win_start only advances.
-            let next_start = end.saturating_sub(FINALIZE_OVERLAP_SAMPLES);
-            win_start = next_start.max(win_start + 1).min(end);
-            win_has_speech = false;
-            silence_run = 0;
+        if silence_run >= FINALIZE_SKIP_SILENCE_FRAMES {
+            let trimmed = (w.last_voice_end + FINALIZE_EDGE_PAD_SAMPLES).min(n);
+            close(&mut windows, w, trimmed);
+            open = None;
+        } else if win_len >= FINALIZE_TARGET_SAMPLES && silence_run >= FINALIZE_SILENCE_SPLIT_FRAMES
+        {
+            close(&mut windows, w, end);
+            open = None;
+        } else if win_len >= FINALIZE_MAX_SAMPLES {
+            close(&mut windows, w, end);
+            let next_start = end
+                .saturating_sub(FINALIZE_OVERLAP_SAMPLES)
+                .max(w.start + 1);
+            open = Some(Open {
+                start: next_start,
+                last_voice_end: end,
+                voiced: 0,
+            });
         }
     }
 
-    if win_start < n && win_has_speech {
-        windows.push((win_start, n));
+    if let Some(w) = open {
+        let trimmed = (w.last_voice_end + FINALIZE_EDGE_PAD_SAMPLES).min(n);
+        close(&mut windows, &w, trimmed);
     }
     windows
 }
@@ -813,7 +912,7 @@ pub(super) fn chunk_fixed(n: usize) -> Vec<(usize, usize)> {
 mod tests {
     use super::*;
 
-    #[cfg(target_os = "macos")]
+    #[cfg(meeting_capture)]
     #[test]
     fn long_audio_goes_to_gemini_in_pieces_that_cover_every_sample() {
         let piece = GEMINI_PIECE_SECS * 16_000;
@@ -825,7 +924,7 @@ mod tests {
         assert!(gemini_pieces(0).is_empty());
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(meeting_capture)]
     #[test]
     fn chunk_fixed_splits_into_overlapping_max_windows_covering_all_samples() {
         use super::{FINALIZE_MAX_SAMPLES, FINALIZE_OVERLAP_SAMPLES};
@@ -892,6 +991,28 @@ mod tests {
     }
 
     #[test]
+    fn long_silences_are_skipped_and_windows_trimmed_to_the_speech() {
+        let frame_at = |secs: f64| (secs * 16_000.0) as usize / FINALIZE_FRAME_SAMPLES;
+        // Speech 0-5 s, silence 5-60 s, speech 60-64 s, silence to 90 s.
+        let (n, voice) = flags(90, |i| {
+            (i >= frame_at(5.0) && i < frame_at(60.0)) || i >= frame_at(64.0)
+        });
+        let windows = windows_from_voice(n, &voice);
+        assert_eq!(windows.len(), 2, "{windows:?}");
+        let secs = |s: usize| s as f64 / 16_000.0;
+        assert!(secs(windows[0].0) < 0.01 && (5.0..5.5).contains(&secs(windows[0].1)));
+        assert!((59.5..60.0).contains(&secs(windows[1].0)));
+        assert!((64.0..64.5).contains(&secs(windows[1].1)));
+    }
+
+    #[test]
+    fn a_short_blip_is_not_sent() {
+        // 90 ms of "speech" in a minute of silence: a click, not a word.
+        let (n, voice) = flags(60, |i| !(1000..1003).contains(&i));
+        assert!(windows_from_voice(n, &voice).is_empty());
+    }
+
+    #[test]
     fn silence_produces_no_windows() {
         let (n, voice) = flags(90, |_| true);
         assert!(windows_from_voice(n, &voice).is_empty());
@@ -914,7 +1035,7 @@ mod tests {
         assert_eq!(result.total_failure(), None, "a partial transcript is kept");
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(meeting_capture)]
     #[test]
     fn speakers_are_numbered_by_when_they_first_talk() {
         use super::SpeakerLabels;
@@ -928,7 +1049,7 @@ mod tests {
         assert_eq!(labels.label("spk:5"), "Speaker 3");
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(meeting_capture)]
     #[test]
     fn speaker_numbering_survives_an_unfamiliar_tag_format() {
         use super::SpeakerLabels;

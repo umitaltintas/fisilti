@@ -13,6 +13,9 @@ import { CloudKeysPanel } from "./CloudKeysPanel";
 import { MeetingModelPanel } from "./MeetingModelPanel";
 import { ModelRow } from "./ModelRow";
 import { isCloudModel } from "@/lib/utils/model";
+import { MeetingPreferences } from "../meeting/MeetingPreferences";
+
+const SEARCH_THRESHOLD = 8;
 
 type GroupId = "installed" | "cloud" | "multilingual" | "english" | "regional";
 
@@ -199,41 +202,46 @@ export const ModelsSettings: React.FC = () => {
   }
 
   return (
-    <div className="mx-auto w-full max-w-3xl space-y-6">
+    <div className="space-y-7">
       {dialog}
       <ActiveModelPanel model={currentModelInfo} />
       <MeetingModelPanel models={models} dictationModel={currentModelInfo} />
+      <MeetingPreferences part="gemini" />
       <CloudKeysPanel />
 
       <div className="space-y-3">
         <div className="flex items-center justify-between gap-3 px-1">
-          <h2 className="text-xs font-medium uppercase tracking-wide text-mid-gray">
+          <h2 className="text-xs font-semibold text-sub">
             {t("settings.models.browse")}
           </h2>
-          <div className="relative w-64">
-            <Search
-              className="pointer-events-none absolute start-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-faint"
-              aria-hidden
-            />
-            <input
-              type="search"
-              aria-label={t("settings.models.searchPlaceholder")}
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={t("settings.models.searchPlaceholder")}
-              className="w-full rounded-lg border border-mid-gray/30 bg-background py-1.5 ps-8 pe-7 text-sm focus:border-logo-primary focus:outline-none [&::-webkit-search-cancel-button]:hidden"
-            />
-            {searching && (
-              <button
-                type="button"
-                onClick={() => setQuery("")}
-                aria-label={t("common.clear")}
-                className="absolute end-2 top-1/2 -translate-y-1/2 text-faint hover:text-text cursor-pointer"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </div>
+          {/* The catalogue is curated down to a handful; search only pays
+              off once custom or legacy models make the list long. */}
+          {models.length > SEARCH_THRESHOLD && (
+            <div className="relative w-64">
+              <Search
+                className="pointer-events-none absolute start-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-faint"
+                aria-hidden
+              />
+              <input
+                type="search"
+                aria-label={t("settings.models.searchPlaceholder")}
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={t("settings.models.searchPlaceholder")}
+                className="w-full rounded-lg border border-mid-gray/30 bg-background py-1.5 ps-8 pe-7 text-sm focus:border-logo-primary focus:outline-none [&::-webkit-search-cancel-button]:hidden"
+              />
+              {searching && (
+                <button
+                  type="button"
+                  onClick={() => setQuery("")}
+                  aria-label={t("common.clear")}
+                  className="absolute end-2 top-1/2 -translate-y-1/2 text-faint hover:text-text cursor-pointer"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {matches.length === 0 && (

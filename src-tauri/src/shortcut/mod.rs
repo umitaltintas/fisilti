@@ -5,12 +5,19 @@
 //!
 //! - `tauri`: Uses Tauri's built-in global-shortcut plugin
 //! - `handy_keys`: Uses the handy-keys library for more control
+//! - `portal` (Linux/Wayland only): the XDG Desktop Portal GlobalShortcuts
+//!   interface, the only mechanism that works while a native Wayland window
+//!   has focus
 //!
 //! The active implementation is determined by the `keyboard_implementation`
-//! setting and can be changed at runtime.
+//! setting and can be changed at runtime. On a Wayland session whose portal
+//! offers GlobalShortcuts the portal backend overrides the setting for as
+//! long as it is up (it is a runtime fact, never persisted).
 
 mod handler;
 pub mod handy_keys;
+#[cfg(target_os = "linux")]
+mod portal;
 mod tauri_impl;
 
 use log::{error, info, warn};
@@ -30,8 +37,29 @@ use crate::tray;
 
 // Note: Commands are accessed via shortcut::handy_keys:: in lib.rs
 
+/// Whether the XDG portal backend is handling shortcuts (always false off Linux).
+fn portal_active(app: &AppHandle) -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        portal::is_active(app)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = app;
+        false
+    }
+}
+
 /// Initialize shortcuts using the configured implementation
 pub fn init_shortcuts(app: &AppHandle) {
+    // On Wayland the X11-based backends never see keys while a native Wayland
+    // window has focus, so prefer the portal whenever it is available.
+    #[cfg(target_os = "linux")]
+    match portal::init_shortcuts(app) {
+        Ok(()) => return,
+        Err(e) => info!("Portal global shortcuts not used: {}", e),
+    }
+
     let user_settings = settings::load_or_create_app_settings(app);
 
     // Check which implementation to use
@@ -58,6 +86,9 @@ pub fn init_shortcuts(app: &AppHandle) {
 
 /// Register the cancel shortcut (called when recording starts)
 pub fn register_cancel_shortcut(app: &AppHandle) {
+    if portal_active(app) {
+        return; // bound permanently, acted on only while recording
+    }
     let settings = get_settings(app);
     match settings.keyboard_implementation {
         KeyboardImplementation::Tauri => tauri_impl::register_cancel_shortcut(app),
@@ -67,6 +98,9 @@ pub fn register_cancel_shortcut(app: &AppHandle) {
 
 /// Unregister the cancel shortcut (called when recording stops)
 pub fn unregister_cancel_shortcut(app: &AppHandle) {
+    if portal_active(app) {
+        return;
+    }
     let settings = get_settings(app);
     match settings.keyboard_implementation {
         KeyboardImplementation::Tauri => tauri_impl::unregister_cancel_shortcut(app),
@@ -76,6 +110,10 @@ pub fn unregister_cancel_shortcut(app: &AppHandle) {
 
 /// Register a shortcut using the appropriate implementation
 pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    if portal_active(app) {
+        return portal::register_shortcut(app, binding);
+    }
     let settings = get_settings(app);
     match settings.keyboard_implementation {
         KeyboardImplementation::Tauri => tauri_impl::register_shortcut(app, binding),
@@ -85,6 +123,10 @@ pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<()
 
 /// Unregister a shortcut using the appropriate implementation
 pub fn unregister_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    if portal_active(app) {
+        return portal::unregister_shortcut(app, binding);
+    }
     let settings = get_settings(app);
     match settings.keyboard_implementation {
         KeyboardImplementation::Tauri => tauri_impl::unregister_shortcut(app, binding),
@@ -107,6 +149,12 @@ fn replace_shortcut(
     old: &ShortcutBinding,
     new: &ShortcutBinding,
 ) -> Result<(), String> {
+    // The portal backend keys its desired set by binding id, so registering
+    // the new binding already replaces the old one.
+    #[cfg(target_os = "linux")]
+    if portal_active(app) {
+        return portal::register_shortcut(app, new.clone());
+    }
     match implementation {
         // handy-keys tracks one hotkey per binding id and its register already
         // replaces atomically (new first, then the old one is released).
@@ -205,8 +253,16 @@ pub fn change_binding(
 
     // Validate BEFORE touching any registration, so a rejected key leaves the
     // working shortcut in place.
-    if let Err(e) = validate_shortcut_for_implementation(&binding, settings.keyboard_implementation)
-    {
+    #[cfg(target_os = "linux")]
+    let validation = if portal_active(&app) {
+        portal::validate_shortcut(&binding)
+    } else {
+        validate_shortcut_for_implementation(&binding, settings.keyboard_implementation)
+    };
+    #[cfg(not(target_os = "linux"))]
+    let validation =
+        validate_shortcut_for_implementation(&binding, settings.keyboard_implementation);
+    if let Err(e) = validation {
         warn!("change_binding validation error: {}", e);
         return Err(e);
     }
@@ -302,6 +358,14 @@ pub fn change_keyboard_implementation_setting(
     app: AppHandle,
     implementation: String,
 ) -> Result<ImplementationChangeResult, String> {
+    if portal_active(&app) {
+        return Err(
+            "Shortcuts are managed by the system's GlobalShortcuts portal; \
+             the keyboard implementation cannot be changed"
+                .to_string(),
+        );
+    }
+
     let current_settings = settings::get_settings(&app);
     let current_impl = current_settings.keyboard_implementation;
     let new_impl = parse_keyboard_implementation(&implementation);
@@ -363,10 +427,60 @@ pub fn change_keyboard_implementation_setting(
 #[tauri::command]
 #[specta::specta]
 pub fn get_keyboard_implementation(app: AppHandle) -> String {
+    if portal_active(&app) {
+        return "portal".to_string();
+    }
     let settings = settings::get_settings(&app);
     match settings.keyboard_implementation {
         KeyboardImplementation::Tauri => "tauri".to_string(),
         KeyboardImplementation::HandyKeys => "handy_keys".to_string(),
+    }
+}
+
+// ============================================================================
+// XDG Portal (Wayland) status
+// ============================================================================
+
+/// State of the XDG GlobalShortcuts portal backend, for the shortcut settings UI.
+#[derive(Serialize, Type, Clone, Default, Debug)]
+pub struct PortalShortcutStatus {
+    /// The portal backend is handling global shortcuts.
+    pub active: bool,
+    /// Binding id → trigger the desktop actually bound, as a human readable
+    /// description (e.g. `"Ctrl+Space"`). Missing or empty while unassigned.
+    pub triggers: std::collections::HashMap<String, String>,
+    /// Last binding failure (e.g. the user dismissed the system dialog).
+    pub error: Option<String>,
+}
+
+/// Whether global shortcuts are managed by the desktop portal, plus the
+/// trigger it bound for each shortcut.
+#[tauri::command]
+#[specta::specta]
+pub fn get_portal_shortcut_status(app: AppHandle) -> PortalShortcutStatus {
+    #[cfg(target_os = "linux")]
+    {
+        portal::status(&app)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = app;
+        PortalShortcutStatus::default()
+    }
+}
+
+/// Open the desktop's own shortcut settings for this app (portal backend only).
+#[tauri::command]
+#[specta::specta]
+pub fn configure_portal_shortcuts(app: AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        portal::configure(&app)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = app;
+        Err("Portal shortcuts are only available on Linux".to_string())
     }
 }
 

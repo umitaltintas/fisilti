@@ -227,8 +227,13 @@ fn get_filler_words_for_language(lang: &str) -> &'static [&'static str] {
 
 static MULTI_SPACE_PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s{2,}").unwrap());
 
-/// Collapses repeated 1-2 letter words (3+ repetitions) to a single instance.
-/// E.g., "wh wh wh wh" -> "wh", "I I I I" -> "I"
+/// A word repeated this many times in a row is a decoder loop ("yavuz,
+/// yavuz, yavuz, …"), not speech; it collapses to one.
+const WORD_LOOP_MIN_RUN: usize = 4;
+
+/// Collapses repeated 1-2 letter words (3+ repetitions) and any word repeated
+/// `WORD_LOOP_MIN_RUN`+ times (punctuation ignored) to a single instance.
+/// E.g., "wh wh wh wh" -> "wh", "otak, otak, otak, otak." -> "otak."
 fn collapse_stutters(text: &str) -> String {
     let words: Vec<&str> = text.split_whitespace().collect();
     if words.is_empty() {
@@ -241,6 +246,25 @@ fn collapse_stutters(text: &str) -> String {
     while i < words.len() {
         let word = words[i];
         let word_lower = word.to_lowercase();
+
+        // A longer word looping: compare without punctuation, keep the last
+        // copy so the sentence keeps its closing punctuation.
+        let bare = |w: &str| {
+            w.trim_matches(|c: char| !c.is_alphanumeric())
+                .to_lowercase()
+        };
+        let bare_word = bare(word);
+        if word_lower.chars().count() > 2 && !bare_word.is_empty() {
+            let mut count = 1;
+            while i + count < words.len() && bare(words[i + count]) == bare_word {
+                count += 1;
+            }
+            if count >= WORD_LOOP_MIN_RUN {
+                result.push(words[i + count - 1]);
+                i += count;
+                continue;
+            }
+        }
 
         // Only process 1-2 letter words
         if word_lower.len() <= 2 && word_lower.chars().all(|c| c.is_alphabetic()) {
@@ -267,9 +291,105 @@ fn collapse_stutters(text: &str) -> String {
     result.join(" ")
 }
 
+/// Sentences Whisper invents over silence, music or game audio: YouTube
+/// outros and subtitle credits it saw in training. Matched against a whole
+/// normalized sentence (see `normalize_sentence`), so ordinary speech that
+/// merely contains "teşekkür ederim" is kept.
+const HALLUCINATED_SENTENCES: &[&str] = &[
+    // Turkish
+    "izlediğiniz için teşekkür ederim",
+    "izlediğiniz için teşekkür ederiz",
+    "izlediğiniz için teşekkürler",
+    "bir sonraki videoda görüşmek üzere",
+    "bir sonraki videoda görüşürüz",
+    "sonraki videoda görüşmek üzere",
+    "sonraki videoda görüşürüz",
+    "bir sonraki videoda görüşmek üzere hoşçakalın",
+    "abone olmayı unutmayın",
+    "kanalıma abone olmayı unutmayın",
+    "videoyu beğenmeyi ve abone olmayı unutmayın",
+    "altyazı m k",
+    "altyazı mk",
+    "altyazılar m k",
+    // English
+    "thanks for watching",
+    "thank you for watching",
+    "thank you so much for watching",
+    "please subscribe",
+    "see you in the next video",
+    "subtitles by the amara org community",
+];
+
+/// Lowercase letters and digits only, single-spaced. Handles the Turkish
+/// dotted capital (`İ` lowercases to `i` + U+0307) so it matches `i`.
+fn normalize_sentence(s: &str) -> String {
+    let lowered: String = s
+        .chars()
+        .map(|c| match c {
+            'İ' => 'i',
+            'I' => 'ı',
+            c => c,
+        })
+        .flat_map(char::to_lowercase)
+        .filter(|c| *c != '\u{0307}')
+        .map(|c| if c.is_alphanumeric() { c } else { ' ' })
+        .collect();
+    lowered.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Split after sentence-ending punctuation, keeping it with its sentence.
+fn split_sentences(text: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut start = 0;
+    let mut chars = text.char_indices().peekable();
+    while let Some((i, c)) = chars.next() {
+        if matches!(c, '.' | '!' | '?' | '…') {
+            let next_is_space = chars.peek().is_none_or(|(_, n)| n.is_whitespace());
+            if next_is_space {
+                let end = i + c.len_utf8();
+                let sentence = text[start..end].trim();
+                if !sentence.is_empty() {
+                    out.push(sentence);
+                }
+                start = end;
+            }
+        }
+    }
+    let rest = text[start..].trim();
+    if !rest.is_empty() {
+        out.push(rest);
+    }
+    out
+}
+
+/// Drop sentences Whisper hallucinates (see `HALLUCINATED_SENTENCES`) and
+/// collapse a sentence repeated back to back into one copy — a decoder stuck
+/// in a loop, never real speech.
+fn remove_hallucinations(text: &str) -> String {
+    let mut kept: Vec<&str> = Vec::new();
+    let mut last_norm = String::new();
+    for sentence in split_sentences(text) {
+        let norm = normalize_sentence(sentence);
+        if norm.is_empty() {
+            kept.push(sentence);
+            continue;
+        }
+        if HALLUCINATED_SENTENCES.contains(&norm.as_str()) {
+            continue;
+        }
+        if norm == last_norm {
+            continue;
+        }
+        last_norm = norm;
+        kept.push(sentence);
+    }
+    kept.join(" ")
+}
+
 /// Filters transcription output by removing filler words and stutter artifacts.
 ///
 /// This function cleans up raw transcription text by:
+/// 0. Dropping hallucinated outro sentences and back-to-back repeats
 /// 1. Removing filler words based on the app language (or custom list)
 /// 2. Collapsing repeated 1-2 letter stutters (e.g., "wh wh wh" -> "wh")
 /// 3. Cleaning up excess whitespace
@@ -287,7 +407,7 @@ pub fn filter_transcription_output(
     lang: &str,
     custom_filler_words: &Option<Vec<String>>,
 ) -> String {
-    let mut filtered = text.to_string();
+    let mut filtered = remove_hallucinations(text);
 
     // Build filler patterns from custom list or language defaults
     let patterns: Vec<Regex> = match custom_filler_words {
@@ -319,6 +439,50 @@ pub fn filter_transcription_output(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn drops_youtube_outro_hallucinations() {
+        let raw = "Şu kadınla bir görüşelim bakalım. İzlediğiniz için teşekkür ederim. \
+                   Bir sonraki videoda görüşmek üzere. Bir sonraki videoda görüşmek üzere. \
+                   Ben de bakım. Bir sonraki videoda görüşmek üzere. Ama Danyo ne var.";
+        assert_eq!(
+            remove_hallucinations(raw),
+            "Şu kadınla bir görüşelim bakalım. Ben de bakım. Ama Danyo ne var."
+        );
+    }
+
+    #[test]
+    fn keeps_speech_that_only_contains_a_phrase() {
+        let raw = "Geldiğiniz için teşekkür ederim. Toplantıyı izlediğiniz için teşekkür ederim, şimdi sorulara geçelim.";
+        assert_eq!(remove_hallucinations(raw), raw);
+    }
+
+    #[test]
+    fn collapses_word_loops() {
+        assert_eq!(
+            filter_transcription_output(
+                "Hadi et otak, otak, otak, otak, otak, otak. Yavuz, yavuz, yavuz, yavuz, yavuz.",
+                "tr",
+                &None,
+            ),
+            "Hadi et otak. yavuz."
+        );
+        // Three in a row can be speech ("evet evet evet").
+        assert_eq!(
+            filter_transcription_output("Tamam tamam tamam, geçelim.", "tr", &None),
+            "Tamam tamam tamam, geçelim."
+        );
+    }
+
+    #[test]
+    fn collapses_back_to_back_repeats_only() {
+        assert_eq!(
+            remove_hallucinations("Evet. Evet. Tamam. Evet."),
+            "Evet. Tamam. Evet."
+        );
+        assert_eq!(remove_hallucinations("Altyazı M.K."), "");
+        assert_eq!(remove_hallucinations("Thanks for watching!"), "");
+    }
 
     #[test]
     fn test_apply_custom_words_exact_match() {

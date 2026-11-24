@@ -1799,7 +1799,14 @@ meeting_id: number | null;
 /**
  * Absolute epoch-ms start of the live meeting; `None` when idle.
  */
-started_at_ms: number | null }
+started_at_ms: number | null; 
+/**
+ * When idle: the row the most recent session was saved as. `None` while a
+ * session is running or finalizing, and when the last session was
+ * discarded (empty) or kept only for recovery — so the UI never opens a
+ * row id that no longer exists.
+ */
+saved_meeting_id: number | null }
 /**
  * A preset summary prompt template for meeting mode. `id` is a stable key the
  * frontend passes to `summarize_meeting_with`; `name` is the display label;

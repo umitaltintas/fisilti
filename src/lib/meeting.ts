@@ -260,7 +260,12 @@ export async function getMeetingSession(): Promise<MeetingSessionInfo> {
       unwrap(commands.getMeetingStatus()),
       unwrap(commands.getMeetingStartedAt()).catch(() => null),
     ]);
-    return { state, meeting_id: null, started_at_ms: started };
+    return {
+      state,
+      meeting_id: null,
+      started_at_ms: started,
+      saved_meeting_id: null,
+    };
   }
 }
 

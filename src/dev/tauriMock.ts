@@ -181,8 +181,18 @@ const segments = recording
   : [];
 
 const session = recording
-  ? { state: "running", meeting_id: 4, started_at_ms: now - 24 * 60_000 }
-  : { state: "idle", meeting_id: null, started_at_ms: null };
+  ? {
+      state: "running",
+      meeting_id: 4,
+      started_at_ms: now - 24 * 60_000,
+      saved_meeting_id: null,
+    }
+  : {
+      state: "idle",
+      meeting_id: null,
+      started_at_ms: null,
+      saved_meeting_id: null,
+    };
 
 const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
   get_app_settings: () => settings,

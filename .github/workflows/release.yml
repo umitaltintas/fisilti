@@ -53,8 +53,10 @@ jobs:
           # No --target for Windows x64: it is the host, and the extra
           # "x86_64-pc-windows-msvc\" in the target path pushes whisper.cpp's
           # MSBuild files past MAX_PATH. build.yml expects this layout.
+          # NSIS only: WiX (MSI) cannot encode "Fısıltı" in its codepage, and
+          # the updater uses the NSIS setup.exe anyway.
           - platform: "windows-latest"
-            args: ""
+            args: "--bundles nsis"
             target: "x86_64-pc-windows-msvc"
 
     uses: ./.github/workflows/build.yml

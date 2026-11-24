@@ -1,6 +1,6 @@
 [package]
 name = "fisilti"
-version = "0.2.5"
+version = "0.2.6"
 description = "Fısıltı — local dictation & AI meeting notes"
 authors = ["Ümit Altıntaş", "cjpais"]
 edition = "2021"

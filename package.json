@@ -1,7 +1,7 @@
 {
   "name": "fisilti",
   "private": true,
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "Fisilti — private, local-first dictation & AI meeting notes",
   "type": "module",
   "scripts": {

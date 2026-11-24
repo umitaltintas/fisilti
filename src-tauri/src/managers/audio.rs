@@ -11,6 +11,37 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 use tauri::{Emitter, Manager};
 
+/// The microphone the user picked in settings (the clamshell microphone when
+/// in clamshell mode and one is set), or `None` to use the system default:
+/// nothing selected, or the selected device is not connected. Shared by
+/// dictation and meeting capture so both record from the same microphone.
+pub(crate) fn effective_microphone_device(settings: &AppSettings) -> Option<cpal::Device> {
+    // Check if we're in clamshell mode and have a clamshell microphone configured
+    let use_clamshell_mic = if let Ok(is_clamshell) = clamshell::is_clamshell() {
+        is_clamshell && settings.clamshell_microphone.is_some()
+    } else {
+        false
+    };
+
+    let device_name = if use_clamshell_mic {
+        settings.clamshell_microphone.as_ref()?
+    } else {
+        settings.selected_microphone.as_ref()?
+    };
+
+    // Find the device by name
+    match list_input_devices() {
+        Ok(devices) => devices
+            .into_iter()
+            .find(|d| d.name == *device_name)
+            .map(|d| d.device),
+        Err(e) => {
+            debug!("Failed to list devices, using default: {}", e);
+            None
+        }
+    }
+}
+
 const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 
 fn set_mute(mute: bool) {
@@ -373,33 +404,6 @@ impl AudioRecordingManager {
 
     /* ---------- helper methods --------------------------------------------- */
 
-    fn get_effective_microphone_device(&self, settings: &AppSettings) -> Option<cpal::Device> {
-        // Check if we're in clamshell mode and have a clamshell microphone configured
-        let use_clamshell_mic = if let Ok(is_clamshell) = clamshell::is_clamshell() {
-            is_clamshell && settings.clamshell_microphone.is_some()
-        } else {
-            false
-        };
-
-        let device_name = if use_clamshell_mic {
-            settings.clamshell_microphone.as_ref()?
-        } else {
-            settings.selected_microphone.as_ref()?
-        };
-
-        // Find the device by name
-        match list_input_devices() {
-            Ok(devices) => devices
-                .into_iter()
-                .find(|d| d.name == *device_name)
-                .map(|d| d.device),
-            Err(e) => {
-                debug!("Failed to list devices, using default: {}", e);
-                None
-            }
-        }
-    }
-
     fn schedule_lazy_close(&self) {
         let gen = self.close_generation.fetch_add(1, Ordering::SeqCst) + 1;
         let app = self.app_handle.clone();
@@ -500,7 +504,7 @@ impl AudioRecordingManager {
 
         // Get the selected device from settings, considering clamshell mode
         let settings = get_settings(&self.app_handle);
-        let selected_device = self.get_effective_microphone_device(&settings);
+        let selected_device = effective_microphone_device(&settings);
 
         if let Some(rec) = recorder_opt.as_mut() {
             rec.open(selected_device)

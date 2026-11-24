@@ -392,10 +392,22 @@ impl MeetingManager {
         let _mic_stop_guard = StopOnDrop(mic_stop.clone());
         let mic_stop_worker = mic_stop.clone();
         let (mic_init_tx, mic_init_rx) = mpsc::sync_channel::<Result<(), String>>(1);
+        // Record from the microphone picked in settings, like dictation does;
+        // the system default only when none is picked or it is not connected.
+        let mic_settings = crate::settings::get_settings(&self.app_handle);
 
         let mic_handle = std::thread::spawn(move || {
             let host = crate::audio_toolkit::get_cpal_host();
-            let device = match host.default_input_device() {
+            let selected = crate::managers::audio::effective_microphone_device(&mic_settings);
+            if selected.is_none() {
+                if let Some(name) = &mic_settings.selected_microphone {
+                    log::warn!(
+                        "meeting: selected microphone '{}' not found; using the system default",
+                        name
+                    );
+                }
+            }
+            let device = match selected.or_else(|| host.default_input_device()) {
                 Some(d) => d,
                 None => {
                     let _ = mic_init_tx.send(Err("No default input device".into()));

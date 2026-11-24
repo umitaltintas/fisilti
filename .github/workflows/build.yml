@@ -91,9 +91,13 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
 
-      - name: install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+      # Pinned: Rust 1.100 moved build-script OUT_DIRs one level deeper
+      # (build/<pkg>/<hash>/out), and ort-sys rc.12 copies DirectML.dll to a
+      # path derived from the old depth, which fails on Windows.
+      - name: install Rust
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: "1.99.1"
           # Those targets are only used on macos runners so it's in an `if` to slightly speed up windows and linux builds.
           targets: ${{ contains(inputs.platform, 'macos') && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 

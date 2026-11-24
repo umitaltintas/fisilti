@@ -1,6 +1,7 @@
 // Product screenshots for the GitHub Pages site (docs/screens), rendered
 // against the fake backend. Start `bun run dev:preview` first, then:
 //   SHOT_BROWSER=<chromium> bun scripts/site-shots.ts
+// then convert to WebP for the site, e.g. `magick x.png -quality 82 x.webp`.
 import { chromium } from "@playwright/test";
 
 const BASE = "http://localhost:1430";
@@ -39,7 +40,7 @@ const shoot = async (
   await page.close();
 };
 
-await shoot("home-dark.png", "dark", "idle", /^Home$/);
+await shoot("meetings-dark.png", "dark", "idle", /^Meetings/);
 await shoot(
   "meeting-light.png",
   "light",

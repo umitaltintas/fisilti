@@ -1,834 +1,1491 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <meta charset="utf-8" />
+    <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>
-      Fısıltı — private, local-first dictation &amp; meeting notes for macOS
-    </title>
+    <title>Fısıltı — local-first dictation &amp; meeting notes</title>
     <meta
       name="description"
-      content="Fısıltı is a privacy-first macOS app for push-to-talk dictation and AI meeting notes. Speech recognition runs entirely on your Mac — nothing is sent anywhere to be heard."
+      content="Fısıltı is a local-first desktop app for push-to-talk dictation and AI meeting notes on macOS, Windows and Linux. Speech recognition runs on your machine. Try Whisper right in your browser."
     />
-    <meta property="og:title" content="Fısıltı — a whisper stays in the room" />
+    <meta
+      property="og:title"
+      content="Fısıltı — a whisper that stays in the room"
+    />
     <meta
       property="og:description"
-      content="Private, local-first dictation and AI meeting notes for macOS. On-device speech recognition by default; cloud transcription, translation and speaker identification strictly opt-in."
+      content="Push-to-talk dictation and meeting notes, transcribed on your own machine. macOS · Windows · Linux. Open source."
     />
-    <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://umitaltintas.github.io/fisilti/" />
+    <meta
+      property="og:image"
+      content="https://umitaltintas.github.io/fisilti/screens/meeting-light.webp"
+    />
+    <meta name="theme-color" content="#09080d" />
     <link rel="icon" type="image/png" href="icon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Fragment+Mono:ital@0;1&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&display=swap"
       rel="stylesheet"
     />
     <style>
       :root {
-        /* The app's dark palette: warm charcoal paper, violet for emphasis,
-           red only for "recording". */
-        --bg: #1c1a17;
-        --bg-raise: #272420;
-        --bg-well: #151311;
-        --line: rgba(241, 237, 230, 0.09);
-        --line-strong: rgba(241, 237, 230, 0.16);
-        --text: #f1ede6;
-        --muted: #aaa398;
-        --faint: #7b756c;
-        --accent: #a78bfa; /* brand violet, for type accents */
-        --accent-rgb: 167, 139, 250;
-        --live: #ff5a5f; /* recording */
-        --others: #f0a54a; /* the other side of the call */
-        --action: #8b5cf6; /* the app's own button violet */
-        --action-hover: #9b6dff;
-        --serif: "Instrument Serif", "Iowan Old Style", Georgia, serif;
-        --body:
-          -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto,
-          "Helvetica Neue", sans-serif;
-        --mono: "Fragment Mono", "SF Mono", ui-monospace, Menlo, monospace;
+        --bg: #09080d;
+        --bg-1: #100e17;
+        --bg-2: #17141f;
+        --line: rgba(236, 232, 255, 0.08);
+        --line-2: rgba(236, 232, 255, 0.15);
+        --text: #efecf7;
+        --muted: #a29db3;
+        --faint: #6f6a80;
+        --violet: #a78bfa;
+        --violet-rgb: 167, 139, 250;
+        --pink: #f472b6;
+        --amber: #f0a54a;
+        --live: #ff5a5f;
+        --ok: #5eead4;
+        --sans:
+          "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          sans-serif;
+        --mono:
+          "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+        --serif: "Instrument Serif", Georgia, serif;
+        --radius: 18px;
+        --gutter: clamp(16px, 4vw, 40px);
       }
-
       * {
         margin: 0;
         padding: 0;
         box-sizing: border-box;
       }
-
       html {
         scroll-behavior: smooth;
       }
-
       body {
         background: var(--bg);
         color: var(--text);
-        font-family: var(--body);
+        font-family: var(--sans);
         font-size: 17px;
-        line-height: 1.65;
+        line-height: 1.6;
         -webkit-font-smoothing: antialiased;
         overflow-x: hidden;
       }
-
       ::selection {
-        background: rgba(var(--accent-rgb), 0.25);
+        background: rgba(var(--violet-rgb), 0.3);
       }
-
       a {
         color: inherit;
       }
-
       :focus-visible {
-        outline: 2px solid var(--action);
+        outline: 2px solid var(--violet);
         outline-offset: 3px;
-        border-radius: 2px;
+        border-radius: 4px;
       }
-
+      img {
+        max-width: 100%;
+        height: auto;
+        display: block;
+      }
       .wrap {
-        max-width: 1060px;
+        width: min(1180px, 100%);
         margin: 0 auto;
-        padding: 0 24px;
+        padding: 0 var(--gutter);
+      }
+      .mono {
+        font-family: var(--mono);
+      }
+      em.s {
+        font-family: var(--serif);
+        font-style: italic;
+        font-weight: 400;
+        letter-spacing: 0;
       }
 
       /* ---------- nav ---------- */
-      .nav {
+      nav.top {
+        position: fixed;
+        inset: 0 0 auto 0;
+        z-index: 50;
+        backdrop-filter: blur(14px) saturate(140%);
+        -webkit-backdrop-filter: blur(14px) saturate(140%);
+        background: rgba(9, 8, 13, 0.55);
+        border-bottom: 1px solid transparent;
+        transition: border-color 0.3s;
+      }
+      nav.top.scrolled {
+        border-bottom-color: var(--line);
+      }
+      nav.top .wrap {
         display: flex;
         align-items: center;
-        justify-content: space-between;
-        padding: 22px 0;
+        gap: 28px;
+        height: 60px;
       }
-
       .wordmark {
-        font-family: var(--serif);
-        font-size: 22px;
-        letter-spacing: 0.01em;
+        display: flex;
+        align-items: center;
+        gap: 10px;
         text-decoration: none;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+      .wordmark img {
+        width: 26px;
+        height: 26px;
+        border-radius: 7px;
+      }
+      nav.top .links {
         display: flex;
-        align-items: baseline;
-        gap: 8px;
-      }
-
-      .live-dot {
-        display: inline-block;
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        background: var(--live);
-        box-shadow: 0 0 10px rgba(255, 90, 95, 0.55);
-      }
-      .brand-dot {
-        background: var(--accent);
-        box-shadow: 0 0 10px rgba(var(--accent-rgb), 0.55);
-      }
-
-      .nav-links {
-        display: flex;
-        gap: 26px;
-        font-size: 14.5px;
-      }
-
-      .nav-links a {
+        gap: 22px;
+        margin-left: auto;
+        font-size: 14px;
         color: var(--muted);
-        text-decoration: none;
-        transition: color 0.15s ease;
       }
-
-      .nav-links a:hover {
+      nav.top .links a {
+        text-decoration: none;
+        transition: color 0.2s;
+      }
+      nav.top .links a:hover {
         color: var(--text);
+      }
+      .gh {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        padding: 6px 12px;
+        border: 1px solid var(--line-2);
+        border-radius: 999px;
+        text-decoration: none;
+        color: var(--muted);
+      }
+      .gh:hover {
+        color: var(--text);
+        border-color: rgba(var(--violet-rgb), 0.5);
+      }
+      .gh svg {
+        width: 15px;
+        height: 15px;
+      }
+      @media (max-width: 860px) {
+        nav.top .links {
+          display: none;
+        }
+        .gh {
+          margin-left: auto;
+        }
       }
 
       /* ---------- hero ---------- */
       .hero {
-        padding: 84px 0 30px;
-        text-align: center;
         position: relative;
+        min-height: 100svh;
+        display: flex;
+        align-items: center;
+        overflow: hidden;
       }
-
-      .etym {
-        font-family: var(--mono);
-        font-size: 13px;
-        color: var(--muted);
-        letter-spacing: 0.02em;
-      }
-
-      .etym .ipa {
-        color: var(--faint);
-      }
-
-      .etym .sense {
-        font-style: italic;
-        color: var(--text);
-      }
-
-      .hero h1 {
-        font-family: var(--serif);
-        font-weight: 400;
-        font-size: clamp(72px, 16vw, 176px);
-        line-height: 1.02;
-        letter-spacing: -0.015em;
-        margin-top: 10px;
-      }
-
-      .hero h1 .dot {
-        color: var(--accent);
-        text-shadow: 0 0 26px rgba(var(--accent-rgb), 0.5);
-      }
-
-      .wave-band {
-        position: relative;
-        height: 88px;
-        margin: 6px 0 18px;
-      }
-
-      .wave-band canvas {
+      #field {
         position: absolute;
         inset: 0;
         width: 100%;
         height: 100%;
         display: block;
       }
-
-      .lede {
-        max-width: 560px;
-        margin: 0 auto;
-        font-size: 19px;
-        color: var(--muted);
+      .hero::after {
+        content: "";
+        position: absolute;
+        inset: auto 0 0 0;
+        height: 30%;
+        background: linear-gradient(to bottom, transparent, var(--bg));
+        pointer-events: none;
       }
-
-      .lede strong {
-        color: var(--text);
-        font-weight: 500;
+      .hero .wrap {
+        position: relative;
+        z-index: 2;
+        padding-top: 90px;
+        padding-bottom: 80px;
       }
-
-      .cta-row {
-        display: flex;
-        gap: 14px;
-        justify-content: center;
-        margin: 34px 0 14px;
-        flex-wrap: wrap;
-      }
-
-      .btn {
-        display: inline-block;
-        padding: 12px 24px;
-        border-radius: 10px;
-        font-size: 15.5px;
-        font-weight: 500;
-        text-decoration: none;
-        transition:
-          background 0.15s ease,
-          border-color 0.15s ease,
-          transform 0.15s ease;
-      }
-
-      .btn:active {
-        transform: translateY(1px);
-      }
-
-      .btn-primary {
-        background: var(--action);
-        color: #0d0d12;
-      }
-
-      .btn-primary:hover {
-        background: var(--action-hover);
-      }
-
-      .btn-ghost {
-        border: 1px solid var(--line-strong);
-        color: var(--text);
-      }
-
-      .btn-ghost:hover {
-        border-color: var(--muted);
-      }
-
-      .hero-meta {
-        font-family: var(--mono);
-        font-size: 12.5px;
-        color: var(--faint);
-      }
-
-      /* ---------- quiet claims ---------- */
-      .claims {
-        border-top: 1px solid var(--line);
-        border-bottom: 1px solid var(--line);
-        margin-top: 72px;
-      }
-
-      .claims-grid {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-      }
-
-      .claim {
-        padding: 30px 28px;
-        border-left: 1px solid var(--line);
-      }
-
-      .claim:first-child {
-        border-left: none;
-        padding-left: 0;
-      }
-
-      .claim h3 {
-        font-size: 15.5px;
-        font-weight: 600;
-        margin-bottom: 4px;
-      }
-
-      .claim p {
-        font-size: 14.5px;
-        color: var(--muted);
-      }
-
-      /* ---------- sections ---------- */
-      .section {
-        padding: 104px 0 0;
-      }
-
       .eyebrow {
         font-family: var(--mono);
         font-size: 12.5px;
+        letter-spacing: 0.08em;
         text-transform: uppercase;
-        letter-spacing: 0.14em;
-        color: var(--accent);
-        margin-bottom: 14px;
-      }
-
-      .section h2 {
-        font-family: var(--serif);
-        font-weight: 400;
-        font-size: clamp(34px, 5vw, 52px);
-        line-height: 1.12;
-        letter-spacing: -0.01em;
-        max-width: 560px;
-      }
-
-      .section h2 em {
-        font-style: italic;
-      }
-
-      .section-body {
-        display: grid;
-        grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
-        gap: 56px;
+        color: var(--muted);
+        display: inline-flex;
         align-items: center;
-        margin-top: 44px;
+        gap: 10px;
       }
-
-      .section-body.flip {
-        grid-template-columns: minmax(0, 6fr) minmax(0, 5fr);
-      }
-
-      .feature-copy p {
-        color: var(--muted);
-        margin-bottom: 18px;
-      }
-
-      .feature-copy p strong {
-        color: var(--text);
-        font-weight: 500;
-      }
-
-      .feature-list {
-        list-style: none;
-        display: grid;
-        gap: 12px;
-        margin-top: 22px;
-      }
-
-      .feature-list li {
-        display: flex;
-        gap: 12px;
-        font-size: 15px;
-        color: var(--muted);
-      }
-
-      .feature-list li::before {
-        content: "";
-        flex: none;
-        width: 6px;
-        height: 6px;
+      .eyebrow .dot {
+        width: 7px;
+        height: 7px;
         border-radius: 50%;
-        background: var(--action);
-        margin-top: 9px;
+        background: var(--ok);
+        box-shadow: 0 0 12px var(--ok);
       }
-
-      .feature-list b {
+      h1 {
+        font-size: clamp(48px, 9.5vw, 128px);
+        line-height: 0.95;
+        letter-spacing: -0.045em;
+        font-weight: 600;
+        margin: 22px 0 26px;
+        max-width: 11ch;
+      }
+      h1 em.s {
+        color: var(--violet);
+        padding-right: 0.06em;
+      }
+      .lede {
+        font-size: clamp(18px, 2.1vw, 22px);
+        color: var(--muted);
+        max-width: 40ch;
+        line-height: 1.5;
+      }
+      .lede b {
         color: var(--text);
         font-weight: 500;
       }
-
-      /* ---------- product mocks ---------- */
-      .mock-stage {
-        display: grid;
-        gap: 18px;
-        justify-items: center;
+      .cta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 36px;
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        padding: 14px 22px;
+        border-radius: 12px;
+        font: 500 15px/1 var(--sans);
+        text-decoration: none;
+        border: 1px solid var(--line-2);
+        background: rgba(255, 255, 255, 0.04);
+        color: var(--text);
+        cursor: pointer;
+        transition:
+          transform 0.2s,
+          background 0.2s,
+          border-color 0.2s;
+      }
+      .btn:hover {
+        transform: translateY(-1px);
+        border-color: rgba(var(--violet-rgb), 0.55);
+      }
+      .btn.primary {
+        background: linear-gradient(135deg, #8b5cf6, #c084fc);
+        border-color: transparent;
+        color: #fff;
+        box-shadow: 0 10px 40px -10px rgba(139, 92, 246, 0.7);
+      }
+      .btn.primary:hover {
+        background: linear-gradient(135deg, #9b6dff, #d09cff);
+      }
+      .btn small {
+        font: 400 12px var(--mono);
+        opacity: 0.75;
+      }
+      .platforms {
+        margin-top: 28px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 18px;
+        font: 13px var(--mono);
+        color: var(--faint);
+      }
+      .platforms span::before {
+        content: "▸ ";
+        color: var(--violet);
+      }
+      .scroll-hint {
+        position: absolute;
+        left: 50%;
+        bottom: 26px;
+        z-index: 3;
+        transform: translateX(-50%);
+        font: 11px var(--mono);
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        color: var(--faint);
+        text-decoration: none;
+      }
+      .scroll-hint::after {
+        content: "";
+        display: block;
+        width: 1px;
+        height: 34px;
+        margin: 10px auto 0;
+        background: linear-gradient(var(--violet), transparent);
+        animation: drip 2s infinite;
+      }
+      @keyframes drip {
+        0% {
+          transform: scaleY(0);
+          transform-origin: top;
+        }
+        50% {
+          transform: scaleY(1);
+          transform-origin: top;
+        }
+        51% {
+          transform-origin: bottom;
+        }
+        100% {
+          transform: scaleY(0);
+          transform-origin: bottom;
+        }
       }
 
-      .window {
-        background: var(--bg-raise);
-        border: 1px solid var(--line-strong);
-        border-radius: 14px;
+      /* ---------- sections ---------- */
+      section {
+        position: relative;
+        padding: clamp(80px, 12vw, 150px) 0;
+      }
+      .kicker {
+        font: 500 12.5px var(--mono);
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--violet);
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .kicker::before {
+        content: "";
+        width: 26px;
+        height: 1px;
+        background: currentColor;
+      }
+      h2 {
+        font-size: clamp(34px, 5.4vw, 64px);
+        line-height: 1.02;
+        letter-spacing: -0.035em;
+        font-weight: 600;
+        margin: 18px 0 20px;
+        max-width: 18ch;
+      }
+      h2 em.s {
+        color: var(--violet);
+      }
+      .sub {
+        color: var(--muted);
+        font-size: clamp(17px, 1.7vw, 19px);
+        max-width: 60ch;
+      }
+      .reveal {
+        opacity: 0;
+        transform: translateY(24px);
+        transition:
+          opacity 0.9s cubic-bezier(0.2, 0.7, 0.2, 1),
+          transform 0.9s cubic-bezier(0.2, 0.7, 0.2, 1);
+      }
+      .reveal.in {
+        opacity: 1;
+        transform: none;
+      }
+      .card {
+        background: linear-gradient(
+          180deg,
+          rgba(255, 255, 255, 0.035),
+          rgba(255, 255, 255, 0.012)
+        );
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+      }
+
+      /* ---------- demo ---------- */
+      .demo {
+        margin-top: 48px;
+        display: grid;
+        grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+        gap: 18px;
+      }
+      @media (max-width: 920px) {
+        .demo {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+      .win {
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        min-height: 420px;
+        position: relative;
+      }
+      .win-bar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--line);
+        font: 12.5px var(--mono);
+        color: var(--faint);
+      }
+      .win-bar i {
+        width: 11px;
+        height: 11px;
+        border-radius: 50%;
+        background: #2a2633;
+        display: block;
+      }
+      .win-bar span {
+        margin-left: 10px;
+      }
+      .editor {
+        flex: 1;
+        padding: 26px 28px;
+        font-size: 19px;
+        line-height: 1.65;
+        color: var(--text);
+        min-height: 220px;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+      }
+      .editor .ph {
+        color: var(--faint);
+      }
+      .caret {
+        display: inline-block;
+        width: 2px;
+        height: 1.15em;
+        vertical-align: -0.2em;
+        background: var(--violet);
+        margin-left: 1px;
+        animation: blink 1.05s steps(1) infinite;
+      }
+      @keyframes blink {
+        50% {
+          opacity: 0;
+        }
+      }
+      .rec-strip {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 16px 18px;
+        border-top: 1px solid var(--line);
+        background: rgba(0, 0, 0, 0.18);
+      }
+      #ptt {
+        flex: none;
+        width: 66px;
+        height: 66px;
+        border-radius: 50%;
+        border: none;
+        cursor: pointer;
+        position: relative;
+        touch-action: none;
+        background: radial-gradient(circle at 35% 30%, #c4b5fd, #7c3aed 70%);
         box-shadow:
-          0 24px 60px rgba(0, 0, 0, 0.5),
-          0 2px 8px rgba(0, 0, 0, 0.35);
+          0 0 0 0 rgba(var(--violet-rgb), 0.6),
+          0 10px 30px -8px rgba(124, 58, 237, 0.8);
+        transition:
+          transform 0.15s,
+          box-shadow 0.3s;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+      #ptt svg {
+        width: 26px;
+        height: 26px;
+        fill: #fff;
+        position: absolute;
+        inset: 0;
+        margin: auto;
+      }
+      #ptt.on {
+        transform: scale(0.94);
+        background: radial-gradient(
+          circle at 35% 30%,
+          #ffa3a6,
+          var(--live) 70%
+        );
+        box-shadow:
+          0 0 0 10px rgba(255, 90, 95, 0.15),
+          0 0 40px rgba(255, 90, 95, 0.55);
+      }
+      #ptt:disabled {
+        filter: grayscale(0.6) brightness(0.7);
+        cursor: wait;
+      }
+      .scope {
+        flex: 1;
+        min-width: 0;
+        height: 56px;
+        position: relative;
+      }
+      .scope canvas {
         width: 100%;
+        height: 100%;
+        display: block;
+      }
+      .status {
+        font: 12.5px var(--mono);
+        color: var(--muted);
+        min-height: 1.4em;
+      }
+      .status b {
+        color: var(--text);
+        font-weight: 500;
+      }
+      .rec-meta {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        min-width: 0;
+        flex: 1.2;
+      }
+      .kbd {
+        font: 11.5px var(--mono);
+        border: 1px solid var(--line-2);
+        border-bottom-width: 2px;
+        border-radius: 6px;
+        padding: 1px 7px;
+        color: var(--text);
+      }
+      .progress {
+        height: 3px;
+        border-radius: 3px;
+        background: var(--line);
+        overflow: hidden;
+        display: none;
+      }
+      .progress.show {
+        display: block;
+      }
+      .progress i {
+        display: block;
+        height: 100%;
+        width: 0;
+        background: linear-gradient(90deg, var(--violet), var(--pink));
+        transition: width 0.2s;
+      }
+      @media (max-width: 560px) {
+        .rec-strip {
+          flex-wrap: wrap;
+        }
+        .scope {
+          order: 3;
+          flex-basis: 100%;
+        }
+      }
+
+      .telemetry {
+        padding: 22px;
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+      }
+      .telemetry h3 {
+        font: 500 12.5px var(--mono);
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--muted);
+        display: flex;
+        justify-content: space-between;
+      }
+      .telemetry h3 span {
+        color: var(--faint);
+        letter-spacing: 0;
+        text-transform: none;
+      }
+      .tgrid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1px;
+        background: var(--line);
+        border: 1px solid var(--line);
+        border-radius: 12px;
         overflow: hidden;
       }
-
-      /* the shipped "meeting detected" prompt, recreated 1:1 */
-      .prompt-card {
-        max-width: 380px;
-        padding: 18px 18px 16px;
+      .tgrid div {
+        background: var(--bg-1);
+        padding: 12px 14px;
+      }
+      .tgrid dt {
+        font: 11px var(--mono);
+        color: var(--faint);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+      .tgrid dd {
+        font: 500 19px var(--mono);
+        color: var(--text);
+        margin-top: 2px;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .tgrid dd small {
+        font-size: 12px;
+        color: var(--muted);
+        font-weight: 400;
+      }
+      .vadbar {
+        height: 34px;
+        border-radius: 8px;
+        background: var(--bg-1);
+        border: 1px solid var(--line);
+        position: relative;
+        overflow: hidden;
+      }
+      .vadbar canvas {
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+      .legend {
+        display: flex;
+        gap: 14px;
+        font: 11.5px var(--mono);
+        color: var(--faint);
+        margin-top: 8px;
+      }
+      .legend i {
+        display: inline-block;
+        width: 9px;
+        height: 9px;
+        border-radius: 2px;
+        margin-right: 6px;
+        vertical-align: -1px;
+      }
+      .opts {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .seg {
+        display: inline-flex;
+        border: 1px solid var(--line-2);
+        border-radius: 10px;
+        padding: 3px;
+        gap: 2px;
+      }
+      .seg button {
+        border: 0;
+        background: none;
+        color: var(--muted);
+        font: 12.5px var(--mono);
+        padding: 6px 10px;
+        border-radius: 7px;
+        cursor: pointer;
+      }
+      .seg button[aria-pressed="true"] {
+        background: rgba(var(--violet-rgb), 0.18);
+        color: var(--text);
+      }
+      .fine {
+        font-size: 13px;
+        color: var(--faint);
+        line-height: 1.55;
+      }
+      .fine b {
+        color: var(--muted);
+        font-weight: 500;
       }
 
-      .prompt-card h4 {
-        font-size: 15.5px;
+      /* ---------- pipeline ---------- */
+      .pipe {
+        margin-top: 56px;
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 0;
+        position: relative;
+      }
+      .stage {
+        position: relative;
+        padding: 0 14px;
+      }
+      .stage .node {
+        width: 64px;
+        height: 64px;
+        border-radius: 18px;
+        display: grid;
+        place-items: center;
+        border: 1px solid var(--line-2);
+        background: var(--bg-1);
+        position: relative;
+        z-index: 2;
+        transition:
+          border-color 0.4s,
+          box-shadow 0.4s;
+      }
+      .stage.hot .node {
+        border-color: rgba(var(--violet-rgb), 0.8);
+        box-shadow: 0 0 34px rgba(var(--violet-rgb), 0.35);
+      }
+      .stage .node svg {
+        width: 28px;
+        height: 28px;
+        stroke: var(--text);
+        fill: none;
+        stroke-width: 1.6;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .stage h4 {
+        margin-top: 18px;
+        font-size: 17px;
         font-weight: 600;
         letter-spacing: -0.01em;
       }
-
-      .prompt-card .q {
-        font-size: 13.5px;
+      .stage p {
+        font-size: 14px;
         color: var(--muted);
-        margin: 4px 0 16px;
+        margin-top: 6px;
+        line-height: 1.5;
+      }
+      .stage .m {
+        font: 12px var(--mono);
+        color: var(--violet);
+        margin-top: 10px;
+        min-height: 1.4em;
+      }
+      .wire {
+        position: absolute;
+        top: 32px;
+        left: 46px;
+        right: 46px;
+        height: 1px;
+        background: linear-gradient(
+          90deg,
+          var(--line-2),
+          rgba(var(--violet-rgb), 0.5),
+          var(--line-2)
+        );
+        z-index: 1;
+      }
+      .pkt {
+        position: absolute;
+        top: -3px;
+        width: 30px;
+        height: 7px;
+        border-radius: 7px;
+        background: linear-gradient(90deg, transparent, var(--violet), #fff);
+        filter: drop-shadow(0 0 6px var(--violet));
+        left: 0;
+        animation: travel 3.6s linear infinite;
+      }
+      .pkt:nth-child(2) {
+        animation-delay: -1.2s;
+      }
+      .pkt:nth-child(3) {
+        animation-delay: -2.4s;
+      }
+      @keyframes travel {
+        from {
+          left: -30px;
+          opacity: 0;
+        }
+        8% {
+          opacity: 1;
+        }
+        92% {
+          opacity: 1;
+        }
+        to {
+          left: 100%;
+          opacity: 0;
+        }
+      }
+      @media (max-width: 860px) {
+        .pipe {
+          grid-template-columns: minmax(0, 1fr);
+          gap: 30px;
+        }
+        .wire {
+          top: 0;
+          bottom: 0;
+          left: 46px;
+          right: auto;
+          width: 1px;
+          height: auto;
+          background: linear-gradient(
+            180deg,
+            var(--line-2),
+            rgba(var(--violet-rgb), 0.5),
+            var(--line-2)
+          );
+        }
+        .pkt {
+          display: none;
+        }
+        .stage {
+          display: grid;
+          grid-template-columns: 64px 1fr;
+          column-gap: 20px;
+        }
+        .stage h4 {
+          margin-top: 4px;
+        }
+        .stage p,
+        .stage .m {
+          grid-column: 2;
+        }
       }
 
-      .prompt-actions {
+      /* ---------- meetings ---------- */
+      .meet {
+        margin-top: 52px;
+        display: grid;
+        grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+        gap: 18px;
+      }
+      @media (max-width: 920px) {
+        .meet {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+      .sim {
+        position: relative;
+        overflow: hidden;
+        padding: 0;
+        min-height: 460px;
         display: flex;
-        gap: 10px;
+        flex-direction: column;
       }
-
-      .prompt-actions span {
-        flex: 1;
-        text-align: center;
-        font-size: 13.5px;
-        font-weight: 500;
-        padding: 8px 0;
-        border-radius: 8px;
-      }
-
-      .prompt-start {
-        background: var(--action);
-        color: #0d0d12;
-      }
-
-      .prompt-ignore {
-        background: rgba(235, 238, 245, 0.08);
-        color: var(--text);
-      }
-
-      /* transcript window */
-      .transcript {
-        max-width: 460px;
-      }
-
-      .transcript-bar {
+      .sim-head {
         display: flex;
         align-items: center;
         gap: 10px;
-        padding: 12px 16px;
+        padding: 14px 18px;
         border-bottom: 1px solid var(--line);
-        font-family: var(--mono);
-        font-size: 12px;
+        font: 12.5px var(--mono);
         color: var(--muted);
       }
-
-      .transcript-bar .live-dot {
-        animation: pulse 2.4s ease-in-out infinite;
+      .sim-head .rec {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--live);
+        box-shadow: 0 0 10px var(--live);
+        animation: pulse 1.6s infinite;
       }
-
       @keyframes pulse {
         50% {
           opacity: 0.35;
         }
       }
-
-      .transcript-bar .spacer {
+      .sim-head .clock {
+        margin-left: auto;
+        color: var(--text);
+        font-variant-numeric: tabular-nums;
+      }
+      #lanes {
+        width: 100%;
+        height: 150px;
+        display: block;
+        border-bottom: 1px solid var(--line);
+      }
+      .transcript {
         flex: 1;
+        padding: 16px 18px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        justify-content: flex-end;
+        overflow: hidden;
+        mask-image: linear-gradient(to bottom, transparent, #000 30%);
+        -webkit-mask-image: linear-gradient(to bottom, transparent, #000 30%);
       }
-
-      .transcript-lines {
-        padding: 16px;
-        display: grid;
-        gap: 12px;
-      }
-
-      .t-line {
+      .line {
         display: grid;
         grid-template-columns: 62px 1fr;
         gap: 12px;
-        font-size: 14px;
+        font-size: 15px;
+        animation: rise 0.5s cubic-bezier(0.2, 0.7, 0.2, 1);
       }
-
-      .t-who {
-        font-family: var(--mono);
-        font-size: 11.5px;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
+      .line .who {
+        font: 12px var(--mono);
         padding-top: 3px;
       }
-
-      .t-you .t-who {
-        color: var(--action);
+      .line.you .who {
+        color: var(--violet);
       }
-
-      .t-them .t-who {
-        color: var(--others);
+      .line.them .who {
+        color: var(--amber);
       }
-
-      .t-line p {
+      .line .t {
         color: var(--text);
       }
-
-      .transcript-foot {
-        border-top: 1px solid var(--line);
-        padding: 12px 16px;
-        font-size: 13px;
-        color: var(--muted);
-        display: flex;
-        align-items: center;
-        gap: 8px;
-      }
-
-      .transcript-foot .spark {
-        color: var(--action);
-      }
-
-      /* dictation overlay pill */
-      .dictation-stage {
-        display: grid;
-        gap: 22px;
-        justify-items: center;
-      }
-
-      .overlay-pill {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        background: var(--bg-well);
-        border: 1px solid var(--line-strong);
-        border-radius: 999px;
-        padding: 10px 20px;
-        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
-        font-family: var(--mono);
-        font-size: 12px;
-        color: var(--muted);
-      }
-
-      .overlay-bars {
-        display: flex;
-        align-items: center;
-        gap: 3px;
-        height: 16px;
-      }
-
-      .overlay-bars i {
-        width: 3px;
-        border-radius: 2px;
-        background: var(--live);
-        animation: bar 1.1s ease-in-out infinite;
-      }
-
-      .overlay-bars i:nth-child(1) {
-        height: 40%;
-        animation-delay: 0s;
-      }
-      .overlay-bars i:nth-child(2) {
-        height: 90%;
-        animation-delay: 0.15s;
-      }
-      .overlay-bars i:nth-child(3) {
-        height: 60%;
-        animation-delay: 0.3s;
-      }
-      .overlay-bars i:nth-child(4) {
-        height: 100%;
-        animation-delay: 0.45s;
-      }
-      .overlay-bars i:nth-child(5) {
-        height: 50%;
-        animation-delay: 0.6s;
-      }
-
-      @keyframes bar {
-        50% {
-          transform: scaleY(0.45);
-        }
-      }
-
-      .typed {
-        width: 100%;
-        max-width: 460px;
-        padding: 18px 20px;
-        font-size: 15px;
-        color: var(--text);
-      }
-
-      .typed .caret {
-        display: inline-block;
-        width: 1.5px;
-        height: 1.1em;
-        background: var(--text);
-        vertical-align: -0.18em;
-        margin-left: 2px;
-        animation: caret 1.1s steps(1) infinite;
-      }
-
-      @keyframes caret {
-        50% {
-          opacity: 0;
-        }
-      }
-
-      .typed-label {
-        font-family: var(--mono);
-        font-size: 11.5px;
-        color: var(--faint);
-        margin-bottom: 8px;
-      }
-
-      /* ---------- privacy statement ---------- */
-      .privacy {
-        margin-top: 112px;
-        border-top: 1px solid var(--line);
-        border-bottom: 1px solid var(--line);
-        background: radial-gradient(
-          60% 120% at 50% 0%,
-          rgba(var(--accent-rgb), 0.05),
-          transparent 70%
-        );
-        text-align: center;
-        padding: 96px 0;
-      }
-
-      .privacy h2 {
-        font-family: var(--serif);
-        font-weight: 400;
-        font-size: clamp(34px, 5.6vw, 58px);
-        line-height: 1.15;
-        max-width: 720px;
-        margin: 0 auto 18px;
-      }
-
-      .privacy h2 em {
-        font-style: italic;
-        color: var(--accent);
-      }
-
-      .privacy p {
-        color: var(--muted);
-        max-width: 540px;
-        margin: 0 auto;
-      }
-
-      .privacy .keys {
-        display: flex;
-        gap: 10px;
-        justify-content: center;
-        flex-wrap: wrap;
-        margin-top: 30px;
-      }
-
-      .keys span {
-        font-family: var(--mono);
-        font-size: 12px;
-        color: var(--muted);
-        border: 1px solid var(--line-strong);
-        border-radius: 999px;
-        padding: 6px 14px;
-      }
-
-      /* ---------- install ---------- */
-      .terminal {
-        background: var(--bg-well);
-        border: 1px solid var(--line-strong);
-        border-radius: 14px;
-        margin-top: 44px;
-        overflow: hidden;
-        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.4);
-      }
-
-      .terminal-bar {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        padding: 12px 16px;
-        border-bottom: 1px solid var(--line);
-      }
-
-      .terminal-bar i {
-        width: 11px;
-        height: 11px;
-        border-radius: 50%;
-        background: rgba(235, 238, 245, 0.14);
-      }
-
-      .terminal-bar em {
-        font-family: var(--mono);
-        font-style: normal;
-        font-size: 12px;
+      .line .ts {
+        font: 11px var(--mono);
         color: var(--faint);
         margin-left: 8px;
       }
-
-      .terminal pre {
-        padding: 20px 22px;
-        font-family: var(--mono);
-        font-size: 13.5px;
-        line-height: 2.05;
-        overflow-x: auto;
-        color: var(--text);
+      @keyframes rise {
+        from {
+          opacity: 0;
+          transform: translateY(10px);
+        }
       }
-
-      .terminal .p {
-        color: var(--faint);
-        user-select: none;
+      .toast {
+        position: absolute;
+        top: 58px;
+        right: 16px;
+        width: min(300px, calc(100% - 32px));
+        padding: 14px 16px;
+        border-radius: 14px;
+        z-index: 3;
+        background: rgba(23, 20, 31, 0.92);
+        border: 1px solid var(--line-2);
+        backdrop-filter: blur(10px);
+        box-shadow: 0 20px 50px -10px rgba(0, 0, 0, 0.6);
+        transform: translateY(-14px);
+        opacity: 0;
+        transition:
+          transform 0.5s,
+          opacity 0.5s;
+        pointer-events: none;
       }
-
-      .terminal .c {
-        color: var(--faint);
-        font-style: italic;
+      .toast.show {
+        transform: none;
+        opacity: 1;
       }
-
-      .install-notes {
-        margin-top: 26px;
-        display: grid;
-        grid-template-columns: repeat(2, 1fr);
-        gap: 22px;
-      }
-
-      .install-notes div {
-        font-size: 14.5px;
-        color: var(--muted);
-      }
-
-      .install-notes b {
+      .toast b {
         display: block;
-        color: var(--text);
-        font-weight: 600;
-        font-size: 14.5px;
-        margin-bottom: 3px;
-      }
-
-      .install-notes a {
-        color: var(--action-hover);
-      }
-
-      /* ---------- footer ---------- */
-      footer {
-        margin-top: 120px;
-        border-top: 1px solid var(--line);
-        padding: 40px 0 56px;
-      }
-
-      .foot-row {
-        display: flex;
-        justify-content: space-between;
-        align-items: baseline;
-        gap: 20px;
-        flex-wrap: wrap;
-      }
-
-      .foot-row p {
         font-size: 14px;
+      }
+      .toast p {
+        font-size: 13px;
         color: var(--muted);
+        margin: 3px 0 10px;
       }
-
-      .foot-row a {
-        color: var(--text);
-        text-decoration-color: var(--faint);
-      }
-
-      .foot-etym {
-        font-family: var(--mono);
-        font-size: 12.5px;
-        color: var(--faint);
-      }
-
-      /* ---------- product showcase: the real app, both themes ---------- */
-      .showcase {
-        position: relative;
-        padding: 72px 0 40px;
-      }
-      .shot {
-        border-radius: 12px;
-        overflow: hidden;
-        background: var(--bg-raise);
-        box-shadow:
-          0 0 0 1px var(--line-strong),
-          0 30px 80px -20px rgba(0, 0, 0, 0.65);
-      }
-      .shot .chrome {
+      .toast .tb {
         display: flex;
-        gap: 7px;
-        padding: 11px 13px;
-        background: rgba(255, 255, 255, 0.03);
+        gap: 8px;
+      }
+      .toast .tb span {
+        font-size: 12.5px;
+        padding: 5px 12px;
+        border-radius: 8px;
+        background: var(--bg-2);
+        border: 1px solid var(--line-2);
+      }
+      .toast .tb span:first-child {
+        background: #7c3aed;
+        border-color: #7c3aed;
+      }
+      .summary-pill {
+        position: absolute;
+        left: 50%;
+        bottom: 16px;
+        transform: translate(-50%, 16px);
+        opacity: 0;
+        transition: 0.5s;
+        z-index: 3;
+        font: 12.5px var(--mono);
+        padding: 8px 14px;
+        border-radius: 999px;
+        background: rgba(var(--violet-rgb), 0.16);
+        border: 1px solid rgba(var(--violet-rgb), 0.4);
+        white-space: nowrap;
+      }
+      .summary-pill.show {
+        opacity: 1;
+        transform: translate(-50%, 0);
+      }
+
+      .os-tabs {
+        padding: 0;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+      }
+      .os-tabs .tabs {
+        display: flex;
         border-bottom: 1px solid var(--line);
       }
-      .shot .chrome i {
-        width: 11px;
-        height: 11px;
-        border-radius: 50%;
-        background: #ff5f57;
+      .os-tabs .tabs button {
+        flex: 1;
+        background: none;
+        border: 0;
+        color: var(--muted);
+        font: 500 13.5px var(--sans);
+        padding: 14px 8px;
+        cursor: pointer;
+        border-bottom: 2px solid transparent;
+        margin-bottom: -1px;
       }
-      .shot .chrome i:nth-child(2) {
-        background: #febc2e;
+      .os-tabs .tabs button[aria-selected="true"] {
+        color: var(--text);
+        border-bottom-color: var(--violet);
       }
-      .shot .chrome i:nth-child(3) {
-        background: #28c840;
+      .os-pane {
+        padding: 20px 20px 22px;
+        display: none;
+        flex-direction: column;
+        gap: 16px;
       }
-      .shot.light .chrome {
-        background: #efede8;
-        border-bottom-color: #e6e3dc;
+      .os-pane.on {
+        display: flex;
       }
-      .shot img {
-        display: block;
-        width: 100%;
-        height: auto;
+      .row h5 {
+        font: 500 11.5px var(--mono);
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--faint);
+        margin-bottom: 6px;
       }
-      .shot-back {
-        width: 74%;
+      .row p {
+        font-size: 14.5px;
+        color: var(--muted);
       }
-      .shot-front {
-        width: 62%;
-        margin: -34% 0 0 auto;
-        position: relative;
+      .row p code,
+      .fine code,
+      .sub code {
+        font: 12.5px var(--mono);
+        color: var(--text);
+        background: rgba(255, 255, 255, 0.05);
+        padding: 1px 5px;
+        border-radius: 5px;
+        overflow-wrap: anywhere;
       }
-      .showcase figcaption {
-        margin-top: 22px;
-        text-align: right;
-        font-family: var(--mono);
-        font-size: 12.5px;
+      pre.code {
+        font: 12.5px/1.65 var(--mono);
+        background: var(--bg);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 14px 16px;
+        overflow-x: auto;
+        color: #cfc9e2;
+      }
+      pre.code .k {
+        color: var(--pink);
+      }
+      pre.code .c {
         color: var(--faint);
       }
-      @media (max-width: 760px) {
-        .shot-back,
-        .shot-front {
-          width: 100%;
-          margin: 0;
-        }
-        .shot-front {
-          margin-top: 18px;
-        }
-        .showcase figcaption {
-          text-align: left;
-        }
+      pre.code .s {
+        color: var(--ok);
+      }
+      pre.code .f {
+        color: var(--violet);
       }
 
-      /* ---------- reveal on scroll ---------- */
-      .reveal {
-        opacity: 0;
-        transform: translateY(18px);
+      .feats {
+        margin-top: 18px;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 18px;
+      }
+      @media (max-width: 920px) {
+        .feats {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+      @media (max-width: 560px) {
+        .feats {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+      .feat {
+        padding: 22px;
+      }
+      .feat h4 {
+        font-size: 16px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .feat h4 i {
+        font-style: normal;
+        font: 12px var(--mono);
+        color: var(--violet);
+      }
+      .feat p {
+        font-size: 14.5px;
+        color: var(--muted);
+        margin-top: 8px;
+      }
+
+      /* ---------- screenshots ---------- */
+      .shots {
+        margin-top: 60px;
+        position: relative;
+        aspect-ratio: 100 / 52;
+      }
+      .shots figure {
+        position: absolute;
+        width: 64%;
+        border-radius: 14px;
+        overflow: hidden;
+        border: 1px solid var(--line-2);
+        box-shadow: 0 40px 80px -20px rgba(0, 0, 0, 0.75);
+        transition: transform 0.9s cubic-bezier(0.2, 0.7, 0.2, 1);
+        will-change: transform;
+      }
+      .shots figure:nth-child(1) {
+        left: 0;
+        top: 0;
+      }
+      .shots figure:nth-child(2) {
+        right: 0;
+        bottom: 0;
+      }
+      .shots:hover figure:nth-child(1) {
+        transform: translate(-8px, -6px);
+      }
+      .shots:hover figure:nth-child(2) {
+        transform: translate(8px, 6px);
+      }
+      .shots figcaption {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: -34px;
+        text-align: center;
+        font: 12px var(--mono);
+        color: var(--faint);
+      }
+
+      /* ---------- cloud ---------- */
+      .cloud {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: 40px;
+        align-items: center;
+      }
+      @media (max-width: 920px) {
+        .cloud {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+      .subs {
+        position: relative;
+        aspect-ratio: 16 / 10;
+        border-radius: var(--radius);
+        overflow: hidden;
+        border: 1px solid var(--line);
+        background:
+          radial-gradient(
+            120% 80% at 20% 10%,
+            rgba(124, 58, 237, 0.25),
+            transparent 60%
+          ),
+          radial-gradient(
+            90% 70% at 90% 90%,
+            rgba(244, 114, 182, 0.18),
+            transparent 60%
+          ),
+          var(--bg-1);
+      }
+      .subs .tiles {
+        position: absolute;
+        inset: 18px 18px 108px;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+      .subs .tiles div {
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid var(--line);
+        position: relative;
+        display: grid;
+        place-items: center;
+      }
+      .subs .tiles div::after {
+        content: attr(data-n);
+        position: absolute;
+        left: 10px;
+        bottom: 8px;
+        font: 11px var(--mono);
+        color: var(--muted);
+      }
+      .subs .tiles .av {
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #3b3450, #24202f);
+      }
+      .subs .tiles div.talk {
+        border-color: rgba(var(--violet-rgb), 0.7);
+        box-shadow: inset 0 0 0 1px rgba(var(--violet-rgb), 0.4);
+      }
+      .strip {
+        position: absolute;
+        left: 50%;
+        bottom: 16px;
+        transform: translateX(-50%);
+        width: calc(100% - 36px);
+        padding: 10px 16px;
+        border-radius: 12px;
+        background: rgba(0, 0, 0, 0.72);
+        text-align: center;
+      }
+      .strip .o {
+        font-size: 13px;
+        color: var(--muted);
+        min-height: 1.5em;
+      }
+      .strip .tr {
+        font-size: 16px;
+        font-weight: 500;
+        min-height: 1.5em;
+      }
+      .strip .tag {
+        display: block;
+        font: 10.5px var(--mono);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--faint);
+        margin-bottom: 2px;
+      }
+      .list {
+        list-style: none;
+        margin-top: 26px;
+        display: grid;
+        gap: 14px;
+      }
+      .list li {
+        display: grid;
+        grid-template-columns: 22px 1fr;
+        gap: 10px;
+        color: var(--muted);
+        font-size: 15.5px;
+      }
+      .list li b {
+        color: var(--text);
+        font-weight: 500;
+      }
+      .list li::before {
+        content: "✦";
+        color: var(--violet);
+        font-size: 13px;
+        padding-top: 3px;
+      }
+
+      /* ---------- bento ---------- */
+      .bento {
+        margin-top: 52px;
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 18px;
+      }
+      .bento .card {
+        padding: 24px;
+        position: relative;
+        overflow: hidden;
+      }
+      .bento .big {
+        grid-column: span 2;
+      }
+      .bento .tall {
+        grid-row: span 2;
+      }
+      @media (max-width: 920px) {
+        .bento {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+      @media (max-width: 560px) {
+        .bento {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .bento .big {
+          grid-column: auto;
+        }
+      }
+      .num {
+        font: 600 clamp(40px, 5vw, 58px) / 1 var(--sans);
+        letter-spacing: -0.04em;
+        font-variant-numeric: tabular-nums;
+        background: linear-gradient(180deg, #fff, #b9a8f5);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+      .num small {
+        font-size: 0.45em;
+        letter-spacing: -0.01em;
+      }
+      .bento .lbl {
+        margin-top: 10px;
+        font-size: 14.5px;
+        color: var(--muted);
+      }
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 16px;
+      }
+      .chips span {
+        font: 12.5px var(--mono);
+        padding: 5px 10px;
+        border-radius: 8px;
+        border: 1px solid var(--line-2);
+        color: var(--muted);
+        background: rgba(255, 255, 255, 0.02);
+      }
+      .bento h4 {
+        font-size: 17px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+      .bento p {
+        font-size: 14.5px;
+        color: var(--muted);
+        margin-top: 8px;
+      }
+      .glow {
+        position: absolute;
+        width: 260px;
+        height: 260px;
+        border-radius: 50%;
+        filter: blur(70px);
+        opacity: 0.35;
+        pointer-events: none;
+      }
+
+      /* ---------- privacy ---------- */
+      .quiet {
+        text-align: center;
+      }
+      .quiet blockquote {
+        font-family: var(--serif);
+        font-size: clamp(36px, 6vw, 76px);
+        line-height: 1.05;
+        letter-spacing: -0.01em;
+        max-width: 16ch;
+        margin: 0 auto;
+      }
+      .quiet blockquote em {
+        color: var(--violet);
+      }
+      .quiet p {
+        max-width: 60ch;
+        margin: 28px auto 0;
+        color: var(--muted);
+      }
+      .tags {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 10px;
+        margin-top: 30px;
+      }
+      .tags span {
+        font: 12.5px var(--mono);
+        padding: 7px 14px;
+        border-radius: 999px;
+        border: 1px solid rgba(var(--violet-rgb), 0.35);
+        color: var(--text);
+        background: rgba(var(--violet-rgb), 0.07);
+      }
+
+      /* ---------- download ---------- */
+      .dl {
+        margin-top: 48px;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 18px;
+      }
+      @media (max-width: 920px) {
+        .dl {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+      .os {
+        padding: 26px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        position: relative;
         transition:
-          opacity 0.7s ease,
-          transform 0.7s ease;
+          border-color 0.3s,
+          transform 0.3s;
+      }
+      .os.mine {
+        border-color: rgba(var(--violet-rgb), 0.6);
+        box-shadow:
+          0 0 0 1px rgba(var(--violet-rgb), 0.25),
+          0 30px 60px -30px rgba(124, 58, 237, 0.6);
+      }
+      .os.mine::before {
+        content: "your system";
+        position: absolute;
+        top: -10px;
+        right: 18px;
+        font: 11px var(--mono);
+        padding: 2px 9px;
+        border-radius: 999px;
+        background: #7c3aed;
+        color: #fff;
+      }
+      .os svg {
+        width: 30px;
+        height: 30px;
+        fill: var(--text);
+      }
+      .os h3 {
+        font-size: 22px;
+        letter-spacing: -0.02em;
+        font-weight: 600;
+      }
+      .os .req {
+        font: 12.5px var(--mono);
+        color: var(--faint);
+      }
+      .os p {
+        font-size: 14.5px;
+        color: var(--muted);
+        flex: 1;
+      }
+      .os .btn {
+        justify-content: center;
+      }
+      .relmeta {
+        margin-top: 18px;
+        font: 12.5px var(--mono);
+        color: var(--faint);
+      }
+      .relmeta b {
+        color: var(--muted);
+        font-weight: 500;
+      }
+      .term {
+        margin-top: 40px;
+        overflow: hidden;
+      }
+      .term .win-bar {
+        background: rgba(0, 0, 0, 0.2);
+      }
+      .term pre {
+        padding: 18px 20px;
+        font: 13px/1.8 var(--mono);
+        overflow-x: auto;
+        color: #d7d1ea;
+      }
+      .term pre .p {
+        color: var(--violet);
+        user-select: none;
+      }
+      .term pre .c {
+        color: var(--faint);
       }
 
-      .reveal.in {
-        opacity: 1;
-        transform: none;
+      footer {
+        border-top: 1px solid var(--line);
+        padding: 40px 0 60px;
+        color: var(--faint);
+        font-size: 14px;
+      }
+      footer .wrap {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px 26px;
+        align-items: center;
+      }
+      footer .tr {
+        margin-left: auto;
+        font-family: var(--serif);
+        font-style: italic;
+        font-size: 18px;
+        color: var(--muted);
       }
 
       @media (prefers-reduced-motion: reduce) {
@@ -840,504 +1497,1602 @@
           transform: none;
           transition: none;
         }
-        .overlay-bars i,
-        .transcript-bar .live-dot,
-        .typed .caret {
+        .pkt,
+        .scroll-hint::after,
+        .caret,
+        .sim-head .rec {
           animation: none;
-        }
-      }
-
-      /* ---------- responsive ---------- */
-      @media (max-width: 860px) {
-        .section-body,
-        .section-body.flip {
-          grid-template-columns: 1fr;
-          gap: 36px;
-        }
-
-        .claims-grid {
-          grid-template-columns: 1fr;
-        }
-
-        .claim {
-          border-left: none;
-          border-top: 1px solid var(--line);
-          padding-left: 0;
-        }
-
-        .claim:first-child {
-          border-top: none;
-        }
-
-        .install-notes {
-          grid-template-columns: 1fr;
-        }
-
-        .section {
-          padding-top: 80px;
         }
       }
     </style>
   </head>
   <body>
-    <div class="wrap">
-      <header class="nav">
+    <nav class="top" id="nav">
+      <div class="wrap">
         <a class="wordmark" href="#"
-          >Fısıltı <span class="live-dot brand-dot" aria-hidden="true"></span
-        ></a>
-        <nav class="nav-links" aria-label="Site">
-          <a href="#dictation">Dictation</a>
+          ><img src="icon.png" alt="" width="26" height="26" />Fısıltı</a
+        >
+        <div class="links">
+          <a href="#demo">Live demo</a>
+          <a href="#pipeline">Pipeline</a>
           <a href="#meetings">Meetings</a>
-          <a href="#cloud">Cloud</a>
-          <a href="#install">Install</a>
-          <a href="https://github.com/umitaltintas/fisilti">GitHub</a>
-        </nav>
-      </header>
-    </div>
-
-    <main>
-      <section class="hero wrap">
-        <p class="etym">
-          fı·sıl·tı <span class="ipa">/fɯ.sɯɫ.tɯ/</span> · noun, Turkish ·
-          <span class="sense">a whisper</span>
-        </p>
-        <h1>Fısıltı<span class="dot">.</span></h1>
-        <div class="wave-band" aria-hidden="true">
-          <canvas id="wave"></canvas>
+          <a href="#engine">Under the hood</a>
+          <a href="#download">Download</a>
         </div>
+        <a class="gh" href="https://github.com/umitaltintas/fisilti"
+          ><svg viewBox="0 0 16 16" aria-hidden="true">
+            <path
+              fill="currentColor"
+              d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"
+            /></svg
+          ><span id="stars">GitHub</span></a
+        >
+      </div>
+    </nav>
+
+    <!-- ================= HERO ================= -->
+    <header class="hero">
+      <canvas id="field" aria-hidden="true"></canvas>
+      <div class="wrap">
+        <div class="eyebrow">
+          <span class="dot"></span>fı·sıl·tı — Turkish for
+          <em
+            class="s"
+            style="text-transform: none; font-size: 15px; letter-spacing: 0"
+            >a whisper</em
+          >
+        </div>
+        <h1>Speak. <em class="s">It's typed.</em></h1>
         <p class="lede">
-          Private, local-first dictation and AI meeting notes for macOS.
-          Everything you say is transcribed <strong>on your Mac</strong> — and
-          stays there.
+          Push-to-talk dictation and meeting notes that are
+          <b>transcribed on your own machine</b>. No account, no telemetry,
+          nothing uploaded unless you ask for it.
         </p>
-        <div class="cta-row">
-          <a
-            class="btn btn-primary"
-            href="https://github.com/umitaltintas/fisilti/releases/latest"
-            >Download for Mac</a
-          >
-          <a
-            class="btn btn-ghost"
-            href="https://github.com/umitaltintas/fisilti"
-            >View on GitHub</a
-          >
+        <div class="cta">
+          <a class="btn primary" id="hero-dl" href="#download"
+            >Download <small id="hero-dl-os"></small
+          ></a>
+          <a class="btn" href="#demo">Try it in this tab ↓</a>
         </div>
-        <p class="hero-meta">
-          macOS 14.4+ · Apple Silicon · Whisper &amp; Parakeet, on-device · MIT
-        </p>
-      </section>
+        <div class="platforms">
+          <span>macOS 14.4+</span><span>Windows 10/11</span><span>Linux</span
+          ><span>MIT licensed</span>
+        </div>
+      </div>
+      <a class="scroll-hint" href="#demo">scroll</a>
+    </header>
 
-      <div class="claims">
-        <div class="wrap claims-grid">
-          <div class="claim">
-            <h3>Local until you say otherwise</h3>
-            <p>
-              Speech recognition runs on your machine by default. No account, no
-              telemetry, nothing uploaded. Cloud transcription exists, but it is
-              off until you turn it on — and the app says so on screen while it
-              is running.
-            </p>
+    <!-- ================= DEMO ================= -->
+    <section id="demo">
+      <div class="wrap">
+        <div class="kicker reveal">Live demo · no install</div>
+        <h2 class="reveal">Whisper, running <em class="s">in this tab.</em></h2>
+        <p class="sub reveal">
+          This is the app's core loop rebuilt for the web: hold the button,
+          talk, let go. The audio is trimmed by a voice-activity gate, resampled
+          to 16 kHz and transcribed by OpenAI's Whisper compiled to WebAssembly.
+          The model downloads once; after that your voice never leaves the page
+          — open the network tab and check.
+        </p>
+
+        <div class="demo reveal">
+          <div class="card win">
+            <div class="win-bar">
+              <i></i><i></i><i></i><span>notes.md — any app with a cursor</span>
+            </div>
+            <div class="editor" id="editor" aria-live="polite">
+              <span class="ph"
+                >Hold the button (or <span class="kbd">Space</span>) and say
+                something. Pick Türkçe or English on the right.</span
+              ><span class="caret"></span>
+            </div>
+            <div class="rec-strip">
+              <button id="ptt" aria-label="Hold to talk">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M12 15a3.5 3.5 0 0 0 3.5-3.5v-6a3.5 3.5 0 1 0-7 0v6A3.5 3.5 0 0 0 12 15Zm6-3.5a1 1 0 1 1 2 0 8 8 0 0 1-7 7.94V21a1 1 0 1 1-2 0v-1.56a8 8 0 0 1-7-7.94 1 1 0 1 1 2 0 6 6 0 0 0 12 0Z"
+                  />
+                </svg>
+              </button>
+              <div class="rec-meta">
+                <div class="status" id="status">
+                  Ready. First use downloads a ~73 MB model.
+                </div>
+                <div class="progress" id="progress"><i></i></div>
+              </div>
+              <div class="scope"><canvas id="scope"></canvas></div>
+            </div>
           </div>
-          <div class="claim">
-            <h3>Summaries on your terms</h3>
-            <p>
-              AI meeting notes are optional and use a provider you choose —
-              OpenRouter, Google Gemini, a local Ollama, or any
-              OpenAI-compatible endpoint.
-            </p>
-          </div>
-          <div class="claim">
-            <h3>Open and auditable</h3>
-            <p>
-              MIT-licensed. Read the code, build it yourself,
-              own the result.
+
+          <div class="card telemetry">
+            <h3>Telemetry <span id="t-backend">—</span></h3>
+            <div class="opts">
+              <div class="seg" role="group" aria-label="Language" id="lang">
+                <button aria-pressed="false" data-v="turkish">türkçe</button>
+                <button aria-pressed="true" data-v="english">english</button>
+              </div>
+            </div>
+            <dl class="tgrid">
+              <div>
+                <dt>Recorded</dt>
+                <dd id="t-rec">—</dd>
+              </div>
+              <div>
+                <dt>Speech kept</dt>
+                <dd id="t-kept">—</dd>
+              </div>
+              <div>
+                <dt>Inference</dt>
+                <dd id="t-inf">—</dd>
+              </div>
+              <div>
+                <dt>Speed</dt>
+                <dd id="t-rtf">—</dd>
+              </div>
+            </dl>
+            <div>
+              <div class="vadbar"><canvas id="vad"></canvas></div>
+              <div class="legend">
+                <span
+                  ><i style="background: var(--violet)"></i>speech, sent to
+                  Whisper</span
+                ><span
+                  ><i style="background: #3a3448"></i>silence, trimmed</span
+                >
+              </div>
+            </div>
+            <p class="fine">
+              Demo model: <b>whisper-base</b>, multilingual, int8 — about 73 MB,
+              downloaded once and cached by your browser. It is 20× smaller than
+              what the app uses, so expect rough edges, especially in Turkish.
+              The desktop app runs <b>Whisper Large v3 / Turbo</b> natively on
+              Metal or Vulkan, with Silero VAD instead of this energy gate.
             </p>
           </div>
         </div>
       </div>
+    </section>
 
-      <section class="showcase wrap" aria-label="The app">
-        <figure class="reveal">
-          <div class="shot shot-back">
-            <div class="chrome" aria-hidden="true"><i></i><i></i><i></i></div>
+    <!-- ================= PIPELINE ================= -->
+    <section id="pipeline" style="padding-top: 20px">
+      <div class="wrap">
+        <div class="kicker reveal">The pipeline</div>
+        <h2 class="reveal">
+          From breath to text <em class="s">in five hops.</em>
+        </h2>
+        <p class="sub reveal">
+          Every stage runs locally by default. The numbers fill in from your own
+          demo run above.
+        </p>
+        <div class="pipe reveal" id="pipe">
+          <div class="wire">
+            <span class="pkt"></span><span class="pkt"></span
+            ><span class="pkt"></span>
+          </div>
+          <div class="stage" data-s="0">
+            <div class="node">
+              <svg viewBox="0 0 24 24">
+                <rect x="9" y="3" width="6" height="11" rx="3" />
+                <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
+              </svg>
+            </div>
+            <h4>Capture</h4>
+            <p>
+              Mic through cpal; in meetings, system audio too — CoreAudio tap,
+              PipeWire monitor or WASAPI loopback.
+            </p>
+            <div class="m" id="m0"></div>
+          </div>
+          <div class="stage" data-s="1">
+            <div class="node">
+              <svg viewBox="0 0 24 24">
+                <path d="M3 12h3l2-6 3 12 3-9 2 3h5" />
+              </svg>
+            </div>
+            <h4>Voice activity</h4>
+            <p>
+              Silero VAD (ONNX) keeps the speech and drops the dead air before
+              any model sees it.
+            </p>
+            <div class="m" id="m1"></div>
+          </div>
+          <div class="stage" data-s="2">
+            <div class="node">
+              <svg viewBox="0 0 24 24">
+                <path d="M4 7h4M4 12h7M4 17h4M14 5l6 7-6 7" />
+              </svg>
+            </div>
+            <h4>Resample</h4>
+            <p>
+              Down to 16 kHz mono with rubato — the rate every speech model
+              expects.
+            </p>
+            <div class="m" id="m2"></div>
+          </div>
+          <div class="stage" data-s="3">
+            <div class="node">
+              <svg viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="3" />
+                <path
+                  d="M12 2v4M12 18v4M2 12h4M18 12h4M5 5l3 3M16 16l3 3M5 19l3-3M16 8l3-3"
+                />
+              </svg>
+            </div>
+            <h4>Transcribe</h4>
+            <p>
+              whisper.cpp on Metal (Mac) or Vulkan (Windows, Linux). One engine
+              resident at a time.
+            </p>
+            <div class="m" id="m3"></div>
+          </div>
+          <div class="stage" data-s="4">
+            <div class="node">
+              <svg viewBox="0 0 24 24">
+                <path d="M5 4h10l4 4v12H5zM9 13h6M9 17h4" />
+              </svg>
+            </div>
+            <h4>Paste</h4>
+            <p>
+              Typed into the focused app — editor, browser, chat, terminal — and
+              kept in local history.
+            </p>
+            <div class="m" id="m4"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= MEETINGS ================= -->
+    <section id="meetings">
+      <div class="wrap">
+        <div class="kicker reveal">Meeting mode</div>
+        <h2 class="reveal">
+          It notices the meeting <em class="s">before you do.</em>
+        </h2>
+        <p class="sub reveal">
+          When Teams, Zoom, Meet or any browser call starts using the
+          microphone, Fısıltı offers to take notes. It records your mic and the
+          system audio as two sources, cuts them at natural pauses, and
+          transcribes while the meeting is still going — so stopping takes
+          seconds, not a second pass over an hour of audio.
+        </p>
+
+        <div class="meet reveal">
+          <div class="card sim" id="sim">
+            <div class="sim-head">
+              <span class="rec"></span>recording · mic + system audio<span
+                class="clock"
+                id="clock"
+                >00:00</span
+              >
+            </div>
+            <canvas id="lanes" aria-hidden="true"></canvas>
+            <div class="transcript" id="transcript" aria-live="off"></div>
+            <div class="toast" id="toast">
+              <b>Meeting detected</b>
+              <p>Microsoft Teams is using the microphone. Take notes?</p>
+              <div class="tb"><span>Start</span><span>Ignore</span></div>
+            </div>
+            <div class="summary-pill" id="pill">
+              ✦ summary ready — 2 decisions, 1 action item
+            </div>
+          </div>
+
+          <div class="card os-tabs">
+            <div class="tabs" role="tablist">
+              <button role="tab" aria-selected="true" data-os="mac">
+                macOS
+              </button>
+              <button role="tab" aria-selected="false" data-os="win">
+                Windows
+              </button>
+              <button role="tab" aria-selected="false" data-os="linux">
+                Linux
+              </button>
+            </div>
+            <div class="os-pane on" data-os="mac">
+              <div class="row">
+                <h5>Detection</h5>
+                <p>
+                  CoreAudio process objects: every process pulling mic input,
+                  matched by bundle id. Fısıltı's own PID is excluded.
+                </p>
+              </div>
+              <pre class="code"><span class="c">// macOS 14+, via cidre</span>
+<span class="k">for</span> p <span class="k">in</span> <span class="f">process_object_list</span>()? {
+  <span class="k">if</span> p.<span class="f">is_running_input</span>()? &amp;&amp; <span class="f">is_meeting_app</span>(&amp;p.<span class="f">bundle_id</span>()?) {
+    <span class="k">return</span> <span class="f">Some</span>(<span class="s">"us.zoom.xos"</span>);
+  }
+}</pre>
+              <div class="row">
+                <h5>Capture</h5>
+                <p>
+                  A CoreAudio process tap on system output, beside the mic
+                  stream. Subtitles live in a non-activating panel hidden from
+                  screen sharing.
+                </p>
+              </div>
+            </div>
+            <div class="os-pane" data-os="win">
+              <div class="row">
+                <h5>Detection</h5>
+                <p>
+                  The microphone privacy consent store. An entry whose
+                  <code>LastUsedTimeStop</code> is zero is recording right now.
+                </p>
+              </div>
+              <pre
+                class="code"
+              ><span class="c">// HKCU\…\CapabilityAccessManager\ConsentStore\microphone</span>
+<span class="k">let</span> live = start != <span class="s">0</span> &amp;&amp; stop == <span class="s">0</span>;
+<span class="c">// NonPackaged#C:#…#ms-teams.exe → "ms-teams"</span>
+<span class="f">keyed_match</span>(WINDOWS_MEETING_APPS, &amp;[exe_stem, package])</pre>
+              <div class="row">
+                <h5>Capture</h5>
+                <p>
+                  WASAPI loopback on the default output, re-opened when you
+                  switch headsets, padded with silence while nothing plays.
+                  Subtitles use <code>WDA_EXCLUDEFROMCAPTURE</code>.
+                </p>
+              </div>
+            </div>
+            <div class="os-pane" data-os="linux">
+              <div class="row">
+                <h5>Detection</h5>
+                <p>
+                  PulseAudio / PipeWire recording streams, matched by
+                  application name and binary.
+                </p>
+              </div>
+              <pre
+                class="code"
+              ><span class="c">// source-outputs that are not corked</span>
+<span class="k">for</span> s <span class="k">in</span> pulse.<span class="f">recording_streams</span>()? {
+  <span class="f">linux_meeting_app_match</span>(&amp;[s.app_name, s.binary])
+}</pre>
+              <div class="row">
+                <h5>Capture</h5>
+                <p>
+                  The default sink's monitor source. Meeting names come from
+                  KWin window captions on KDE; subtitles are a layer-shell strip
+                  on Wayland.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="feats">
+          <div class="card feat reveal">
+            <h4><i>01</i>Live, not later</h4>
+            <p>
+              VAD-cut segments of up to 30 s are transcribed as you talk. If the
+              GPU falls behind they queue in a backlog instead of being dropped.
+            </p>
+          </div>
+          <div class="card feat reveal">
+            <h4><i>02</i>Auto-end</h4>
+            <p>
+              Long silence, or the meeting app letting go of the mic, prompts an
+              end — and stops on its own after a grace period.
+            </p>
+          </div>
+          <div class="card feat reveal">
+            <h4><i>03</i>Crash-proof</h4>
+            <p>
+              Audio is buffered to disk per source. Quit mid-meeting and the
+              session is recoverable on next launch.
+            </p>
+          </div>
+          <div class="card feat reveal">
+            <h4><i>04</i>Named for real</h4>
+            <p>
+              Titled from the calendar event in progress or the meeting window's
+              title — not "Meeting 14".
+            </p>
+          </div>
+          <div class="card feat reveal">
+            <h4><i>05</i>Import anything</h4>
+            <p>
+              Drop a phone voice memo — m4a, mp3, wav, flac, ogg — and it
+              becomes a meeting with transcript, title and summary.
+            </p>
+          </div>
+          <div class="card feat reveal">
+            <h4><i>06</i>Markdown out</h4>
+            <p>
+              Every finished meeting written to a folder you choose, with YAML
+              front matter. Obsidian-ready.
+            </p>
+          </div>
+        </div>
+
+        <div class="shots reveal">
+          <figure>
             <img
-              src="screens/home-dark.webp"
+              src="screens/meetings-dark.webp"
               width="1760"
               height="1200"
               loading="lazy"
-              alt="Fısıltı's home screen in dark mode: start a meeting, the dictation shortcut, and your recent meetings and dictations."
+              alt="The Meetings page in dark mode: Import and Start meeting in the header, past meetings grouped by day below."
             />
-          </div>
-          <div class="shot shot-front light">
-            <div class="chrome" aria-hidden="true"><i></i><i></i><i></i></div>
+          </figure>
+          <figure>
             <img
               src="screens/meeting-light.webp"
               width="1760"
               height="1200"
               loading="lazy"
-              alt="A live meeting in light mode: your notes on a serif page, the transcript running beside them, recording controls floating below."
+              alt="A live meeting in light mode: notes beside the running transcript, recording controls below."
             />
-          </div>
-          <figcaption>Home in dark · a live meeting in light</figcaption>
-        </figure>
-      </section>
+          </figure>
+        </div>
+      </div>
+    </section>
 
-      <section class="section wrap" id="dictation">
-        <p class="eyebrow">Dictation</p>
-        <h2>Press, speak, <em>it's typed.</em></h2>
-        <div class="section-body">
-          <div class="feature-copy reveal">
-            <p>
-              Hold a shortcut and talk. When you let go, your words are pasted
-              into whatever app you're in — editor, browser, chat, terminal.
-            </p>
-            <ul class="feature-list">
-              <li>
-                <span
-                  ><b>Whisper &amp; Parakeet models</b> — GPU-accelerated where
-                  available, downloaded on first use.</span
-                >
-              </li>
-              <li>
-                <span
-                  ><b>Voice activity detection</b> trims the silence so you get
-                  text, not dead air.</span
-                >
-              </li>
-              <li>
-                <span
-                  ><b>Push-to-talk or toggle</b>, your shortcut, your
-                  choice.</span
-                >
-              </li>
-            </ul>
+    <!-- ================= CLOUD ================= -->
+    <section id="cloud">
+      <div class="wrap cloud">
+        <div class="subs reveal" aria-hidden="true">
+          <div class="tiles">
+            <div data-n="Speaker 1" class="talk"><span class="av"></span></div>
+            <div data-n="Speaker 2"><span class="av"></span></div>
+            <div data-n="Speaker 3"><span class="av"></span></div>
+            <div data-n="You"><span class="av"></span></div>
           </div>
-          <div class="dictation-stage reveal">
-            <div class="overlay-pill">
-              <span class="live-dot" aria-hidden="true"></span>
-              <span class="overlay-bars" aria-hidden="true"
-                ><i></i><i></i><i></i><i></i><i></i
-              ></span>
-              recording
-            </div>
-            <div class="window typed">
-              <p class="typed-label">anywhere a cursor blinks</p>
-              …and that's exactly why the quiet path is the fast path.<span
-                class="caret"
-                aria-hidden="true"
-              ></span>
-            </div>
+          <div class="strip">
+            <span class="tag">hidden from screen share</span>
+            <div class="o" id="sub-o"></div>
+            <div class="tr" id="sub-t"></div>
           </div>
         </div>
-      </section>
-
-      <section class="section wrap" id="meetings">
-        <p class="eyebrow">Meeting mode</p>
-        <h2>It notices the meeting <em>before you do.</em></h2>
-        <div class="section-body flip">
-          <div class="mock-stage reveal">
-            <div class="window prompt-card">
-              <h4>Meeting detected</h4>
-              <p class="q">
-                Zoom appears to be in a meeting. Start transcription?
-              </p>
-              <div class="prompt-actions" aria-hidden="true">
-                <span class="prompt-start">Start</span>
-                <span class="prompt-ignore">Ignore</span>
-              </div>
-            </div>
-            <div class="window transcript">
-              <div class="transcript-bar">
-                <span class="live-dot" aria-hidden="true"></span> recording
-                00:14:32 <span class="spacer"></span> mic + system audio
-              </div>
-              <div class="transcript-lines">
-                <div class="t-line t-you">
-                  <span class="t-who">You</span>
-                  <p>Let's lock the launch date.</p>
-                </div>
-                <div class="t-line t-them">
-                  <span class="t-who">Others</span>
-                  <p>Thursday works — the notes are already in Fısıltı.</p>
-                </div>
-                <div class="t-line t-you">
-                  <span class="t-who">You</span>
-                  <p>Then it's Thursday.</p>
-                </div>
-              </div>
-              <div class="transcript-foot">
-                <span class="spark">✦</span> Summary ready — decisions and
-                action items extracted.
-              </div>
-            </div>
-          </div>
-          <div class="feature-copy reveal">
-            <p>
-              When Zoom, Meet, Teams — or a browser tab — starts using the
-              microphone, Fısıltı quietly offers to take notes. One click and it
-              captures <strong>your mic and the system audio together</strong>,
-              transcribing live with per-speaker labels.
-            </p>
-            <p>
-              And when the room goes quiet, it asks whether the meeting is over
-              — then wraps up on its own if you've already left.
-            </p>
-            <p>
-              Recorded the talk on your phone instead? Drop the voice memo on
-              Fısıltı and it gets the same treatment —
-              <strong>transcript, title and summary</strong> — as a meeting it
-              captured itself.
-            </p>
-            <ul class="feature-list">
-              <li>
-                <span
-                  ><b>Auto-detection</b> of meeting apps and browser calls
-                  (opt-in).</span
-                >
-              </li>
-              <li>
-                <span
-                  ><b>Auto-end on silence</b> with a configurable timeout and
-                  grace period.</span
-                >
-              </li>
-              <li>
-                <span
-                  ><b>High-quality finalize pass</b> re-transcribes the whole
-                  session when you stop.</span
-                >
-              </li>
-              <li>
-                <span
-                  ><b>History with playback</b> — transcripts, notes and audio,
-                  stored locally.</span
-                >
-              </li>
-              <li>
-                <span
-                  ><b>Named after the real meeting</b> — the calendar event in
-                  progress, or the app's window title.</span
-                >
-              </li>
-              <li>
-                <span
-                  ><b>Nothing lost to a crash</b> — an interrupted session keeps
-                  its audio and can be transcribed later.</span
-                >
-              </li>
-              <li>
-                <span
-                  ><b>Transcribe a recording</b> — m4a, mp3, wav, flac, ogg from
-                  any phone or recorder.</span
-                >
-              </li>
-              <li>
-                <span
-                  ><b>Straight into your notes</b> — every meeting written as
-                  Markdown to a folder you choose, Obsidian-ready.</span
-                >
-              </li>
-            </ul>
-          </div>
-        </div>
-      </section>
-
-      <section class="section wrap" id="cloud">
-        <p class="eyebrow">Optional · bring your own key</p>
-        <h2>When on-device <em>isn't enough.</em></h2>
-        <div class="section-body">
-          <div class="feature-copy reveal">
-            <p>
-              Some things a local model simply cannot do: tell four remote
-              voices apart, or translate a conversation while it is still
-              happening. Fısıltı can hand those jobs to Google's Gemini models —
-              only if you switch it on, only with your own API key, and never
-              without saying so on screen.
-            </p>
-            <p>Every meeting shows what it cost, next to how long it ran.</p>
-            <ul class="feature-list">
-              <li>
-                <span
-                  ><b>Speaker identification</b> — "Speaker 1", "Speaker 2"
-                  instead of one anonymous block of everyone else.</span
-                >
-              </li>
-              <li>
-                <span
-                  ><b>Live translation</b> — follow a meeting in a language you
-                  don't speak, original and translation side by side.</span
-                >
-              </li>
-              <li>
-                <span
-                  ><b>On-screen subtitles</b> — a click-through strip at the
-                  bottom of your display, hidden from screen sharing.</span
-                >
-              </li>
-              <li>
-                <span
-                  ><b>Custom vocabulary</b> — the names, products and jargon
-                  your meetings are actually about.</span
-                >
-              </li>
-            </ul>
-          </div>
-        </div>
-      </section>
-
-      <section class="privacy">
-        <div class="wrap">
+        <div>
+          <div class="kicker reveal">Optional · your own key</div>
           <h2 class="reveal">
-            A whisper is a sound that
-            <em>stays in the room.</em>
+            When on-device <em class="s">isn't enough.</em>
           </h2>
-          <p class="reveal">
-            By default, so is everything Fısıltı hears: the models run here, the
-            history lives here, and the only network calls are the ones you
-            configure yourself. Cloud transcription can do things a local model
-            cannot — tell several people apart, translate as they speak — so it
-            is offered, switched off, with your own key and a running cost shown
-            on every meeting. The choice is yours to make, not ours to make
-            quietly.
+          <p class="sub reveal">
+            Some things a local model can't do yet: tell four remote voices
+            apart, or translate a conversation while it is still happening.
+            Fısıltı can hand those jobs to Google's Gemini — off by default,
+            with your own API key, and with the running cost on every meeting.
           </p>
-          <div class="keys reveal" aria-hidden="true">
-            <span>no account</span>
-            <span>no telemetry</span>
-            <span>local by default</span>
-            <span>your api keys</span>
-          </div>
+          <ul class="list reveal">
+            <li>
+              <span
+                ><b>Speaker identification</b> — Speaker 1, Speaker 2 instead of
+                one block of "everyone else".</span
+              >
+            </li>
+            <li>
+              <span
+                ><b>Live translation</b> — original and translation side by side
+                while people talk.</span
+              >
+            </li>
+            <li>
+              <span
+                ><b>On-screen subtitles</b> — a click-through strip at the
+                bottom of the display that screen sharing can't see.</span
+              >
+            </li>
+            <li>
+              <span
+                ><b>Summaries your way</b> — OpenRouter, Gemini, a local Ollama
+                or any OpenAI-compatible endpoint.</span
+              >
+            </li>
+          </ul>
         </div>
-      </section>
+      </div>
+    </section>
 
-      <section class="section wrap" id="install">
-        <p class="eyebrow">Install</p>
-        <h2>Download it. <em>Or build it.</em></h2>
-        <div class="terminal reveal">
-          <div class="terminal-bar" aria-hidden="true">
-            <i></i><i></i><i></i><em>zsh — fisilti</em>
+    <!-- ================= ENGINE ================= -->
+    <section id="engine">
+      <div class="wrap">
+        <div class="kicker reveal">Under the hood</div>
+        <h2 class="reveal">
+          One codebase. <em class="s">Three operating systems.</em>
+        </h2>
+        <p class="sub reveal">
+          A Rust core with a React face, held together by Tauri 2. Native audio
+          on every platform, no Electron, no Chromium bundled.
+        </p>
+        <div class="bento">
+          <div class="card big reveal">
+            <div
+              class="glow"
+              style="background: #7c3aed; right: -80px; top: -80px"
+            ></div>
+            <div class="num" data-count="36000" data-suffix="+">0</div>
+            <div class="lbl">
+              lines of Rust in the app core — capture, VAD, transcription,
+              meeting sessions, export.
+            </div>
+            <div class="chips">
+              <span>Tauri 2</span><span>Rust</span><span>React 18</span
+              ><span>TypeScript</span><span>Zustand</span
+              ><span>tauri-specta</span>
+            </div>
           </div>
-          <pre><code><span class="p">$</span> git clone https://github.com/umitaltintas/fisilti &amp;&amp; cd fisilti
-<span class="p">$</span> bun install
-<span class="p">$</span> bun run build:mac   <span class="c"># signs with a stable local identity</span>
-<span class="p">$</span> ditto "src-tauri/target/release/bundle/macos/Fısıltı.app" /Applications/</code></pre>
+          <div class="card reveal">
+            <div class="num" data-count="260" data-suffix="+">0</div>
+            <div class="lbl">unit tests on the Rust side</div>
+          </div>
+          <div class="card reveal">
+            <div class="num" data-count="18">0</div>
+            <div class="lbl">interface languages</div>
+          </div>
+          <div class="card reveal tall">
+            <h4>Inference</h4>
+            <p>
+              whisper.cpp with Metal on Apple Silicon and Vulkan on Windows and
+              Linux. ONNX Runtime (DirectML on Windows) for Silero VAD and ONNX
+              speech models.
+            </p>
+            <div class="chips">
+              <span>whisper.cpp</span><span>Metal</span><span>Vulkan</span
+              ><span>ONNX Runtime</span><span>DirectML</span>
+            </div>
+          </div>
+          <div class="card reveal big">
+            <h4>Platform-native audio</h4>
+            <p>
+              cpal for microphones everywhere; system audio from a CoreAudio
+              process tap, a PipeWire sink monitor or WASAPI loopback. Speaker
+              vs headphone routing is detected so echo from the speakers isn't
+              transcribed twice.
+            </p>
+            <div class="chips">
+              <span>cpal</span><span>CoreAudio</span><span>PipeWire</span
+              ><span>WASAPI</span><span>rubato</span><span>ebur128</span>
+            </div>
+          </div>
+          <div class="card reveal">
+            <div class="num" data-count="22"><small> MB/h</small></div>
+            <div class="lbl">meeting audio as 48 kbps MP3 (LAME)</div>
+          </div>
+          <div class="card reveal big">
+            <h4>Shipped like it matters</h4>
+            <p>
+              Signed and notarized on macOS, minisign-verified auto-updates on
+              macOS and Windows, a single rustls TLS stack, and a release
+              pipeline that builds macOS and Windows in parallel and writes one
+              update manifest for both.
+            </p>
+            <div class="chips">
+              <span>GitHub Actions</span><span>notarytool</span
+              ><span>minisign</span><span>rustls</span><span>NSIS</span>
+            </div>
+          </div>
+          <div class="card reveal">
+            <div class="num" data-count="0">0</div>
+            <div class="lbl">telemetry calls. No account, ever.</div>
+          </div>
         </div>
-        <div class="install-notes reveal">
-          <div>
-            <b>Signed &amp; notarized</b>
-            Grab the DMG from
-            <a href="https://github.com/umitaltintas/fisilti/releases/latest"
-              >Releases</a
+      </div>
+    </section>
+
+    <!-- ================= QUIET ================= -->
+    <section class="quiet">
+      <div class="wrap">
+        <blockquote class="reveal">
+          A whisper is a sound that <em>stays in the room.</em>
+        </blockquote>
+        <p class="reveal">
+          By default, so is everything Fısıltı hears: the models run here, the
+          history lives here, and the only network calls are the ones you
+          configure yourself. Cloud transcription is offered, switched off, with
+          your own key and a running cost shown on every meeting. The choice is
+          yours to make, not ours to make quietly.
+        </p>
+        <div class="tags reveal">
+          <span>no account</span><span>no telemetry</span
+          ><span>local by default</span><span>your api keys</span
+          ><span>open source</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= DOWNLOAD ================= -->
+    <section id="download">
+      <div class="wrap">
+        <div class="kicker reveal">Download</div>
+        <h2 class="reveal">Get it. <em class="s">Or build it.</em></h2>
+        <div class="dl">
+          <div class="card os reveal" data-os="mac">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M16.37 12.6c-.02-2.2 1.8-3.26 1.88-3.31-1.03-1.5-2.62-1.7-3.18-1.73-1.35-.14-2.64.8-3.33.8-.69 0-1.74-.78-2.86-.76-1.47.02-2.83.86-3.59 2.17-1.53 2.66-.39 6.6 1.1 8.75.73 1.05 1.6 2.24 2.73 2.2 1.1-.05 1.51-.71 2.84-.71 1.32 0 1.7.71 2.86.69 1.18-.02 1.93-1.07 2.65-2.13.84-1.22 1.18-2.4 1.2-2.46-.03-.01-2.3-.88-2.3-3.5ZM14.2 6.13c.6-.73 1.01-1.75.9-2.76-.87.04-1.92.58-2.54 1.31-.56.64-1.05 1.68-.92 2.67.97.08 1.96-.49 2.56-1.22Z"
+              />
+            </svg>
+            <h3>macOS</h3>
+            <div class="req">14.4+ · Apple Silicon</div>
+            <p>
+              Signed and notarized DMG. Drag to Applications; updates arrive
+              inside the app.
+            </p>
+            <a
+              class="btn primary"
+              data-asset="mac"
+              href="https://github.com/umitaltintas/fisilti/releases/latest"
+              >Download .dmg</a
             >
-            for Apple Silicon and drag Fısıltı into Applications; updates
-            arrive in the app. Rather read every line first?
-            The commands above build the same app from source; you need
-            <a href="https://rustup.rs/">Rust</a> and
-            <a href="https://bun.sh/">Bun</a>.
           </div>
-          <div>
-            <b>First launch</b>
-            macOS asks for microphone, accessibility and system-audio
-            permissions the first time each is needed. Full details are in the
-            <a href="https://github.com/umitaltintas/fisilti#install-macos"
-              >README</a
-            >.
+          <div class="card os reveal" data-os="win">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M3 5.1 10.4 4v7.2H3V5.1Zm0 13.8 7.4 1.1v-7.1H3v6Zm8.3 1.2L21 21.5V12.9h-9.7v7.2Zm0-16.2v7.3H21V2.5l-9.7 1.4Z"
+              />
+            </svg>
+            <h3>Windows</h3>
+            <div class="req">10 / 11 · x64 · new in 0.2.5</div>
+            <p>
+              NSIS installer with auto-updates. Not code-signed yet, so
+              SmartScreen asks once: <i>More info → Run anyway</i>.
+            </p>
+            <a
+              class="btn primary"
+              data-asset="win"
+              href="https://github.com/umitaltintas/fisilti/releases/latest"
+              >Download installer</a
+            >
+          </div>
+          <div class="card os reveal" data-os="linux">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M12 2c-2 0-3.3 1.7-3.3 4.3 0 1.2.2 2.2-.6 3.6-.9 1.5-2.6 3.6-2.6 6.3 0 .6.1 1.1.3 1.6-.7.3-1.6.6-1.6 1.4 0 .9 1.4 1 3 1.3 1 .2 1.8.9 2.7.9.8 0 1.3-.4 1.9-.5h.4c.6.1 1.1.5 1.9.5.9 0 1.7-.7 2.7-.9 1.6-.3 3-.4 3-1.3 0-.8-.9-1.1-1.6-1.4.2-.5.3-1 .3-1.6 0-2.7-1.7-4.8-2.6-6.3-.8-1.4-.6-2.4-.6-3.6C15.3 3.7 14 2 12 2Zm-1.4 4.2c.4 0 .7.5.7 1.1 0 .5-.2.9-.5 1l-.4-.1c.1-.2.2-.5.2-.8 0-.4-.2-.6-.4-.6s-.3.3-.3.6v.3l-.4.1c-.1-.2-.1-.4-.1-.6 0-.6.4-1 .9-1Zm2.8 0c.5 0 .9.4.9 1 0 .2 0 .4-.1.6l-.5-.1v-.3c0-.3-.1-.6-.3-.6s-.4.2-.4.6c0 .3.1.6.2.8l-.4.1c-.3-.1-.5-.5-.5-1 0-.6.4-1.1 1-1.1Z"
+              />
+            </svg>
+            <h3>Linux</h3>
+            <div class="req">build from source</div>
+            <p>
+              Runs on PipeWire/PulseAudio with Vulkan. No packaged release yet —
+              four commands below.
+            </p>
+            <a
+              class="btn"
+              href="https://github.com/umitaltintas/fisilti/blob/main/BUILD.md"
+              >Build guide</a
+            >
           </div>
         </div>
-      </section>
-    </main>
+        <div class="relmeta reveal" id="relmeta">
+          Latest release on
+          <a href="https://github.com/umitaltintas/fisilti/releases/latest"
+            >GitHub</a
+          >.
+        </div>
+
+        <div class="card term reveal">
+          <div class="win-bar">
+            <i></i><i></i><i></i><span>terminal — fisilti</span>
+          </div>
+          <pre><span class="p">$ </span>git clone https://github.com/umitaltintas/fisilti &amp;&amp; cd fisilti
+<span class="p">$ </span>bun install
+<span class="p">$ </span>bun run tauri build        <span class="c"># Rust + Bun; Vulkan SDK on Windows/Linux</span>
+<span class="p">$ </span>ls src-tauri/target/release/bundle     <span class="c"># your installer is in here</span></pre>
+        </div>
+      </div>
+    </section>
 
     <footer>
-      <div class="wrap foot-row">
-        <p>
-          Built on <a href="https://github.com/cjpais/Handy">Handy</a> by cjpais
-          · MIT license ·
-          <a href="https://github.com/umitaltintas/fisilti">Source on GitHub</a>
-        </p>
-        <p class="foot-etym">fısıltı is Turkish for whisper.</p>
+      <div class="wrap">
+        <span
+          >Built on <a href="https://github.com/cjpais/Handy">Handy</a> by
+          cjpais</span
+        >
+        <span>MIT license</span>
+        <a href="https://github.com/umitaltintas/fisilti">Source on GitHub</a>
+        <span class="tr">fısıltı is Turkish for whisper.</span>
       </div>
     </footer>
 
     <script>
-      // The signature element: a whisper-quiet waveform. Deliberately low
-      // amplitude — it is a whisper — drawn as one thin line with a live
-      // orange "mic" dot travelling it.
-      (function () {
-        const canvas = document.getElementById("wave");
-        const ctx = canvas.getContext("2d");
-        const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
-        let w, h, dpr;
+      "use strict";
+      const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const $ = (s, r = document) => r.querySelector(s);
+      const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+      // Shared live audio level (0..1) — the demo mic drives the hero field.
+      const live = { level: 0, target: 0 };
 
+      /* ---------------- nav + reveal ---------------- */
+      addEventListener(
+        "scroll",
+        () => $("#nav").classList.toggle("scrolled", scrollY > 20),
+        { passive: true },
+      );
+      const io = new IntersectionObserver(
+        (es) =>
+          es.forEach((e) => {
+            if (e.isIntersecting) {
+              e.target.classList.add("in");
+              io.unobserve(e.target);
+            }
+          }),
+        { threshold: 0.12 },
+      );
+      $$(".reveal").forEach((el) => io.observe(el));
+
+      /* ---------------- OS detection ---------------- */
+      const OS = (() => {
+        const p = (
+          navigator.userAgentData?.platform ||
+          navigator.platform ||
+          navigator.userAgent
+        ).toLowerCase();
+        if (p.includes("mac") || p.includes("iphone") || p.includes("ipad"))
+          return "mac";
+        if (p.includes("win")) return "win";
+        if (p.includes("linux") || p.includes("x11")) return "linux";
+        return null;
+      })();
+      const OS_NAME = {
+        mac: "for macOS",
+        win: "for Windows",
+        linux: "for Linux",
+      };
+      if (OS) {
+        $("#hero-dl-os").textContent = OS_NAME[OS];
+        if (OS === "linux") $("#hero-dl").firstChild.textContent = "Build ";
+        $(`.os[data-os="${OS}"]`)?.classList.add("mine");
+        const tab = $(`.os-tabs [data-os="${OS}"][role="tab"]`);
+        if (tab) selectTab(OS);
+      }
+
+      /* ---------------- hero shader ---------------- */
+      (function field() {
+        const canvas = $("#field");
+        const gl = canvas.getContext("webgl", {
+          antialias: false,
+          premultipliedAlpha: false,
+        });
+        if (!gl) {
+          canvas.style.background =
+            "radial-gradient(80% 60% at 70% 40%, #2a1650, #09080d)";
+          return;
+        }
+        const vs = "attribute vec2 p;void main(){gl_Position=vec4(p,0.,1.);}";
+        const fs = `precision highp float;
+          uniform vec2 r; uniform float t; uniform float lv; uniform vec2 m;
+          float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+          void main(){
+            vec2 uv = gl_FragCoord.xy / r;
+            vec2 p = (gl_FragCoord.xy - .5*r) / r.y;
+            float ar = r.x / r.y;
+            vec3 col = vec3(0.035,0.031,0.051);
+            // aurora wash
+            col += vec3(.30,.13,.62) * .55 * exp(-3.2*length(p - vec2(.55*ar*.5 + .15*sin(t*.07), .18)));
+            col += vec3(.75,.22,.50) * .22 * exp(-4.0*length(p - vec2(.35*ar*.5, -.25 + .08*cos(t*.05))));
+            float x = p.x + .25;
+            float env = smoothstep(-.95*ar*.5, .1, p.x) * smoothstep(1.1*ar*.5, .2, p.x);
+            float amp = .055 + .20*lv;
+            for (int i = 0; i < 9; i++) {
+              float fi = float(i);
+              float k = 2.2 + fi*.55;
+              float sp = .35 + fi*.11;
+              float y = -.02 + (fi-4.)*.012;
+              y += amp*env*( sin(x*k + t*sp + fi) * .7 + sin(x*k*2.7 - t*sp*1.6 + fi*2.) * .3 );
+              y += .03*env*sin(x*1.3 + t*.2 + (m.x-.5)*2.);
+              float d = abs(p.y - y);
+              float w = .0016 + .0011*fi/8.;
+              float g = w / (d + .0009) * env;
+              vec3 c = mix(vec3(.62,.48,1.), vec3(1.,.48,.75), fi/8.);
+              col += c * g * (.22 + .6*lv);
+            }
+            col += (hash(gl_FragCoord.xy + t) - .5) * .018;
+            col = 1. - exp(-col*1.25);
+            col *= .55 + .45*smoothstep(1.25, .2, length((uv - .5)*vec2(1.,1.25)));
+            gl_FragColor = vec4(col, 1.);
+          }`;
+        const sh = (type, src) => {
+          const s = gl.createShader(type);
+          gl.shaderSource(s, src);
+          gl.compileShader(s);
+          return s;
+        };
+        const prog = gl.createProgram();
+        gl.attachShader(prog, sh(gl.VERTEX_SHADER, vs));
+        gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, fs));
+        gl.linkProgram(prog);
+        if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+          canvas.style.background = "#120d1f";
+          return;
+        }
+        gl.useProgram(prog);
+        gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+        gl.bufferData(
+          gl.ARRAY_BUFFER,
+          new Float32Array([-1, -1, 3, -1, -1, 3]),
+          gl.STATIC_DRAW,
+        );
+        const loc = gl.getAttribLocation(prog, "p");
+        gl.enableVertexAttribArray(loc);
+        gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+        const U = {
+          r: gl.getUniformLocation(prog, "r"),
+          t: gl.getUniformLocation(prog, "t"),
+          lv: gl.getUniformLocation(prog, "lv"),
+          m: gl.getUniformLocation(prog, "m"),
+        };
+        const mouse = { x: 0.5, y: 0.5, tx: 0.5 };
+        addEventListener(
+          "pointermove",
+          (e) => {
+            mouse.tx = e.clientX / innerWidth;
+          },
+          { passive: true },
+        );
         function size() {
-          dpr = Math.min(devicePixelRatio || 1, 2);
-          w = canvas.clientWidth;
-          h = canvas.clientHeight;
-          canvas.width = w * dpr;
-          canvas.height = h * dpr;
-          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+          const dpr = Math.min(devicePixelRatio || 1, 1.5);
+          canvas.width = Math.round(canvas.clientWidth * dpr);
+          canvas.height = Math.round(canvas.clientHeight * dpr);
+          gl.viewport(0, 0, canvas.width, canvas.height);
         }
         size();
         addEventListener("resize", size);
-
-        // A whisper: mostly near-flat, with soft breaths of amplitude.
-        function amp(x, t) {
-          const breath =
-            0.5 +
-            0.5 * Math.sin(t * 0.00042 + Math.sin(x * 0.8 + t * 0.0002) * 1.4);
-          const envelope = Math.sin((x / w) * Math.PI); // fade at both ends
-          return (3 + 11 * breath) * envelope;
-        }
-
-        function y(x, t) {
-          return (
-            h / 2 +
-            amp(x, t) *
-              (Math.sin(x * 0.045 + t * 0.0016) *
-                Math.sin(x * 0.011 - t * 0.0009) +
-                0.35 * Math.sin(x * 0.09 + t * 0.0023))
-          );
-        }
-
-        function draw(t) {
-          ctx.clearRect(0, 0, w, h);
-
-          ctx.beginPath();
-          for (let x = 0; x <= w; x += 2) {
-            const yy = y(x, t);
-            x === 0 ? ctx.moveTo(x, yy) : ctx.lineTo(x, yy);
+        let visible = true;
+        new IntersectionObserver(([e]) => {
+          visible = e.isIntersecting;
+        }).observe(canvas);
+        const t0 = performance.now();
+        function frame(now) {
+          live.level += (live.target - live.level) * 0.12;
+          mouse.x += (mouse.tx - mouse.x) * 0.04;
+          if (visible || live.target > 0) {
+            gl.uniform2f(U.r, canvas.width, canvas.height);
+            gl.uniform1f(U.t, REDUCED ? 12 : (now - t0) / 1000);
+            gl.uniform1f(U.lv, live.level);
+            gl.uniform2f(U.m, mouse.x, mouse.y);
+            gl.drawArrays(gl.TRIANGLES, 0, 3);
           }
-          ctx.strokeStyle = "rgba(233, 231, 226, 0.34)";
-          ctx.lineWidth = 1.4;
-          ctx.stroke();
-
-          // the travelling mic-live dot
-          const px = ((t * 0.045) % (w + 120)) - 60;
-          if (px > 0 && px < w) {
-            const py = y(px, t);
-            const glow = ctx.createRadialGradient(px, py, 0, px, py, 26);
-            glow.addColorStop(0, "rgba(167, 139, 250, 0.35)");
-            glow.addColorStop(1, "rgba(167, 139, 250, 0)");
-            ctx.fillStyle = glow;
-            ctx.fillRect(px - 26, py - 26, 52, 52);
-            ctx.beginPath();
-            ctx.arc(px, py, 3, 0, Math.PI * 2);
-            ctx.fillStyle = "#a78bfa";
-            ctx.fill();
-          }
-
-          if (!reduced) requestAnimationFrame(draw);
+          if (!REDUCED) requestAnimationFrame(frame);
         }
-        draw(reduced ? 40000 : performance.now());
+        requestAnimationFrame(frame);
       })();
 
-      // Gentle scroll reveals.
-      const io = new IntersectionObserver(
-        (entries) =>
-          entries.forEach(
-            (e) => e.isIntersecting && e.target.classList.add("in"),
-          ),
-        { threshold: 0.15 },
+      /* ---------------- live demo ---------------- */
+      const demo = (() => {
+        const TF_URL =
+          "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1";
+        const MODEL = "onnx-community/whisper-base";
+        const MAX_SECONDS = 30;
+        const btn = $("#ptt"),
+          status = $("#status"),
+          prog = $("#progress"),
+          editor = $("#editor");
+        const scope = $("#scope"),
+          sctx = scope.getContext("2d");
+        const vad = $("#vad"),
+          vctx = vad.getContext("2d");
+        // Whisper's language detection is not exposed here, so pick one.
+        let lang = /^tr\b/i.test(navigator.language || "")
+            ? "turkish"
+            : "english",
+          waitingForModel = false;
+        $$("#lang button").forEach((x) =>
+          x.setAttribute("aria-pressed", String(x.dataset.v === lang)),
+        );
+        let asrPromise = null,
+          backend = null;
+        let ctx = null,
+          stream = null,
+          analyser = null,
+          node = null,
+          chunks = [],
+          recording = false,
+          starting = false,
+          stopWanted = false,
+          recStart = 0,
+          sr = 48000;
+        let typed = "";
+
+        $$("#lang button").forEach((b) =>
+          b.addEventListener("click", () => {
+            $$("#lang button").forEach((x) =>
+              x.setAttribute("aria-pressed", String(x === b)),
+            );
+            lang = b.dataset.v;
+          }),
+        );
+
+        const say = (html) => {
+          status.innerHTML = html;
+        };
+        const fmt = (s) => (s < 10 ? s.toFixed(2) : s.toFixed(1)) + " s";
+
+        function fit(c) {
+          const dpr = Math.min(devicePixelRatio || 1, 2);
+          c.width = c.clientWidth * dpr;
+          c.height = c.clientHeight * dpr;
+          const g = c.getContext("2d");
+          g.setTransform(dpr, 0, 0, dpr, 0, 0);
+        }
+        fit(scope);
+        fit(vad);
+        addEventListener("resize", () => {
+          fit(scope);
+          fit(vad);
+          idleScope();
+        });
+
+        function idleScope() {
+          const w = scope.clientWidth,
+            h = scope.clientHeight;
+          sctx.clearRect(0, 0, w, h);
+          sctx.strokeStyle = "rgba(236,232,255,0.18)";
+          sctx.lineWidth = 1;
+          sctx.beginPath();
+          sctx.moveTo(0, h / 2);
+          sctx.lineTo(w, h / 2);
+          sctx.stroke();
+        }
+        idleScope();
+
+        function loadModel() {
+          if (asrPromise) return asrPromise;
+          prog.classList.add("show");
+          const files = new Map();
+          const onProgress = (p) => {
+            if (p.status === "progress" && p.total) {
+              files.set(p.file, [p.loaded, p.total]);
+              let l = 0,
+                t = 0;
+              files.forEach(([a, b]) => {
+                l += a;
+                t += b;
+              });
+              prog.firstElementChild.style.width =
+                ((l / t) * 100).toFixed(1) + "%";
+              if (waitingForModel)
+                say(
+                  `Downloading model… <b>${(l / 1048576).toFixed(1)} / ${(t / 1048576).toFixed(0)} MB</b>`,
+                );
+            }
+          };
+          asrPromise = (async () => {
+            const { pipeline, env } = await import(TF_URL);
+            env.allowLocalModels = false;
+            const tryLoad = (device) =>
+              pipeline("automatic-speech-recognition", MODEL, {
+                device,
+                dtype: "q8", // ~73 MB: int8 encoder + decoder
+                progress_callback: onProgress,
+              });
+            // WebAssembly on every browser: int8 Whisper is fast enough on a
+            // CPU for push-to-talk clips, and behaves the same everywhere.
+            const asr = await tryLoad("wasm");
+            backend =
+              "WASM · " + (navigator.hardwareConcurrency || "?") + " threads";
+            $("#t-backend").textContent = backend + " · whisper-base";
+            prog.classList.remove("show");
+            return asr;
+          })();
+          asrPromise.catch((e) => {
+            console.error(e);
+            asrPromise = null;
+            prog.classList.remove("show");
+            say(
+              "Couldn't load the model in this browser. Try a recent Chrome, Edge or Safari.",
+            );
+          });
+          return asrPromise;
+        }
+
+        const WORKLET = `class Tap extends AudioWorkletProcessor{process(i){const c=i[0]&&i[0][0];if(c)this.port.postMessage(c.slice(0));return true}}registerProcessor("tap",Tap);`;
+
+        async function start() {
+          if (recording || starting) return;
+          starting = true;
+          stopWanted = false;
+          btn.classList.add("on");
+          loadModel(); // download in parallel with recording
+          try {
+            if (!ctx) {
+              stream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                  channelCount: 1,
+                  echoCancellation: true,
+                  noiseSuppression: true,
+                  autoGainControl: true,
+                },
+              });
+              ctx = new AudioContext();
+              sr = ctx.sampleRate;
+              const src = ctx.createMediaStreamSource(stream);
+              analyser = ctx.createAnalyser();
+              analyser.fftSize = 2048;
+              src.connect(analyser);
+              try {
+                await ctx.audioWorklet.addModule(
+                  URL.createObjectURL(
+                    new Blob([WORKLET], { type: "text/javascript" }),
+                  ),
+                );
+                node = new AudioWorkletNode(ctx, "tap");
+                node.port.onmessage = (e) => {
+                  if (recording) chunks.push(e.data);
+                };
+                src.connect(node);
+              } catch {
+                // Older browsers / opaque origins: the deprecated but universal path.
+                node = ctx.createScriptProcessor(4096, 1, 1);
+                node.onaudioprocess = (e) => {
+                  if (recording)
+                    chunks.push(e.inputBuffer.getChannelData(0).slice(0));
+                };
+                const mute = ctx.createGain();
+                mute.gain.value = 0;
+                src.connect(node);
+                node.connect(mute);
+                mute.connect(ctx.destination);
+              }
+            }
+            await ctx.resume();
+          } catch (e) {
+            console.error(e);
+            starting = false;
+            btn.classList.remove("on");
+            say(
+              "Microphone access was blocked. Allow it in the address bar and try again.",
+            );
+            return;
+          }
+          starting = false;
+          // Released while the permission prompt was up: nothing to record.
+          if (stopWanted) {
+            btn.classList.remove("on");
+            say("Hold the button while you talk.");
+            return;
+          }
+          chunks = [];
+          recording = true;
+          recStart = performance.now();
+          say(`<b>Listening…</b> let go to transcribe`);
+          drawScope();
+        }
+
+        function drawScope() {
+          if (!recording) {
+            live.target = 0;
+            idleScope();
+            return;
+          }
+          const w = scope.clientWidth,
+            h = scope.clientHeight;
+          const buf = new Float32Array(analyser.fftSize);
+          analyser.getFloatTimeDomainData(buf);
+          let rms = 0;
+          for (const v of buf) rms += v * v;
+          rms = Math.sqrt(rms / buf.length);
+          live.target = Math.min(1, rms * 9);
+          sctx.clearRect(0, 0, w, h);
+          const grad = sctx.createLinearGradient(0, 0, w, 0);
+          grad.addColorStop(0, "#a78bfa");
+          grad.addColorStop(1, "#f472b6");
+          sctx.strokeStyle = grad;
+          sctx.lineWidth = 1.6;
+          sctx.beginPath();
+          for (let i = 0; i < buf.length; i += 4) {
+            const x = (i / buf.length) * w,
+              y = h / 2 + buf[i] * h * 1.6;
+            i ? sctx.lineTo(x, y) : sctx.moveTo(x, y);
+          }
+          sctx.stroke();
+          const secs = (performance.now() - recStart) / 1000;
+          if (secs > MAX_SECONDS) {
+            stop();
+            return;
+          }
+          requestAnimationFrame(drawScope);
+        }
+
+        // Energy-based voice activity gate (30 ms frames, adaptive floor,
+        // 240 ms hangover). The app uses Silero VAD; this is the cheap cousin.
+        function gate(pcm, rate) {
+          const F = Math.round(rate * 0.03),
+            n = Math.floor(pcm.length / F);
+          const e = new Float32Array(n);
+          for (let i = 0; i < n; i++) {
+            let s = 0;
+            for (let j = i * F; j < (i + 1) * F; j++) s += pcm[j] * pcm[j];
+            e[i] = Math.sqrt(s / F);
+          }
+          const sorted = [...e].sort((a, b) => a - b);
+          const floor = sorted[Math.floor(n * 0.15)] || 0;
+          const thr = Math.max(0.006, floor * 3.2);
+          const speech = new Uint8Array(n);
+          for (let i = 0; i < n; i++)
+            if (e[i] > thr)
+              for (let k = Math.max(0, i - 6); k <= Math.min(n - 1, i + 8); k++)
+                speech[k] = 1;
+          return { speech, frame: F, n };
+        }
+
+        function drawVad(g) {
+          const w = vad.clientWidth,
+            h = vad.clientHeight;
+          vctx.clearRect(0, 0, w, h);
+          const bw = w / g.n;
+          for (let i = 0; i < g.n; i++) {
+            vctx.fillStyle = g.speech[i] ? "#a78bfa" : "#3a3448";
+            const bh = g.speech[i] ? h * 0.7 : h * 0.22;
+            vctx.fillRect(i * bw, (h - bh) / 2, Math.max(1, bw - 0.6), bh);
+          }
+        }
+
+        async function resample(pcm, from) {
+          if (from === 16000) return pcm;
+          const len = Math.ceil((pcm.length * 16000) / from);
+          const off = new OfflineAudioContext(1, len, 16000);
+          const b = off.createBuffer(1, pcm.length, from);
+          b.copyToChannel(pcm, 0);
+          const s = off.createBufferSource();
+          s.buffer = b;
+          s.connect(off.destination);
+          s.start();
+          return (await off.startRendering()).getChannelData(0);
+        }
+
+        async function stop() {
+          if (starting) {
+            stopWanted = true;
+            return;
+          }
+          if (!recording) return;
+          recording = false;
+          btn.classList.remove("on");
+          const total = chunks.reduce((a, c) => a + c.length, 0);
+          const pcm = new Float32Array(total);
+          let o = 0;
+          for (const c of chunks) {
+            pcm.set(c, o);
+            o += c.length;
+          }
+          const recSecs = total / sr;
+          $("#t-rec").textContent = fmt(recSecs);
+          if (recSecs < 0.3) {
+            say("Hold the button while you talk.");
+            return;
+          }
+          const g = gate(pcm, sr);
+          drawVad(g);
+          let kept = 0;
+          for (const s of g.speech) kept += s;
+          if (!kept) {
+            say("Didn't hear any speech — try a little closer to the mic.");
+            $("#t-kept").textContent = "0 s";
+            return;
+          }
+          const speech = new Float32Array(kept * g.frame);
+          let w = 0;
+          for (let i = 0; i < g.n; i++)
+            if (g.speech[i]) {
+              speech.set(pcm.subarray(i * g.frame, (i + 1) * g.frame), w);
+              w += g.frame;
+            }
+          const keptSecs = speech.length / sr;
+          $("#t-kept").innerHTML =
+            `${fmt(keptSecs)} <small>${Math.round((keptSecs / recSecs) * 100)}%</small>`;
+          const t0 = performance.now();
+          const audio16 = await resample(speech, sr);
+          const tRes = performance.now() - t0;
+          btn.disabled = true;
+          if (!backend) say("Finishing the model download…");
+          waitingForModel = true;
+          let asr;
+          try {
+            asr = await loadModel();
+          } catch {
+            btn.disabled = false;
+            return;
+          } finally {
+            waitingForModel = false;
+          }
+          say(`<b>Transcribing</b> on ${backend}…`);
+          pipeHot(3);
+          const t1 = performance.now();
+          let out;
+          try {
+            out = await asr(audio16, {
+              task: "transcribe",
+              chunk_length_s: 30,
+              language: lang,
+              // Loop guards, like the app's: nobody says more than ~7 tokens a second.
+              max_new_tokens: Math.min(224, Math.ceil(keptSecs * 7) + 12),
+              no_repeat_ngram_size: 3,
+            });
+          } catch (e) {
+            console.error(e);
+            say("Transcription failed in this browser.");
+            btn.disabled = false;
+            return;
+          }
+          const inf = (performance.now() - t1) / 1000;
+          btn.disabled = false;
+          // Collapse any leftover stutter ("a a a a" → "a").
+          const text = (out?.text || "")
+            .replace(/(\b[\p{L}\p{N}']+\b)(?:[\s,.]+\1\b){2,}/giu, "$1")
+            .trim();
+          $("#t-inf").textContent = fmt(inf);
+          $("#t-rtf").innerHTML =
+            `${(keptSecs / inf).toFixed(1)}× <small>real-time</small>`;
+          setPipeMetrics({
+            recSecs,
+            keptSecs,
+            sr,
+            tRes,
+            inf,
+            chars: text.length,
+          });
+          if (!text) {
+            say("Whisper heard nothing it could write down.");
+            return;
+          }
+          say(
+            `Done. <b>${text.split(/\s+/).length} words</b> in ${fmt(inf)} — hold again to keep going.`,
+          );
+          type(text);
+        }
+
+        function type(text) {
+          const base = typed ? typed + " " : "";
+          typed = base + text;
+          const caret = '<span class="caret"></span>';
+          let i = 0;
+          const step = () => {
+            i = Math.min(text.length, i + (REDUCED ? text.length : 2));
+            editor.innerHTML = escapeHtml(base + text.slice(0, i)) + caret;
+            if (i < text.length) requestAnimationFrame(step);
+          };
+          step();
+        }
+        const escapeHtml = (s) =>
+          s.replace(
+            /[&<>]/g,
+            (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c],
+          );
+
+        btn.addEventListener("pointerdown", (e) => {
+          e.preventDefault();
+          btn.setPointerCapture?.(e.pointerId);
+          start();
+        });
+        btn.addEventListener("pointerup", stop);
+        btn.addEventListener("pointercancel", stop);
+        btn.addEventListener("keydown", (e) => {
+          if ((e.key === " " || e.key === "Enter") && !e.repeat) {
+            e.preventDefault();
+            start();
+          }
+        });
+        btn.addEventListener("keyup", (e) => {
+          if (e.key === " " || e.key === "Enter") {
+            e.preventDefault();
+            stop();
+          }
+        });
+        // Space anywhere while the demo is on screen = push-to-talk, like the app's shortcut.
+        let demoVisible = false;
+        new IntersectionObserver(
+          ([e]) => {
+            demoVisible = e.isIntersecting;
+          },
+          { threshold: 0.4 },
+        ).observe($(".demo"));
+        addEventListener("keydown", (e) => {
+          if (
+            e.code !== "Space" ||
+            e.repeat ||
+            !demoVisible ||
+            e.target === btn
+          )
+            return;
+          if (/^(INPUT|TEXTAREA|SELECT|BUTTON|A)$/.test(e.target.tagName))
+            return;
+          e.preventDefault();
+          start();
+        });
+        addEventListener("keyup", (e) => {
+          if (e.code === "Space" && recording && e.target !== btn) {
+            e.preventDefault();
+            stop();
+          }
+        });
+        return {};
+      })();
+
+      /* ---------------- pipeline metrics ---------------- */
+      function pipeHot(i) {
+        $$("#pipe .stage").forEach((s) =>
+          s.classList.toggle("hot", Number(s.dataset.s) <= i),
+        );
+      }
+      function setPipeMetrics(m) {
+        $("#m0").textContent =
+          `${m.recSecs.toFixed(2)} s @ ${(m.sr / 1000).toFixed(1)} kHz`;
+        $("#m1").textContent =
+          `kept ${m.keptSecs.toFixed(2)} s · dropped ${Math.max(0, m.recSecs - m.keptSecs).toFixed(2)} s`;
+        $("#m2").textContent = `→ 16 kHz in ${m.tRes.toFixed(0)} ms`;
+        $("#m3").textContent =
+          `${m.inf.toFixed(2)} s · ${(m.keptSecs / m.inf).toFixed(1)}× real-time`;
+        $("#m4").textContent = `${m.chars} characters typed`;
+        pipeHot(4);
+      }
+      // Idle: walk a highlight down the pipeline.
+      if (!REDUCED) {
+        let k = 0;
+        setInterval(() => {
+          if (!$("#m4").textContent) pipeHot((k++ % 6) - 1);
+        }, 900);
+      }
+
+      /* ---------------- meeting simulation ---------------- */
+      (function meeting() {
+        const SCRIPT = [
+          [
+            2.2,
+            3.4,
+            "you",
+            "Okay, let's lock the launch date for the Windows build.",
+          ],
+          [
+            6.3,
+            3.6,
+            "them",
+            "Thursday works. The installer passed on our test machines.",
+          ],
+          [10.7, 2.6, "you", "Is SmartScreen still warning people?"],
+          [
+            14.0,
+            3.8,
+            "them",
+            "Once, until we sign it. I'll get the certificate this week.",
+          ],
+          [18.6, 2.2, "you", "Then it's Thursday. Notes are in Fısıltı."],
+        ];
+        const LOOP = 26;
+        const canvas = $("#lanes"),
+          g = canvas.getContext("2d");
+        const tr = $("#transcript"),
+          toast = $("#toast"),
+          pill = $("#pill"),
+          clock = $("#clock");
+        let shown = new Set(),
+          visible = false,
+          t0 = performance.now(),
+          last = -1;
+        function size() {
+          const dpr = Math.min(devicePixelRatio || 1, 2);
+          canvas.width = canvas.clientWidth * dpr;
+          canvas.height = canvas.clientHeight * dpr;
+          g.setTransform(dpr, 0, 0, dpr, 0, 0);
+        }
+        size();
+        addEventListener("resize", size);
+        new IntersectionObserver(([e]) => {
+          visible = e.isIntersecting;
+        }).observe(canvas);
+        const speaking = (t, who) =>
+          SCRIPT.some(([s, d, w]) => w === who && t >= s && t <= s + d);
+        const noise = (x) => {
+          const s = Math.sin(x * 12.9898) * 43758.5453;
+          return s - Math.floor(s);
+        };
+
+        function draw(now) {
+          const t = REDUCED ? 21 : ((now - t0) / 1000) % LOOP;
+          if (t < last) {
+            shown.clear();
+            tr.innerHTML = "";
+            pill.classList.remove("show");
+          }
+          last = t;
+          if (visible || REDUCED) {
+            const w = canvas.clientWidth,
+              h = canvas.clientHeight,
+              lane = h / 2;
+            g.clearRect(0, 0, w, h);
+            const span = 8,
+              px = w / span; // 8 s window, "now" at 80%
+            const nowX = w * 0.8;
+            [
+              ["you", "#a78bfa", "you · mic"],
+              ["them", "#f0a54a", "others · system audio"],
+            ].forEach(([who, color, label], li) => {
+              const cy = lane * li + lane / 2 + 7; // below the lane label
+              g.fillStyle = "rgba(236,232,255,0.4)";
+              g.font = "11px 'Geist Mono', monospace";
+              g.fillText(label, 10, lane * li + 16);
+              for (let x = 0; x < nowX; x += 3) {
+                const ts = t - (nowX - x) / px;
+                if (ts < 0) continue;
+                const on = speaking(ts, who);
+                const a = on
+                  ? (0.25 + 0.75 * noise(Math.floor(ts * 30) + li * 99)) *
+                    (lane * 0.27)
+                  : 1 + noise(ts * 50) * 1.5;
+                g.fillStyle = on ? color : "rgba(236,232,255,0.15)";
+                g.fillRect(x, cy - a, 2, a * 2);
+              }
+              // VAD cut markers at the end of each utterance
+              SCRIPT.forEach(([s, d, ww]) => {
+                if (ww !== who) return;
+                const end = s + d,
+                  x = nowX - (t - end) * px;
+                if (t >= end && x > 0) {
+                  g.strokeStyle = "rgba(94,234,212,0.7)";
+                  g.setLineDash([3, 3]);
+                  g.beginPath();
+                  g.moveTo(x, lane * li + 6);
+                  g.lineTo(x, lane * li + lane - 6);
+                  g.stroke();
+                  g.setLineDash([]);
+                  g.fillStyle = "rgba(94,234,212,0.85)";
+                  g.font = "10px 'Geist Mono', monospace";
+                  g.fillText("cut", x + 4, lane * li + lane - 8);
+                }
+              });
+            });
+            g.fillStyle = "rgba(255,90,95,0.85)";
+            g.fillRect(nowX, 0, 1.5, h);
+            g.strokeStyle = "rgba(236,232,255,0.07)";
+            g.beginPath();
+            g.moveTo(0, lane);
+            g.lineTo(w, lane);
+            g.stroke();
+          }
+          const sec = Math.floor(t + 14 * 60 + 2);
+          clock.textContent = `${String(Math.floor(sec / 60)).padStart(2, "0")}:${String(sec % 60).padStart(2, "0")}`;
+          toast.classList.toggle("show", t > 0.3 && t < 2.6);
+          SCRIPT.forEach(([s, d, who, text], i) => {
+            if (t > s + d + 1.1 && !shown.has(i)) {
+              shown.add(i);
+              const el = document.createElement("div");
+              el.className = "line " + who;
+              const ts = Math.floor(s + 14 * 60 + 2);
+              el.innerHTML = `<span class="who">${who === "you" ? "You" : "Others"}</span><span class="t"></span>`;
+              el.querySelector(".t").textContent = text;
+              const stamp = document.createElement("span");
+              stamp.className = "ts";
+              stamp.textContent = `${Math.floor(ts / 60)}:${String(ts % 60).padStart(2, "0")}`;
+              el.querySelector(".t").appendChild(stamp);
+              tr.appendChild(el);
+              while (tr.children.length > 5) tr.firstChild.remove();
+            }
+          });
+          if (t > 22.5) pill.classList.add("show");
+          if (!REDUCED) requestAnimationFrame(draw);
+        }
+        requestAnimationFrame(draw);
+      })();
+
+      /* ---------------- OS tabs ---------------- */
+      function selectTab(os) {
+        $$(".os-tabs [role=tab]").forEach((b) =>
+          b.setAttribute("aria-selected", String(b.dataset.os === os)),
+        );
+        $$(".os-pane").forEach((p) =>
+          p.classList.toggle("on", p.dataset.os === os),
+        );
+      }
+      $$(".os-tabs [role=tab]").forEach((b) =>
+        b.addEventListener("click", () => selectTab(b.dataset.os)),
       );
-      document.querySelectorAll(".reveal").forEach((el) => io.observe(el));
+
+      /* ---------------- live subtitles ---------------- */
+      (function subtitles() {
+        const LINES = [
+          [
+            "Lansman tarihini perşembeye alalım.",
+            "Let's move the launch to Thursday.",
+            0,
+          ],
+          [
+            "Windows kurulumu test makinelerinde sorunsuz geçti.",
+            "The Windows installer passed on the test machines.",
+            1,
+          ],
+          [
+            "Sertifikayı bu hafta alıyorum.",
+            "I'm getting the certificate this week.",
+            2,
+          ],
+          [
+            "Toplantı notları zaten Fısıltı'da.",
+            "The meeting notes are already in Fısıltı.",
+            3,
+          ],
+        ];
+        const o = $("#sub-o"),
+          tr = $("#sub-t"),
+          tiles = $$(".subs .tiles div");
+        let i = 0;
+        function next() {
+          const [orig, trans, who] = LINES[i++ % LINES.length];
+          tiles.forEach((t, k) => t.classList.toggle("talk", k === who));
+          tr.textContent = "";
+          let c = 0;
+          o.textContent = "";
+          const words = orig.split(" ");
+          const tw = setInterval(
+            () => {
+              c++;
+              o.textContent = words.slice(0, c).join(" ");
+              if (c >= words.length) {
+                clearInterval(tw);
+                setTimeout(() => (tr.textContent = trans), 450);
+              }
+            },
+            REDUCED ? 0 : 160,
+          );
+        }
+        next();
+        if (!REDUCED) setInterval(next, 3800);
+      })();
+
+      /* ---------------- counters ---------------- */
+      const cio = new IntersectionObserver(
+        (es) =>
+          es.forEach((e) => {
+            if (!e.isIntersecting) return;
+            cio.unobserve(e.target);
+            const el = e.target,
+              end = Number(el.dataset.count),
+              suffix = el.dataset.suffix || "";
+            const small = el.querySelector("small")?.outerHTML || "";
+            const t0 = performance.now(),
+              dur = REDUCED ? 0 : 1400;
+            const tick = (now) => {
+              const k = dur ? Math.min(1, (now - t0) / dur) : 1;
+              const v = Math.round(end * (1 - Math.pow(1 - k, 3)));
+              el.innerHTML = v.toLocaleString("en-US") + suffix + small;
+              if (k < 1) requestAnimationFrame(tick);
+            };
+            requestAnimationFrame(tick);
+          }),
+        { threshold: 0.5 },
+      );
+      $$("[data-count]").forEach((el) => cio.observe(el));
+
+      /* ---------------- GitHub: latest release + stars ---------------- */
+      (async function release() {
+        const REPO = "umitaltintas/fisilti";
+        try {
+          const r = await fetch(
+            `https://api.github.com/repos/${REPO}/releases/latest`,
+            { headers: { Accept: "application/vnd.github+json" } },
+          );
+          if (!r.ok) return;
+          const rel = await r.json();
+          const pick = (re) => rel.assets.find((a) => re.test(a.name));
+          const assets = { mac: pick(/\.dmg$/i), win: pick(/-setup\.exe$/i) };
+          const mb = (b) => (b / 1048576).toFixed(0) + " MB";
+          for (const [os, a] of Object.entries(assets)) {
+            if (!a) continue;
+            const link = $(`[data-asset="${os}"]`);
+            link.href = a.browser_download_url;
+            link.textContent = `${os === "mac" ? "Download .dmg" : "Download installer"} · ${mb(a.size)}`;
+          }
+          if (OS && assets[OS])
+            $("#hero-dl").href = assets[OS].browser_download_url;
+          const date = new Date(rel.published_at).toLocaleDateString("en-US", {
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+          });
+          $("#relmeta").innerHTML =
+            `Latest: <b>${rel.tag_name}</b> · published ${date} · <a href="${rel.html_url}">release notes</a>`;
+        } catch {}
+        try {
+          const r = await fetch(`https://api.github.com/repos/${REPO}`);
+          if (r.ok) {
+            const repo = await r.json();
+            if (repo.stargazers_count)
+              $("#stars").textContent = `★ ${repo.stargazers_count}`;
+          }
+        } catch {}
+      })();
     </script>
   </body>
 </html>

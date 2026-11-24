@@ -287,12 +287,14 @@ impl MeetingManager {
                     state: slot.state.as_str().to_string(),
                     meeting_id: session.meeting_id(),
                     started_at_ms: Some(session.started_at_ms),
+                    saved_meeting_id: None,
                 }
             }
-            _ => MeetingSessionInfo {
+            (session, _) => MeetingSessionInfo {
                 state: slot.state.as_str().to_string(),
                 meeting_id: None,
                 started_at_ms: None,
+                saved_meeting_id: session.as_ref().and_then(|s| s.saved_id()),
             },
         }
     }

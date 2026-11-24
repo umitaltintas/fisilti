@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Loader2, Mic } from "lucide-react";
 
@@ -60,15 +60,19 @@ export const MeetingsPage: React.FC = () => {
   }, [status]);
 
   // Stop → finalize → idle: open the meeting that just ended, where its
-  // transcript, notes and (auto) summary are.
-  const previousStatus = useRef(status);
-  useEffect(() => {
-    const was = previousStatus.current;
-    previousStatus.current = status;
-    if (was !== "idle" && status === "idle" && liveMeetingId != null) {
-      setDetailId(liveMeetingId);
-    }
-  }, [status, liveMeetingId]);
+  // transcript, notes and (auto) summary are. The store reports it only once
+  // the row is known to be saved: an empty session is discarded, and opening
+  // its in-progress id would show "Meeting N not found".
+  useEffect(
+    () =>
+      useMeetingStore.subscribe(
+        (s) => s.finishedMeetingId,
+        (id) => {
+          if (id != null) setDetailId(id);
+        },
+      ),
+    [],
+  );
 
   // The tray / mascot / another page asks for a meeting to be opened.
   const openRequest = useMeetingStore((s) => s.openRequest);

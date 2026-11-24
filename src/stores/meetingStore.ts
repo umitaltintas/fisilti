@@ -99,6 +99,10 @@ interface MeetingStore {
   /** Merge a renamed / re-summarized meeting into the list. */
   patchMeeting: (id: number, patch: Partial<MeetingListItem>) => void;
 
+  /** The meeting that most recently finished AND was saved; the Meetings page
+   * opens it when this changes. Never set for a discarded (empty) session. */
+  finishedMeetingId: number | null;
+
   /** A meeting another page asked the Meetings page to open (Home's recent
    * list); the Meetings page consumes and clears it on mount. */
   openRequest: number | null;
@@ -197,15 +201,39 @@ export const useMeetingStore = create<MeetingStore>()(
       }
     };
 
+    /** The row the session that just ended was saved as, or null when it was
+     * discarded (empty) or kept only for recovery. `undefined` when that
+     * cannot be told: a new session is already running, or the read failed. */
+    const readSavedMeetingId = async (): Promise<number | null | undefined> => {
+      try {
+        const info = await getMeetingSession();
+        if (toMeetingStatus(info.state) !== "idle") return undefined;
+        return info.saved_meeting_id ?? null;
+      } catch (error) {
+        console.warn("Failed to read meeting session:", error);
+        return undefined;
+      }
+    };
+
     const onSessionEnded = async () => {
       // Notes typed in the last moments still go to the row.
       await saveNotesNow();
+      // The id held during the session is the in-progress row, which the
+      // backend deletes when the session turns out empty. Ask which row was
+      // actually saved instead of opening one that may no longer exist.
+      const saved = await readSavedMeetingId();
+      if (saved !== undefined && get().status === "idle") {
+        set({ meetingId: saved });
+      }
       const id = get().meetingId;
       await Promise.all([
         get().loadMeetings(),
         get().loadInterrupted(),
         id != null ? adoptRecord(id) : Promise.resolve(),
       ]);
+      if (id != null && saved === id && get().meetingId === id) {
+        set({ finishedMeetingId: id });
+      }
     };
 
     const applySession = (info: {
@@ -398,7 +426,8 @@ export const useMeetingStore = create<MeetingStore>()(
         try {
           const result = await stopMeeting();
           set((s) => ({
-            meetingId: result.meeting_id ?? s.meetingId,
+            // Authoritative: null means the empty session was discarded.
+            meetingId: result.meeting_id ?? null,
             transcript: result.transcript.trim()
               ? result.transcript
               : s.transcript,
@@ -539,6 +568,7 @@ export const useMeetingStore = create<MeetingStore>()(
           ),
         })),
 
+      finishedMeetingId: null,
       openRequest: null,
       requestOpen: (id) => set({ openRequest: id }),
       clearOpenRequest: () => set({ openRequest: null }),

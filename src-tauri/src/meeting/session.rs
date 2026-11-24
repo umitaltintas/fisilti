@@ -54,6 +54,11 @@ pub struct MeetingSessionInfo {
     pub meeting_id: Option<i64>,
     /// Absolute epoch-ms start of the live meeting; `None` when idle.
     pub started_at_ms: Option<i64>,
+    /// When idle: the row the most recent session was saved as. `None` while a
+    /// session is running or finalizing, and when the last session was
+    /// discarded (empty) or kept only for recovery — so the UI never opens a
+    /// row id that no longer exists.
+    pub saved_meeting_id: Option<i64>,
 }
 
 /// What `stop_meeting` returns.

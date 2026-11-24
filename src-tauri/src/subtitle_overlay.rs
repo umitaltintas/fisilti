@@ -23,6 +23,10 @@
 //! bottom edge as an overlay layer (so it also floats over fullscreen calls).
 //! Screen-share exclusion has no Linux equivalent: portals capture whatever
 //! the compositor draws.
+//!
+//! On Windows it is the same plain window, marked content-protected
+//! (`WDA_EXCLUDEFROMCAPTURE`), so like on macOS it stays out of screen shares
+//! and recordings.
 
 #[cfg(target_os = "macos")]
 use tauri::Listener;
@@ -199,8 +203,8 @@ fn exclude_from_screen_capture(app_handle: &AppHandle) {
     }
 }
 
-/// Linux: create the strip window, hidden.
-#[cfg(target_os = "linux")]
+/// Linux / Windows: create the strip window, hidden.
+#[cfg(any(target_os = "linux", windows))]
 pub fn create_subtitle_overlay(app_handle: &AppHandle) {
     if app_handle.get_webview_window(SUBTITLE_WINDOW).is_some() {
         return;
@@ -224,6 +228,8 @@ pub fn create_subtitle_overlay(app_handle: &AppHandle) {
     .skip_taskbar(true)
     .focused(false)
     .focusable(false)
+    // Windows: keep it out of screen shares (WDA_EXCLUDEFROMCAPTURE).
+    .content_protected(cfg!(windows))
     .visible(false);
     if let Some(data_dir) = crate::portable::data_dir() {
         builder = builder.data_directory(data_dir.join("webview"));
@@ -232,9 +238,12 @@ pub fn create_subtitle_overlay(app_handle: &AppHandle) {
         Ok(window) => {
             // Click-through is applied on show: tao panics setting the input
             // shape of a window that was never realized.
+            #[cfg(target_os = "linux")]
             if init_layer_shell(&window) {
                 log::debug!("subtitle overlay: pinned with layer shell");
             }
+            #[cfg(windows)]
+            let _ = window;
             log::debug!("subtitle overlay: window created (hidden)");
         }
         Err(e) => log::error!("subtitle overlay: failed to create window: {}", e),
@@ -283,7 +292,7 @@ pub fn show_subtitle(app_handle: &AppHandle, update: SubtitleUpdate) {
             Ok(()) => log::debug!("subtitle overlay: shown"),
             Err(e) => log::warn!("subtitle overlay: failed to show panel: {}", e),
         }
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", windows))]
         let _ = window.set_ignore_cursor_events(true);
     }
     if let Err(e) = window.emit("subtitle-update", update) {

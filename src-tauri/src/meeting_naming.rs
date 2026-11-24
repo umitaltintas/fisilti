@@ -44,6 +44,21 @@ pub fn resolve_session_title(_app: &tauri::AppHandle) -> Option<String> {
     title
 }
 
+/// Windows: the meeting app's window title (or the browser tab's, which is
+/// the window title of the browser). There is no calendar source on Windows.
+#[cfg(windows)]
+pub fn resolve_session_title(_app: &tauri::AppHandle) -> Option<String> {
+    let signal = crate::meeting_detector::current_meeting_signal()?;
+    let keys = crate::meeting_detector::windows_app_keys(&signal);
+    let title = crate::audio_toolkit::audio::window_titles_for(keys)
+        .iter()
+        .find_map(|raw| clean_window_title(raw, signal.name));
+    if title.is_some() {
+        log::info!("meeting naming: using meeting-app window title");
+    }
+    title
+}
+
 /// Window captions of the detected meeting app, from KWin's window search
 /// (`org.kde.KWin /WindowsRunner`, the KRunner "Windows" plugin). It matches
 /// captions and app names, needs no permission and works on Wayland, where

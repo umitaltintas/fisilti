@@ -1,9 +1,10 @@
 fn main() {
     // `meeting_capture`: platforms with a meeting-mode capture backend
-    // (CoreAudio tap on macOS, PipeWire/PulseAudio monitor on Linux).
+    // (CoreAudio tap on macOS, PipeWire/PulseAudio monitor on Linux, WASAPI
+    // loopback on Windows).
     println!("cargo::rustc-check-cfg=cfg(meeting_capture)");
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
-    if target_os == "macos" || target_os == "linux" {
+    if matches!(target_os.as_str(), "macos" | "linux" | "windows") {
         println!("cargo:rustc-cfg=meeting_capture");
     }
 

@@ -34,6 +34,11 @@ bun run format            # Prettier + cargo fmt
 bun run format:check      # Check formatting without changes
 ```
 
+**Build speed:** dependencies are built without debug info
+(`[profile.dev.package."*"]`) and release uses thin LTO. The slowest piece of a
+clean Linux/Windows build is whisper.cpp's Vulkan shaders (needs `glslc`);
+anything that changes its build-script inputs (profile flags, env) rebuilds it.
+
 **Models:** The Silero VAD model (`src-tauri/resources/models/silero_vad_v4.onnx`) is
 committed, so there is no model to download before `bun run tauri dev`.
 
@@ -171,7 +176,7 @@ Fisilti supports command-line parameters on all platforms for integration with s
 - `send_transcription_input()` in `signal_handle.rs` is shared between signal handlers and CLI to avoid code duplication
 - `CliArgs` is stored in Tauri managed state (`.manage()`) so it's accessible in `on_window_event` and other handlers
 
-## Meeting Auto-Detection (macOS)
+## Meeting Auto-Detection (macOS, Linux, Windows)
 
 Opt-in feature: detect when a meeting app starts using the microphone, prompt
 to start a transcription session, and offer to end (then auto-end) the session
@@ -224,6 +229,16 @@ in-progress row and survive navigation.
   (dedicated apps + browsers, matched exact-or-dotted-prefix so helper
   subprocesses count) that is actively pulling mic input = "in a meeting".
   Our own PID is excluded (the capture tap makes Fisilti itself report input).
+- Linux uses the PulseAudio/PipeWire recording streams (`audio/pulse.rs`,
+  `LINUX_MEETING_APPS`). Windows reads the microphone privacy consent store
+  (`HKCU\…\CapabilityAccessManager\ConsentStore\microphone`: an entry with
+  `LastUsedTimeStop == 0` is recording now) in `audio/wasapi.rs`, matched by
+  exe stem / Store package name against `WINDOWS_MEETING_APPS`.
+- Meeting capture per platform (`cfg(meeting_capture)`, set in `build.rs`):
+  CoreAudio tap (macOS), default sink monitor (Linux), WASAPI loopback on the
+  default output (Windows, `audio/wasapi.rs`). Loopback delivers nothing while
+  no app plays audio, so the Windows stream pads gaps > 200 ms with silence to
+  stay real-time.
 - Start prompt is debounced (2 polls ≈ 6s); dismissing snoozes until the
   signal clears; stopping a session while the app still holds the mic also
   snoozes (no instant re-prompt for the same meeting).
@@ -240,7 +255,7 @@ in-progress row and survive navigation.
 - Tray: "Open Fısıltı" opens the main window on the Meetings page via
   a `navigate-section` event (listener in `App.tsx`).
 
-## Meeting Naming (macOS)
+## Meeting Naming
 
 New sessions are titled after the real meeting instead of the datetime
 default, in priority order: calendar event in progress (EventKit, opt-in
@@ -248,6 +263,9 @@ default, in priority order: calendar event in progress (EventKit, opt-in
 meeting app's window/tab title (AX API; reuses the accessibility permission,
 cleaned of product suffixes and rejected when generic, e.g. "Zoom Meeting" or
 a bare Meet room code) → the existing LLM auto-title on stop → datetime.
+Linux reads window captions from KWin (KDE only); Windows enumerates the
+detected app's top-level windows (`wasapi::window_titles_for`). Neither has a
+calendar source.
 
 - `src-tauri/src/meeting_naming.rs` - calendar + window-title resolution and
   the pure `clean_window_title` heuristics (unit-tested)
@@ -464,5 +482,10 @@ This reveals the "Developer" group at the bottom of Settings → General
 ## Platform Notes
 
 - **macOS**: Metal acceleration, accessibility permissions required
-- **Windows**: Vulkan acceleration, code signing
+- **Windows**: Vulkan acceleration; release builds are unsigned unless
+  `bundle.windows.signCommand` is configured. Cross-check from Linux without a
+  Windows machine: `cargo install cargo-xwin`, then in `src-tauri`
+  `DOCS_RS=1 cargo xwin check --target x86_64-pc-windows-msvc` (`DOCS_RS`
+  skips the whisper.cpp/onnxruntime native builds; tauri-winres also needs an
+  `llvm-rc` on PATH)
 - **Linux**: OpenBLAS + Vulkan, limited Wayland support, overlay disabled by default

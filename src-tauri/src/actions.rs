@@ -13,7 +13,6 @@ use crate::utils::{
     show_transcribing_overlay, DictationStage,
 };
 use crate::TranscriptionCoordinator;
-use ferrous_opencc::{config::BuiltinConfig, OpenCC};
 use log::{debug, error, warn};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
@@ -268,50 +267,6 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
     }
 }
 
-async fn maybe_convert_chinese_variant(
-    settings: &AppSettings,
-    transcription: &str,
-) -> Option<String> {
-    // Check if language is set to Simplified or Traditional Chinese
-    let is_simplified = settings.selected_language == "zh-Hans";
-    let is_traditional = settings.selected_language == "zh-Hant";
-
-    if !is_simplified && !is_traditional {
-        debug!("selected_language is not Simplified or Traditional Chinese; skipping translation");
-        return None;
-    }
-
-    debug!(
-        "Starting Chinese translation using OpenCC for language: {}",
-        settings.selected_language
-    );
-
-    // Use OpenCC to convert based on selected language
-    let config = if is_simplified {
-        // Convert Traditional Chinese to Simplified Chinese
-        BuiltinConfig::Tw2sp
-    } else {
-        // Convert Simplified Chinese to Traditional Chinese
-        BuiltinConfig::S2twp
-    };
-
-    match OpenCC::from_config(config) {
-        Ok(converter) => {
-            let converted = converter.convert(transcription);
-            debug!(
-                "OpenCC translation completed. Input length: {}, Output length: {}",
-                transcription.len(),
-                converted.len()
-            );
-            Some(converted)
-        }
-        Err(e) => {
-            error!("Failed to initialize OpenCC converter: {}. Falling back to original transcription.", e);
-            None
-        }
-    }
-}
-
 pub(crate) struct ProcessedTranscription {
     pub final_text: String,
     pub post_processed_text: Option<String>,
@@ -327,10 +282,6 @@ pub(crate) async fn process_transcription_output(
     let mut final_text = transcription.to_string();
     let mut post_processed_text: Option<String> = None;
     let mut post_process_prompt: Option<String> = None;
-
-    if let Some(converted_text) = maybe_convert_chinese_variant(&settings, transcription).await {
-        final_text = converted_text;
-    }
 
     if post_process {
         if let Some(processed_text) = post_process_transcription(&settings, &final_text).await {

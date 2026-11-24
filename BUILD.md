@@ -22,6 +22,11 @@ This guide covers how to set up the development environment and build Fısıltı
 - Microsoft C++ Build Tools
 - Visual Studio 2019/2022 with C++ development tools
 - Or Visual Studio Build Tools 2019/2022
+- [Vulkan SDK](https://vulkan.lunarg.com/sdk/home#windows) (whisper.cpp GPU
+  backend; provides `glslc`)
+- CMake (bundled with the Visual Studio C++ workload)
+- Keep the checkout path short (e.g. `C:\src\fisilti`): whisper.cpp's build
+  can exceed the 260-character path limit otherwise
 
 #### Linux
 
@@ -74,7 +79,7 @@ bun tauri dev
 bun run tauri build
 ```
 
-This compiles a release binary and generates platform-specific bundles (deb, rpm, AppImage on Linux; dmg on macOS; msi on Windows).
+This compiles a release binary and generates platform-specific bundles (deb, rpm, AppImage on Linux; dmg on macOS; NSIS installer and msi on Windows).
 
 ## Linux Install (from source)
 

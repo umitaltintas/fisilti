@@ -10,6 +10,12 @@ default-run = "fisilti"
 [profile.dev]
 incremental = true # Compile your binary in smaller steps.
 
+# No debug info for dependencies: it is most of what the compiler and linker
+# write in a dev build, and nobody steps through tauri or tokio. Our own crate
+# keeps full debug info.
+[profile.dev.package."*"]
+debug = false
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
@@ -48,7 +54,6 @@ rusqlite_migration = "2.3"
 tauri-plugin-fs = "2.4.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-rdev = { git = "https://github.com/rustdesk-org/rdev" }
 cpal = "0.16.0"
 anyhow = "1.0.95"
 rubato = "0.16.2"
@@ -61,7 +66,18 @@ tokio = { version = "1.43.0", features = ["macros", "time", "sync"] }
 vad-rs = { git = "https://github.com/cjpais/vad-rs", default-features = false }
 enigo = "0.6.1"
 rodio = { git = "https://github.com/cjpais/rodio.git" }
-reqwest = { version = "0.12", features = ["json", "stream", "blocking"] }
+# rustls (ring provider, installed in `run`) instead of native-tls: the updater
+# already needs rustls, so this keeps a single TLS stack and a single reqwest.
+reqwest = { version = "0.13", default-features = false, features = [
+  "rustls-no-provider",
+  "charset",
+  "http2",
+  "system-proxy",
+  "json",
+  "stream",
+  "blocking",
+] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 base64 = "0.22"
 futures-util = "0.3"
 rustfft = "6.4.0"
@@ -76,14 +92,12 @@ sha2 = "0.10"
 transcribe-rs = { path = "vendor/transcribe-rs", features = ["whisper-cpp", "onnx"] }
 # Native keyboard hooks (the crate is published as `handy-keys`).
 hotkeys = { package = "handy-keys", version = "0.2.4" }
-ferrous-opencc = "0.2.3"
 clap = { version = "4", features = ["derive"] }
-ringbuf = "0.4.8"
 specta = "=2.0.0-rc.22"
 specta-typescript = "0.0.9"
 tauri-specta = { version = "=2.0.0-rc.21", features = ["derive", "typescript"] }
 tauri-plugin-dialog = "2.6"
-tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["connect", "handshake", "native-tls"] }
+tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["connect", "handshake", "rustls-tls-native-roots"] }
 mp3lame-encoder = "0.2.5"
 
 [target.'cfg(unix)'.dependencies]
@@ -103,6 +117,10 @@ windows = { version = "0.61.3", features = [
   "Win32_System_Variant",
   "Win32_Foundation",
   "Win32_UI_WindowsAndMessaging",
+  # Meeting mode: endpoint form factor (echo duck) and process names for
+  # window titles (meeting naming).
+  "Win32_UI_Shell_PropertiesSystem",
+  "Win32_System_Threading",
 ] }
 winreg = "0.55"
 
@@ -111,7 +129,8 @@ tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", branch = "v2.
 transcribe-rs = { path = "vendor/transcribe-rs", features = ["whisper-metal"] }
 # Meeting mode: CoreAudio system-audio tap (Step 1). Isolated from dictation flow.
 cidre = { git = "https://github.com/yury/cidre", rev = "a9587fa", features = ["av"] }
-objc = "0.2.7"
+# Lock-free ring buffer between the CoreAudio IO-proc and the capture stream.
+ringbuf = "0.4.8"
 # Meeting naming: EventKit lookup of the ongoing calendar event so sessions can
 # be named after the real meeting (opt-in `meeting_calendar_names` setting).
 objc2 = "0.6"
@@ -134,8 +153,9 @@ objc2-foundation = { version = "0.3", features = [
 ] }
 block2 = "0.6"
 
-# Meeting mode capture (macOS CoreAudio tap / Linux PipeWire-Pulse monitor).
-[target.'cfg(any(target_os = "macos", target_os = "linux"))'.dependencies]
+# Meeting mode capture (macOS CoreAudio tap / Linux PipeWire-Pulse monitor /
+# Windows WASAPI loopback).
+[target.'cfg(any(target_os = "macos", target_os = "linux", windows))'.dependencies]
 futures-channel = "0.3.31"
 # EBU R128 loudness measurement for mic normalization in the meeting capture loop.
 ebur128 = "0.1.10"
@@ -159,7 +179,9 @@ ashpd = { version = "0.13.13", default-features = false, features = ["tokio", "g
 tempfile = "3"
 
 [profile.release]
-lto = true
-codegen-units = 1
+# Thin LTO with parallel codegen: most of the release build time used to be
+# one single-threaded fat-LTO step. The hot paths (whisper.cpp, onnxruntime)
+# are C/C++ and unaffected.
+lto = "thin"
 strip = true
 panic = "unwind"

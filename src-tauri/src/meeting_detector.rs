@@ -375,16 +375,20 @@ const LINUX_MEETING_APPS: &[(&[&str], &str)] = &[
     (&["falkon", "org.kde.falkon"], "Falkon"),
 ];
 
-/// Match one recording stream's identifiers against [`LINUX_MEETING_APPS`].
-#[cfg(any(target_os = "linux", test))]
-fn linux_meeting_app_match(candidates: &[Option<&str>]) -> Option<MeetingSignal> {
+/// Match one recording stream's identifiers against a keyed allowlist
+/// ([`LINUX_MEETING_APPS`] / [`WINDOWS_MEETING_APPS`]).
+#[cfg(any(target_os = "linux", windows, test))]
+fn keyed_meeting_app_match(
+    table: &'static [(&'static [&'static str], &'static str)],
+    candidates: &[Option<&str>],
+) -> Option<MeetingSignal> {
     let candidates: Vec<String> = candidates
         .iter()
         .flatten()
         .map(|c| c.trim().to_lowercase())
         .filter(|c| !c.is_empty())
         .collect();
-    LINUX_MEETING_APPS.iter().find_map(|&(keys, name)| {
+    table.iter().find_map(|&(keys, name)| {
         candidates
             .iter()
             .any(|c| keys.contains(&c.as_str()))
@@ -393,6 +397,95 @@ fn linux_meeting_app_match(candidates: &[Option<&str>]) -> Option<MeetingSignal>
                 bundle_id: keys[0],
             })
     })
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn linux_meeting_app_match(candidates: &[Option<&str>]) -> Option<MeetingSignal> {
+    keyed_meeting_app_match(LINUX_MEETING_APPS, candidates)
+}
+
+/// Windows meeting apps: (match keys, display name). Keys are lowercased
+/// executable stems for desktop apps ("ms-teams" for ms-teams.exe) and package
+/// names without the publisher hash for Store apps ("msteams"). Every key that
+/// names an executable is also used to find the app's windows for meeting
+/// naming, so list the window-owning executable among them.
+#[cfg(any(windows, test))]
+const WINDOWS_MEETING_APPS: &[(&[&str], &str)] = &[
+    // Dedicated meeting / call apps.
+    (&["zoom", "zoom.us"], "Zoom"),
+    (&["ms-teams", "msteams", "teams"], "Microsoft Teams"),
+    (
+        &[
+            "webex",
+            "ciscocollabhost",
+            "atmgr",
+            "webexmta",
+            "ciscowebexstart",
+        ],
+        "Webex",
+    ),
+    (&["slack", "91750d7e.slack"], "Slack"),
+    (&["discord", "discordptb", "discordcanary"], "Discord"),
+    (&["skype", "microsoft.skypeapp"], "Skype"),
+    (
+        &["telegram", "telegrammessengerllp.telegramdesktop"],
+        "Telegram",
+    ),
+    (&["signal"], "Signal"),
+    (
+        &["whatsapp", "whatsapp.root", "5319275a.whatsappdesktop"],
+        "WhatsApp",
+    ),
+    (&["element"], "Element"),
+    (&["jitsi meet"], "Jitsi Meet"),
+    // Browsers (Meet / Whereby / Teams on the web run in a tab).
+    (&["chrome"], "Chrome"),
+    (&["msedge"], "Edge"),
+    (&["firefox"], "Firefox"),
+    (&["brave"], "Brave"),
+    (&["vivaldi"], "Vivaldi"),
+    (&["opera", "opera_gx"], "Opera"),
+    (&["arc", "thebrowsercompany.arc"], "Arc"),
+    (&["zen"], "Zen"),
+    (&["librewolf"], "LibreWolf"),
+    (&["chromium"], "Chromium"),
+];
+
+/// Windows: the apps the microphone privacy indicator lists as recording
+/// right now, matched against [`WINDOWS_MEETING_APPS`]. Errors mean "no
+/// signal".
+#[cfg(windows)]
+fn detect_meeting_signal() -> Option<MeetingSignal> {
+    let apps = match crate::audio_toolkit::audio::recording_apps() {
+        Ok(apps) => apps,
+        Err(e) => {
+            log::debug!("meeting-detector: microphone usage list failed: {e}");
+            return None;
+        }
+    };
+    apps.iter().find_map(|app| {
+        keyed_meeting_app_match(
+            WINDOWS_MEETING_APPS,
+            &[app.exe.as_deref(), app.package.as_deref()],
+        )
+    })
+}
+
+/// One-shot detection of the meeting app currently using the microphone.
+#[cfg(windows)]
+pub(crate) fn current_meeting_signal() -> Option<MeetingSignal> {
+    detect_meeting_signal()
+}
+
+/// Every allowlist key of a detected Windows meeting app (for finding its
+/// windows by executable name).
+#[cfg(windows)]
+pub(crate) fn windows_app_keys(signal: &MeetingSignal) -> &'static [&'static str] {
+    WINDOWS_MEETING_APPS
+        .iter()
+        .find(|(keys, _)| keys[0] == signal.bundle_id)
+        .map(|(keys, _)| *keys)
+        .unwrap_or(&[])
 }
 
 /// Linux: scan the sound server's recording streams for a known meeting app
@@ -505,6 +598,14 @@ fn poll_loop(app: AppHandle) {
             "meeting-detector: process-object API unavailable ({:?}); auto-detection will stay idle",
             e
         ),
+    }
+    #[cfg(windows)]
+    if crate::audio_toolkit::audio::mic_usage_detection_available() {
+        log::info!("meeting-detector: started (microphone usage detection available)");
+    } else {
+        log::info!(
+            "meeting-detector: microphone consent store unreadable; auto-detection will stay idle"
+        );
     }
     #[cfg(target_os = "linux")]
     if crate::audio_toolkit::audio::sound_server_available() {
@@ -842,6 +943,27 @@ mod tests {
         // Prefixes don't count: "zoom" must not match "zoomer".
         assert_eq!(name(&[Some("zoomer"), Some("arecord"), None]), None);
         assert_eq!(name(&[None, None, None]), None);
+    }
+
+    #[test]
+    fn windows_matching_uses_exe_stem_or_package_name() {
+        let name = |c: &[Option<&str>]| {
+            keyed_meeting_app_match(WINDOWS_MEETING_APPS, c).map(|s| (s.name, s.bundle_id))
+        };
+        assert_eq!(
+            name(&[Some("ms-teams"), None]),
+            Some(("Microsoft Teams", "ms-teams"))
+        );
+        assert_eq!(
+            name(&[None, Some("MSTeams")]),
+            Some(("Microsoft Teams", "ms-teams"))
+        );
+        assert_eq!(name(&[Some("Zoom"), None]), Some(("Zoom", "zoom")));
+        assert_eq!(name(&[Some("msedge"), None]), Some(("Edge", "msedge")));
+        // The WebView2 host (used by many apps, this one included) is not a
+        // meeting app, and neither is a voice recorder.
+        assert_eq!(name(&[Some("msedgewebview2"), None]), None);
+        assert_eq!(name(&[None, Some("Microsoft.WindowsSoundRecorder")]), None);
     }
 
     /// Test shim: display name of the matched allowlist entry.

@@ -17,6 +17,9 @@ mod mixer;
 mod pulse;
 #[cfg(target_os = "macos")]
 mod system_audio;
+// Meeting mode on Windows: WASAPI loopback capture + device/app queries.
+#[cfg(windows)]
+mod wasapi;
 
 pub use device::{list_input_devices, list_output_devices, CpalDeviceInfo};
 pub use recorder::{
@@ -37,3 +40,8 @@ pub use pulse::{
 };
 #[cfg(target_os = "macos")]
 pub use system_audio::{SystemAudioCapture, SystemAudioStream};
+#[cfg(windows)]
+pub use wasapi::{
+    detect_output_route, mic_usage_detection_available, recording_apps, window_titles_for,
+    OutputRoute, RecordingApp, SystemAudioCapture, SystemAudioStream,
+};

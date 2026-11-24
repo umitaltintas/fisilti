@@ -606,6 +606,11 @@ pub fn run(cli_args: CliArgs) {
     // Detect portable mode before anything else
     portable::init();
 
+    // One TLS stack for every HTTPS / WSS client (reqwest, Gemini Live, the
+    // updater): rustls with the ring provider. Must be installed before the
+    // first client is built; an error only means one is already installed.
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     // Parse console logging directives from RUST_LOG, falling back to info-level logging
     // when the variable is unset
     let console_filter = build_console_filter();

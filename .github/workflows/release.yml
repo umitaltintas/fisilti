@@ -45,12 +45,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Apple Silicon only: meeting mode (the point of Fısıltı) is
-        # macOS-only, and Intel Macs are no longer released.
+        # Apple Silicon (Intel Macs are no longer released) and Windows x64.
         include:
           - platform: "macos-26" # M1 and later. macOS 26 for the Apple Intelligence SDK.
             args: "--target aarch64-apple-darwin"
             target: "aarch64-apple-darwin"
+          - platform: "windows-latest"
+            args: "--target x86_64-pc-windows-msvc"
+            target: "x86_64-pc-windows-msvc"
 
     uses: ./.github/workflows/build.yml
     with:
@@ -62,3 +64,43 @@ jobs:
       upload-artifacts: false
       release-id: ${{ needs.create-release.outputs.release-id }}
     secrets: inherit
+
+  # One updater manifest for every platform, written once all builds have
+  # uploaded their signatures. tauri-action skips latest.json when the asset
+  # names are rewritten ("Fısıltı.app.tar.gz.sig" vs the uploaded
+  # "Fisilti_….sig"), so it is built from the uploaded signatures. Without it
+  # installed apps never update.
+  updater-manifest:
+    permissions:
+      contents: write
+    needs: [create-release, publish-tauri]
+    if: ${{ !cancelled() && needs.create-release.result == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Upload updater manifest (latest.json)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: v${{ needs.create-release.outputs.version }}
+          VERSION: ${{ needs.create-release.outputs.version }}
+        run: |
+          set -euo pipefail
+          assets=$(gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')
+          platforms='{}'
+          add_platform() { # <platform key> <signature asset suffix>
+            local sig_name
+            sig_name=$(printf '%s\n' "$assets" | grep -- "$2\$" | head -1 || true)
+            [ -n "$sig_name" ] || { echo "no $1 updater signature in $TAG"; return 0; }
+            gh release download "$TAG" -R "$GITHUB_REPOSITORY" -p "$sig_name" -O "$1.sig" --clobber
+            platforms=$(jq --arg key "$1" --arg sig "$(cat "$1.sig")" \
+              --arg url "https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/${sig_name%.sig}" \
+              '. + {($key): {signature: $sig, url: $url}}' <<<"$platforms")
+          }
+          add_platform darwin-aarch64 '.app.tar.gz.sig'
+          add_platform windows-x86_64 '-setup.exe.sig'
+          [ "$platforms" != '{}' ] || { echo "no updater signatures in $TAG"; exit 1; }
+          jq -n --arg v "$VERSION" --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --argjson platforms "$platforms" \
+            '{version: $v, pub_date: $date, platforms: $platforms}' > latest.json
+          cat latest.json
+          gh release upload "$TAG" latest.json -R "$GITHUB_REPOSITORY" --clobber

@@ -255,7 +255,8 @@ impl MeetingManager {
         );
         self.emit_finalizing(true);
         for job in jobs {
-            self.transcribe_live_segment(session, job);
+            // Never subtitled: the meeting is over.
+            let _ = self.transcribe_live_segment(session, job);
         }
         self.emit_finalizing(false);
 

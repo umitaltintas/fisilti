@@ -909,7 +909,7 @@
     },
     "transcriptSpeakerUnknown": "Mluvčí",
     "subtitlesToggle": "Zobrazovat živé titulky na obrazovce",
-    "subtitlesDescription": "Během schůzky zobrazuje u spodního okraje obrazovky, co říkají ostatní účastníci, takže můžete číst bez opuštění hovoru. Nepřekáží klikání a je skryté při sdílení obrazovky i v nahrávkách. Vyžaduje živý režim výše.",
+    "subtitlesDescription": "Během schůzky zobrazuje u spodního okraje obrazovky, co říkají ostatní účastníci, takže můžete číst bez opuštění hovoru. Nepřekáží klikání a je skryté při sdílení obrazovky i v nahrávkách.",
     "stillProcessing": "Probíhá přepis",
     "costEstimate": "~${{amount}}",
     "costTooltip": "Odhad podle počtu tokenů hlášených API, oceněný podle snímku veřejných sazeb. Ceny preview verzí se mění a bezplatná kvóta ani slevy se nezapočítávají, takže částka nebude přesně odpovídat faktuře. Znak + na konci znamená, že jeden model neměl zveřejněnou cenu a skutečné náklady jsou vyšší.",

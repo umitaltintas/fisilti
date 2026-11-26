@@ -160,6 +160,32 @@ impl SegmentMerger {
         }
     }
 
+    /// Release the pending segment once nothing can merge into it any more:
+    /// either it is already a full force-flushed segment (merging could add
+    /// at most a few seconds while holding it back a whole segment), or the
+    /// merge gap has passed in silence. Without this a segment waited for the
+    /// NEXT one to finish — ~45 s behind for a continuous talker, and
+    /// indefinitely for a last sentence followed by silence — which made the
+    /// live transcript and the local subtitles lag far behind the speech.
+    ///
+    /// `now` is the sample index of the current frame; `in_speech` is whether
+    /// a new segment is already being collected (it may still merge).
+    pub fn release_ready(
+        &mut self,
+        now: u64,
+        in_speech: bool,
+        cfg: &SegConfig,
+    ) -> Option<(Vec<f32>, u64)> {
+        let (audio, _) = self.pending.as_ref()?;
+        let full = audio.len() >= cfg.max_samples;
+        let gap_passed = !in_speech && now.saturating_sub(self.pending_end) > cfg.merge_gap_samples;
+        if full || gap_passed {
+            self.pending.take()
+        } else {
+            None
+        }
+    }
+
     /// Hand back whatever is still pending (end of session).
     pub fn take(&mut self) -> Option<(Vec<f32>, u64)> {
         self.pending.take()
@@ -231,6 +257,12 @@ impl SourceProcessor {
                     }
                 }
                 Err(e) => log::warn!("meeting VAD frame error [{:?}]: {}", self.source, e),
+            }
+            if let Some((ready, start)) =
+                self.merger
+                    .release_ready(self.total_samples, !self.segment.is_empty(), cfg)
+            {
+                queue.submit(session, ready, start, self.source);
             }
         }
         self.frame_accum.drain(..offset);
@@ -984,7 +1016,15 @@ impl MeetingManager {
             };
             if let Some(job) = job {
                 if !session.shutting_down.load(Ordering::Relaxed) {
-                    self.transcribe_live_segment(session, job);
+                    // Only the remote side is subtitled, as with Gemini Live.
+                    let source = job.source;
+                    let end_ms = (job.start_samples + job.audio.len() as u64) * 1000
+                        / WHISPER_SAMPLE_RATE as u64;
+                    if let Some(text) = self.transcribe_live_segment(session, job) {
+                        if source == TranscriptSource::System {
+                            self.subtitle_local_segment(session, &text, end_ms);
+                        }
+                    }
                 }
             }
             if last_persist.elapsed() >= PERSIST_INTERVAL {
@@ -1005,8 +1045,13 @@ impl MeetingManager {
 
     /// Transcribe one live segment with the meeting model. This IS the final
     /// transcript for local models: stop() only finishes the backlog. A
-    /// failed segment is kept for one retry on stop.
-    pub(super) fn transcribe_live_segment(&self, session: &Session, job: LiveJob) {
+    /// failed segment is kept for one retry on stop. Returns the text it added
+    /// to the transcript, if any.
+    pub(super) fn transcribe_live_segment(
+        &self,
+        session: &Session,
+        job: LiveJob,
+    ) -> Option<String> {
         let timestamp_ms = job.start_samples.saturating_mul(1000) / WHISPER_SAMPLE_RATE as u64;
         match self
             .transcription_manager
@@ -1020,8 +1065,17 @@ impl MeetingManager {
                         timestamp_ms,
                         text
                     );
-                    self.push_segment_with(session, text, None, None, timestamp_ms, job.source);
+                    self.push_segment_with(
+                        session,
+                        text.clone(),
+                        None,
+                        None,
+                        timestamp_ms,
+                        job.source,
+                    );
+                    return Some(text);
                 }
+                None
             }
             Err(e) => {
                 log::warn!(
@@ -1029,6 +1083,7 @@ impl MeetingManager {
                     e
                 );
                 session.live_backlog.lock().unwrap().push_failed(job);
+                None
             }
         }
     }
@@ -1094,6 +1149,35 @@ mod tests {
         assert!(released.iter().all(|&len| len <= cfg.max_pending_samples));
         let (pending, _) = merger.take().unwrap();
         assert!(pending.len() <= cfg.max_pending_samples);
+    }
+
+    #[test]
+    fn a_full_segment_is_released_without_waiting_for_the_next() {
+        let cfg = cfg();
+        let mut merger = SegmentMerger::default();
+        let end = cfg.max_samples as u64;
+        assert!(merger
+            .push(vec![1.0; cfg.max_samples], 0, end, &cfg)
+            .is_none());
+        // Still mid-speech (the next segment is being collected), yet the
+        // full one goes out at once.
+        let (audio, start) = merger.release_ready(end + 1, true, &cfg).unwrap();
+        assert_eq!((audio.len(), start), (cfg.max_samples, 0));
+        assert!(merger.take().is_none());
+    }
+
+    #[test]
+    fn a_short_segment_is_released_once_the_merge_gap_passes_in_silence() {
+        let cfg = cfg();
+        let mut merger = SegmentMerger::default();
+        assert!(merger.push(vec![1.0; 200], 0, 200, &cfg).is_none());
+        // Within the gap, or with new speech already started: keep waiting.
+        assert!(merger.release_ready(200 + 50, false, &cfg).is_none());
+        assert!(merger.release_ready(200 + 500, true, &cfg).is_none());
+        // Gap passed in silence: out it goes.
+        let (audio, _) = merger.release_ready(200 + 51, false, &cfg).unwrap();
+        assert_eq!(audio.len(), 200);
+        assert!(merger.release_ready(10_000, false, &cfg).is_none());
     }
 
     fn job(start_secs: u64, secs: usize) -> super::LiveJob {

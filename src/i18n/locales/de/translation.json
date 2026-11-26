@@ -909,7 +909,7 @@
     },
     "transcriptSpeakerUnknown": "Sprecher",
     "subtitlesToggle": "Live-Untertitel auf dem Bildschirm anzeigen",
-    "subtitlesDescription": "Zeigt während des Meetings unten auf dem Bildschirm an, was die anderen Teilnehmenden sagen, sodass man mitlesen kann, ohne den Anruf zu verlassen. Klicks gehen hindurch, und die Untertitel sind bei Bildschirmfreigabe und Aufnahmen ausgeblendet. Erfordert oben einen Live-Modus.",
+    "subtitlesDescription": "Zeigt während des Meetings unten auf dem Bildschirm an, was die anderen Teilnehmenden sagen, sodass man mitlesen kann, ohne den Anruf zu verlassen. Klicks gehen hindurch, und die Untertitel sind bei Bildschirmfreigabe und Aufnahmen ausgeblendet.",
     "stillProcessing": "Wird transkribiert",
     "costEstimate": "~${{amount}}",
     "costTooltip": "Geschätzt anhand der von der API gemeldeten Token-Anzahl, berechnet nach einer Momentaufnahme der öffentlichen Preise. Preview-Preise ändern sich, und Gratiskontingente sowie Rabatte werden nicht berücksichtigt – der Wert stimmt daher nicht exakt mit einer Rechnung überein. Ein nachgestelltes + bedeutet, dass für ein Modell kein Preis veröffentlicht ist und die tatsächlichen Kosten höher sind.",

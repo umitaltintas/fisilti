@@ -909,7 +909,7 @@
     },
     "transcriptSpeakerUnknown": "Hablante",
     "subtitlesToggle": "Mostrar subtítulos en directo en pantalla",
-    "subtitlesDescription": "Muestra lo que dicen los demás participantes en la parte inferior de la pantalla durante la reunión, para que puedas seguirlo sin salir de la llamada. Los clics lo atraviesan y se oculta al compartir pantalla y en las grabaciones. Requiere un modo en directo arriba.",
+    "subtitlesDescription": "Muestra lo que dicen los demás participantes en la parte inferior de la pantalla durante la reunión, para que puedas seguirlo sin salir de la llamada. Los clics lo atraviesan y se oculta al compartir pantalla y en las grabaciones.",
     "stillProcessing": "Transcribiendo",
     "costEstimate": "~${{amount}}",
     "costTooltip": "Estimado a partir del número de tokens que informó la API, con precios tomados de una captura de las tarifas públicas. Los precios de las versiones preview cambian y no se tienen en cuenta la cuota gratuita ni los descuentos de facturación, por lo que no coincidirá exactamente con una factura. Un + al final indica que un modelo no tenía precio publicado y que el coste real es mayor.",

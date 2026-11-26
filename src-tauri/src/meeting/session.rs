@@ -290,6 +290,10 @@ pub struct Session {
     pub live_backlog: Mutex<LiveBacklog>,
     #[cfg(meeting_capture)]
     pub subtitles: Mutex<crate::meeting::live::SubtitleFeed>,
+    /// Bumped on every local-model subtitle update; a hide timer only takes
+    /// the strip down if no newer update arrived while it slept.
+    #[cfg(meeting_capture)]
+    pub subtitle_epoch: std::sync::atomic::AtomicU64,
 }
 
 impl Session {
@@ -317,6 +321,8 @@ impl Session {
             live_backlog: Mutex::new(LiveBacklog::default()),
             #[cfg(meeting_capture)]
             subtitles: Mutex::new(Default::default()),
+            #[cfg(meeting_capture)]
+            subtitle_epoch: std::sync::atomic::AtomicU64::new(0),
         }
     }
 

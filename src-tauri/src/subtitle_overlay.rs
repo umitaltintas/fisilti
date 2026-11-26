@@ -250,15 +250,26 @@ pub fn create_subtitle_overlay(app_handle: &AppHandle) {
     }
 }
 
+/// Set when the strip is a layer-shell surface on KDE Wayland. There it is
+/// shown once and then only emptied, never hidden: the recording overlay saw
+/// protocol errors on KDE, and unmapping/remapping a layer surface is the
+/// suspected trigger. An empty strip renders nothing and ignores the cursor.
+#[cfg(target_os = "linux")]
+static KEEP_MAPPED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 /// Pin the strip to the bottom edge as an overlay layer when the compositor
-/// supports wlr-layer-shell (wlroots compositors, Hyprland, GNOME doesn't).
-/// Skipped on KDE, where the recording overlay saw layer-shell instability.
+/// supports wlr-layer-shell (wlroots compositors, Hyprland, KWin; GNOME
+/// doesn't). Without it a Wayland client can neither place the strip nor keep
+/// it above the call window, so the strip would be useless.
 #[cfg(target_os = "linux")]
 fn init_layer_shell(window: &tauri::WebviewWindow) -> bool {
     use gtk_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
 
-    if crate::utils::is_kde_wayland() || !gtk_layer_shell::is_supported() {
+    if !gtk_layer_shell::is_supported() {
         return false;
+    }
+    if crate::utils::is_kde_wayland() {
+        KEEP_MAPPED.store(true, std::sync::atomic::Ordering::Relaxed);
     }
     let Ok(gtk_window) = window.gtk_window() else {
         return false;
@@ -317,6 +328,10 @@ pub fn hide_subtitle(app_handle: &AppHandle) {
             pending: String::new(),
         },
     );
+    #[cfg(target_os = "linux")]
+    if KEEP_MAPPED.load(std::sync::atomic::Ordering::Relaxed) {
+        return;
+    }
     let _ = window.hide();
 }
 

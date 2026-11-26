@@ -909,7 +909,7 @@
     },
     "transcriptSpeakerUnknown": "说话人",
     "subtitlesToggle": "在屏幕上显示实时字幕",
-    "subtitlesDescription": "会议期间将其他参与者的发言悬浮显示在屏幕底部附近，无需离开通话即可阅读。可点击穿透，且不会出现在屏幕共享和录屏中。需要在上方选择实时模式。",
+    "subtitlesDescription": "会议期间将其他参与者的发言悬浮显示在屏幕底部附近，无需离开通话即可阅读。可点击穿透，且不会出现在屏幕共享和录屏中。",
     "stillProcessing": "正在转录",
     "costEstimate": "~${{amount}}",
     "costTooltip": "根据 API 报告的 token 数量，按公开价格快照估算。预览版价格可能变动，且未计入免费额度和账单折扣，因此不会与账单完全一致。末尾的 + 表示某个模型没有公开价格，实际费用更高。",

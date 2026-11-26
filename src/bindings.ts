@@ -1606,11 +1606,11 @@ meeting_gemini_diarize?: boolean;
  */
 meeting_gemini_smart?: boolean; 
 /**
- * Show a click-through subtitle strip near the bottom of the screen while
- * a Gemini Live stream is running. Defaults ON because it only ever
- * appears once a live mode is already explicitly enabled — the text is the
- * thing that mode was turned on to produce, and the app window is not
- * where anyone is looking during a call.
+ * Show a click-through subtitle strip near the bottom of the screen with
+ * what the remote side says during a meeting. Fed by Gemini Live when a
+ * live mode is on; otherwise by the local meeting model's live segments
+ * (whole segments, a few seconds behind). Defaults ON: the app window is
+ * not where anyone is looking during a call.
  */
 meeting_subtitles?: boolean; 
 /**

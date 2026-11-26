@@ -909,7 +909,7 @@
     },
     "transcriptSpeakerUnknown": "Participante",
     "subtitlesToggle": "Mostrar legendas ao vivo na tela",
-    "subtitlesDescription": "Exibe o que os outros participantes estão dizendo perto da parte inferior da tela durante a reunião, para que você acompanhe sem sair da chamada. Não bloqueia cliques e fica oculto no compartilhamento de tela e nas gravações. Requer um modo ao vivo acima.",
+    "subtitlesDescription": "Exibe o que os outros participantes estão dizendo perto da parte inferior da tela durante a reunião, para que você acompanhe sem sair da chamada. Não bloqueia cliques e fica oculto no compartilhamento de tela e nas gravações.",
     "stillProcessing": "Transcrevendo",
     "costEstimate": "~${{amount}}",
     "costTooltip": "Estimado a partir das contagens de tokens informadas pela API, com preços de um retrato das tarifas públicas. Os preços de versões preview mudam, e a cota gratuita e os descontos de cobrança não são considerados, então o valor não corresponderá exatamente à fatura. Um + no final significa que um modelo não tinha preço publicado e o custo real é maior.",

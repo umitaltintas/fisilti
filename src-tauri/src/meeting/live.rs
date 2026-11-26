@@ -144,6 +144,61 @@ impl MeetingManager {
         }
     }
 
+    /// Show one finished remote-side segment from the LOCAL meeting model on
+    /// the strip.
+    ///
+    /// Local models have no streaming hypothesis, so there is no pending line:
+    /// each VAD segment appears whole once transcribed. Skipped when Gemini
+    /// Live is feeding the strip (it is faster and owns it), after stop (the
+    /// backlog finishing during finalize must not resurrect the strip), and
+    /// for segments that are already old — the worker catching up on its
+    /// backlog would otherwise subtitle speech from minutes ago.
+    ///
+    /// Nothing ever clears a settled-only feed, so each update arms a timer
+    /// that takes the strip down after a reading pause unless a newer segment
+    /// arrived meanwhile.
+    pub(super) fn subtitle_local_segment(&self, session: &Arc<Session>, text: &str, end_ms: u64) {
+        if session.stop_signal.load(Ordering::SeqCst)
+            || session.live_gemini_active.load(Ordering::Relaxed)
+        {
+            return;
+        }
+        let lag_ms = session.elapsed_ms().saturating_sub(end_ms);
+        if lag_ms > LOCAL_SUBTITLE_MAX_LAG_MS {
+            log::debug!("subtitle: skipping a segment that ended {lag_ms}ms ago");
+            return;
+        }
+        if !crate::settings::get_settings(&self.app_handle).meeting_subtitles {
+            return;
+        }
+
+        let (update, epoch) = {
+            let mut feed = session.subtitles.lock().unwrap();
+            feed.settle(text);
+            if feed.is_empty() {
+                return;
+            }
+            let epoch = session.subtitle_epoch.fetch_add(1, Ordering::SeqCst) + 1;
+            (feed.snapshot(), epoch)
+        };
+        let shown_chars = (update.settled.chars().count() + update.pending.chars().count()) as u64;
+        log::debug!("subtitle (local): {} chars, lag {}ms", shown_chars, lag_ms);
+        crate::subtitle_overlay::show_subtitle(&self.app_handle, update);
+
+        let hold = std::time::Duration::from_millis(
+            (LOCAL_SUBTITLE_BASE_HOLD_MS + shown_chars * LOCAL_SUBTITLE_MS_PER_CHAR)
+                .min(LOCAL_SUBTITLE_MAX_HOLD_MS),
+        );
+        let manager = self.clone();
+        let session = session.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(hold);
+            if session.subtitle_epoch.load(Ordering::SeqCst) == epoch {
+                manager.clear_subtitles(&session);
+            }
+        });
+    }
+
     /// Take the subtitle strip down (session ending).
     pub(super) fn clear_subtitles(&self, session: &Session) {
         *session.subtitles.lock().unwrap() = SubtitleFeed::default();
@@ -432,6 +487,21 @@ pub struct SubtitleFeed {
     settled: std::collections::VecDeque<String>,
     pending: String,
 }
+
+/// A local segment that ended longer ago than this is not subtitled: it is the
+/// worker catching up, and the conversation has moved on. Generous because a
+/// 22 s segment through Whisper Large on CPU can itself take many seconds.
+#[cfg(meeting_capture)]
+const LOCAL_SUBTITLE_MAX_LAG_MS: u64 = 30_000;
+
+/// How long a local subtitle stays up with nothing newer: a base pause plus
+/// reading time for its length, capped.
+#[cfg(meeting_capture)]
+const LOCAL_SUBTITLE_BASE_HOLD_MS: u64 = 4_000;
+#[cfg(meeting_capture)]
+const LOCAL_SUBTITLE_MS_PER_CHAR: u64 = 60;
+#[cfg(meeting_capture)]
+const LOCAL_SUBTITLE_MAX_HOLD_MS: u64 = 12_000;
 
 /// How many finalized lines stay on screen under the in-progress one.
 #[cfg(meeting_capture)]

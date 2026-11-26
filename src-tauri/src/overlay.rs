@@ -161,7 +161,14 @@ pub(crate) fn get_monitor_with_cursor(app_handle: &AppHandle) -> Option<tauri::M
         }
     }
 
-    app_handle.primary_monitor().ok().flatten()
+    // Wayland has no notion of a primary monitor (GDK returns none), so fall
+    // back to the first one rather than to nothing.
+    app_handle.primary_monitor().ok().flatten().or_else(|| {
+        app_handle
+            .available_monitors()
+            .ok()
+            .and_then(|monitors| monitors.into_iter().next())
+    })
 }
 
 fn is_mouse_within_monitor(

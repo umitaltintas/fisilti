@@ -232,17 +232,6 @@ export const MeetingPreferences: React.FC<MeetingPreferencesProps> = ({
           />
         </SettingContainer>
 
-        {liveMode !== "off" && (
-          <ToggleSwitch
-            checked={subtitles}
-            isUpdating={busy("meeting_subtitles")}
-            onChange={(value) => void updateSetting("meeting_subtitles", value)}
-            label={t("meeting.subtitlesToggle")}
-            description={t("meeting.subtitlesDescription")}
-            grouped
-          />
-        )}
-
         {liveMode === "translate" && (
           <SettingContainer
             title={t("meeting.liveTranslateTargetLabel")}
@@ -294,6 +283,17 @@ export const MeetingPreferences: React.FC<MeetingPreferencesProps> = ({
         }
         label={t("meeting.autoSummarize")}
         description={t("meeting.autoSummarizeDescription")}
+        grouped
+      />
+
+      {/* Fed by Gemini Live when a live mode is on, else by the local
+          meeting model, so it belongs here rather than with Gemini. */}
+      <ToggleSwitch
+        checked={subtitles}
+        isUpdating={busy("meeting_subtitles")}
+        onChange={(value) => void updateSetting("meeting_subtitles", value)}
+        label={t("meeting.subtitlesToggle")}
+        description={t("meeting.subtitlesDescription")}
         grouped
       />
 

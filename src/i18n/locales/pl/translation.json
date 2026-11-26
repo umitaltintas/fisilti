@@ -909,7 +909,7 @@
     },
     "transcriptSpeakerUnknown": "Mówca",
     "subtitlesToggle": "Pokazuj napisy na żywo na ekranie",
-    "subtitlesDescription": "Wyświetla u dołu ekranu to, co mówią pozostali uczestnicy, aby można było czytać na bieżąco bez opuszczania rozmowy. Nie blokuje kliknięć i jest ukryte podczas udostępniania ekranu i w nagraniach. Wymaga trybu na żywo powyżej.",
+    "subtitlesDescription": "Wyświetla u dołu ekranu to, co mówią pozostali uczestnicy, aby można było czytać na bieżąco bez opuszczania rozmowy. Nie blokuje kliknięć i jest ukryte podczas udostępniania ekranu i w nagraniach.",
     "stillProcessing": "Transkrypcja w toku",
     "costEstimate": "~${{amount}}",
     "costTooltip": "Szacunek na podstawie liczby tokenów zgłoszonej przez API, wyceniony według migawki publicznych stawek. Ceny wersji preview się zmieniają, a darmowy limit i rabaty rozliczeniowe nie są uwzględniane, więc kwota nie będzie dokładnie zgodna z fakturą. Końcowy + oznacza, że jeden model nie miał opublikowanej ceny, a rzeczywisty koszt jest wyższy.",

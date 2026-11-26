@@ -909,7 +909,7 @@
     },
     "transcriptSpeakerUnknown": "Intervenant",
     "subtitlesToggle": "Afficher les sous-titres en direct à l’écran",
-    "subtitlesDescription": "Affiche ce que disent les autres participants en bas de l’écran pendant la réunion, pour suivre sans quitter l’appel. Les clics passent au travers, et les sous-titres sont masqués lors du partage d’écran et des enregistrements. Nécessite un mode en direct ci-dessus.",
+    "subtitlesDescription": "Affiche ce que disent les autres participants en bas de l’écran pendant la réunion, pour suivre sans quitter l’appel. Les clics passent au travers, et les sous-titres sont masqués lors du partage d’écran et des enregistrements.",
     "stillProcessing": "Transcription en cours",
     "costEstimate": "~${{amount}}",
     "costTooltip": "Estimé à partir du nombre de jetons indiqué par l’API, selon un relevé des tarifs publics. Les tarifs des versions preview évoluent, et les quotas gratuits ainsi que les remises de facturation ne sont pas pris en compte : le montant ne correspondra donc pas exactement à une facture. Un + final signifie qu’un modèle n’a pas de tarif publié et que le coût réel est plus élevé.",

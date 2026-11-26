@@ -909,7 +909,7 @@
     },
     "transcriptSpeakerUnknown": "Talare",
     "subtitlesToggle": "Visa liveundertexter på skärmen",
-    "subtitlesDescription": "Visa vad de andra deltagarna säger nära skärmens nederkant medan mötet pågår, så att du kan läsa med utan att lämna samtalet. Klick går igenom, och undertexterna döljs vid skärmdelning och i inspelningar. Kräver ett liveläge ovan.",
+    "subtitlesDescription": "Visa vad de andra deltagarna säger nära skärmens nederkant medan mötet pågår, så att du kan läsa med utan att lämna samtalet. Klick går igenom, och undertexterna döljs vid skärmdelning och i inspelningar.",
     "stillProcessing": "Transkriberar",
     "costEstimate": "~${{amount}}",
     "costTooltip": "Uppskattat utifrån de tokenantal som API:et rapporterade, prissatt från en ögonblicksbild av offentliga priser. Förhandsversioners priser ändras, och gratiskvot och faktureringsrabatter räknas inte med, så beloppet stämmer inte exakt med fakturan. Ett avslutande + betyder att en modell saknade publicerat pris och att den verkliga kostnaden är högre.",

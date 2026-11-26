@@ -534,11 +534,11 @@ pub struct AppSettings {
     /// finalize pass and live transcription.
     #[serde(default = "default_true")]
     pub meeting_gemini_smart: bool,
-    /// Show a click-through subtitle strip near the bottom of the screen while
-    /// a Gemini Live stream is running. Defaults ON because it only ever
-    /// appears once a live mode is already explicitly enabled — the text is the
-    /// thing that mode was turned on to produce, and the app window is not
-    /// where anyone is looking during a call.
+    /// Show a click-through subtitle strip near the bottom of the screen with
+    /// what the remote side says during a meeting. Fed by Gemini Live when a
+    /// live mode is on; otherwise by the local meeting model's live segments
+    /// (whole segments, a few seconds behind). Defaults ON: the app window is
+    /// not where anyone is looking during a call.
     #[serde(default = "default_true")]
     pub meeting_subtitles: bool,
     /// Domain terms, names and product names Gemini should prefer, one per line

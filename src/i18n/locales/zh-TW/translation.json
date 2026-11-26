@@ -909,7 +909,7 @@
     },
     "transcriptSpeakerUnknown": "說話者",
     "subtitlesToggle": "在螢幕上顯示即時字幕",
-    "subtitlesDescription": "會議進行時，將其他與會者的發言浮動顯示在螢幕底部附近，讓你不必離開通話即可閱讀。可點擊穿透，且不會出現在螢幕分享與錄影中。需在上方選擇即時模式。",
+    "subtitlesDescription": "會議進行時，將其他與會者的發言浮動顯示在螢幕底部附近，讓你不必離開通話即可閱讀。可點擊穿透，且不會出現在螢幕分享與錄影中。",
     "stillProcessing": "正在轉錄",
     "costEstimate": "~${{amount}}",
     "costTooltip": "依 API 回報的 token 數量，以公開費率快照估算。預覽版價格可能變動，且未計入免費額度與帳單折扣，因此不會與帳單完全相符。結尾的 + 表示某個模型沒有公開價格，實際費用會更高。",

@@ -909,7 +909,7 @@
     },
     "transcriptSpeakerUnknown": "Người nói",
     "subtitlesToggle": "Hiển thị phụ đề trực tiếp trên màn hình",
-    "subtitlesDescription": "Hiển thị nổi lời của những người tham gia khác gần cuối màn hình trong khi họp, để bạn đọc theo mà không cần rời cuộc gọi. Có thể nhấp xuyên qua, và bị ẩn khỏi chia sẻ màn hình lẫn bản ghi hình. Cần chọn một chế độ trực tiếp ở trên.",
+    "subtitlesDescription": "Hiển thị nổi lời của những người tham gia khác gần cuối màn hình trong khi họp, để bạn đọc theo mà không cần rời cuộc gọi. Có thể nhấp xuyên qua, và bị ẩn khỏi chia sẻ màn hình lẫn bản ghi hình.",
     "stillProcessing": "Đang chép lời",
     "costEstimate": "~${{amount}}",
     "costTooltip": "Ước tính từ số token mà API báo cáo, tính theo bảng giá công khai tại một thời điểm. Giá bản xem trước có thể thay đổi, và hạn mức miễn phí cũng như chiết khấu thanh toán không được tính, nên con số này sẽ không khớp chính xác với hóa đơn. Dấu + ở cuối nghĩa là có một mô hình chưa công bố giá và chi phí thực tế cao hơn.",

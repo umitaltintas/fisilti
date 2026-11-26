@@ -472,6 +472,7 @@
       },
       "api": {
         "title": "API（兼容 OpenAI）",
+        "description": "即使关闭后处理，会议标题、摘要和提问也会使用此提供商和模型。",
         "provider": {
           "title": "提供商",
           "description": "选择一个兼容 OpenAI 的提供商。"
@@ -809,6 +810,8 @@
     "searchNoResults": "No meetings match your search.",
     "rename": "Rename",
     "renameTitle": "Rename meeting",
+    "generateTitle": "用 AI 生成标题",
+    "chooseAiModel": "选择 AI 模型",
     "save": "Save",
     "export": "Export",
     "exporting": "Exporting…",
@@ -934,6 +937,7 @@
       "recoverFailed": "无法恢复此会议：{{error}}",
       "discardFailed": "无法放弃此会议：{{error}}",
       "renameFailed": "无法重命名会议：{{error}}",
+      "generateTitleFailed": "无法生成标题：{{error}}",
       "retranscribeFailed": "无法重新转录会议：{{error}}",
       "audioFailed": "无法加载录音",
       "cancelFailed": "无法取消",

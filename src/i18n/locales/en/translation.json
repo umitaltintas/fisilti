@@ -482,6 +482,7 @@
       },
       "api": {
         "title": "API (OpenAI compatible)",
+        "description": "Meeting titles, summaries and questions use this provider and model too, even with post-processing off.",
         "provider": {
           "title": "Provider",
           "description": "Select an OpenAI-compatible provider."
@@ -823,6 +824,8 @@
     "searchNoResults": "No meetings match your search.",
     "rename": "Rename",
     "renameTitle": "Rename meeting",
+    "generateTitle": "Generate title with AI",
+    "chooseAiModel": "Choose AI model",
     "save": "Save",
     "export": "Export",
     "exporting": "Exporting…",
@@ -945,6 +948,7 @@
       "recoverFailed": "Couldn't recover this meeting: {{error}}",
       "discardFailed": "Couldn't discard this meeting: {{error}}",
       "renameFailed": "Couldn't rename the meeting: {{error}}",
+      "generateTitleFailed": "Couldn't generate a title: {{error}}",
       "retranscribeFailed": "Couldn't transcribe the meeting again: {{error}}",
       "audioFailed": "Couldn't load the recording",
       "cancelFailed": "Couldn't cancel",

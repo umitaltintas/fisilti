@@ -482,6 +482,7 @@
       },
       "api": {
         "title": "API (OpenAI uyumlu)",
+        "description": "Toplantı başlıkları, özetleri ve soruları da, AI düzenleme kapalıyken bile bu sağlayıcıyı ve modeli kullanır.",
         "provider": {
           "title": "Sağlayıcı",
           "description": "OpenAI uyumlu bir sağlayıcı seçin."
@@ -823,6 +824,8 @@
     "searchNoResults": "Aramanla eşleşen toplantı yok.",
     "rename": "Yeniden adlandır",
     "renameTitle": "Toplantıyı yeniden adlandır",
+    "generateTitle": "Yapay zekâ ile başlık üret",
+    "chooseAiModel": "Yapay zekâ modelini seç",
     "save": "Kaydet",
     "export": "Dışa aktar",
     "exporting": "Dışa aktarılıyor…",
@@ -945,6 +948,7 @@
       "recoverFailed": "Bu toplantı kurtarılamadı: {{error}}",
       "discardFailed": "Bu toplantı atılamadı: {{error}}",
       "renameFailed": "Toplantı yeniden adlandırılamadı: {{error}}",
+      "generateTitleFailed": "Başlık üretilemedi: {{error}}",
       "retranscribeFailed": "Toplantı yeniden yazıya dökülemedi: {{error}}",
       "audioFailed": "Kayıt yüklenemedi",
       "cancelFailed": "İptal edilemedi",

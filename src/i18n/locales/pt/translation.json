@@ -472,6 +472,7 @@
       },
       "api": {
         "title": "API (Compatível com OpenAI)",
+        "description": "Títulos, resumos e perguntas de reuniões também usam este provedor e modelo, mesmo com o pós-processamento desligado.",
         "provider": {
           "title": "Provedor",
           "description": "Selecione um provedor compatível com OpenAI."
@@ -809,6 +810,8 @@
     "searchNoResults": "No meetings match your search.",
     "rename": "Rename",
     "renameTitle": "Rename meeting",
+    "generateTitle": "Gerar título com IA",
+    "chooseAiModel": "Escolher modelo de IA",
     "save": "Save",
     "export": "Export",
     "exporting": "Exporting…",
@@ -934,6 +937,7 @@
       "recoverFailed": "Não foi possível recuperar esta reunião: {{error}}",
       "discardFailed": "Não foi possível descartar esta reunião: {{error}}",
       "renameFailed": "Não foi possível renomear a reunião: {{error}}",
+      "generateTitleFailed": "Não foi possível gerar um título: {{error}}",
       "retranscribeFailed": "Não foi possível transcrever a reunião novamente: {{error}}",
       "audioFailed": "Não foi possível carregar a gravação",
       "cancelFailed": "Não foi possível cancelar",

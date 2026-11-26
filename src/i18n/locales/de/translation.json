@@ -472,6 +472,7 @@
       },
       "api": {
         "title": "API (OpenAI-kompatibel)",
+        "description": "Auch Meeting-Titel, Zusammenfassungen und Fragen nutzen diesen Anbieter und dieses Modell, selbst wenn die Nachbearbeitung aus ist.",
         "provider": {
           "title": "Anbieter",
           "description": "Wähle einen OpenAI-kompatiblen Anbieter."
@@ -809,6 +810,8 @@
     "searchNoResults": "No meetings match your search.",
     "rename": "Rename",
     "renameTitle": "Rename meeting",
+    "generateTitle": "Titel mit KI erstellen",
+    "chooseAiModel": "KI-Modell wählen",
     "save": "Save",
     "export": "Export",
     "exporting": "Exporting…",
@@ -934,6 +937,7 @@
       "recoverFailed": "Meeting konnte nicht wiederhergestellt werden: {{error}}",
       "discardFailed": "Meeting konnte nicht verworfen werden: {{error}}",
       "renameFailed": "Meeting konnte nicht umbenannt werden: {{error}}",
+      "generateTitleFailed": "Titel konnte nicht erstellt werden: {{error}}",
       "retranscribeFailed": "Meeting konnte nicht erneut transkribiert werden: {{error}}",
       "audioFailed": "Aufnahme konnte nicht geladen werden",
       "cancelFailed": "Abbrechen nicht möglich",

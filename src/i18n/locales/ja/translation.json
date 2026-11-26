@@ -472,6 +472,7 @@
       },
       "api": {
         "title": "API（OpenAI互換）",
+        "description": "会議のタイトル、要約、質問も、後処理がオフでもこのプロバイダーとモデルを使います。",
         "provider": {
           "title": "プロバイダー",
           "description": "OpenAI互換のプロバイダーを選択。"
@@ -809,6 +810,8 @@
     "searchNoResults": "No meetings match your search.",
     "rename": "Rename",
     "renameTitle": "Rename meeting",
+    "generateTitle": "AIでタイトルを生成",
+    "chooseAiModel": "AI モデルを選ぶ",
     "save": "Save",
     "export": "Export",
     "exporting": "Exporting…",
@@ -934,6 +937,7 @@
       "recoverFailed": "この会議を復元できませんでした: {{error}}",
       "discardFailed": "この会議を破棄できませんでした: {{error}}",
       "renameFailed": "会議の名前を変更できませんでした: {{error}}",
+      "generateTitleFailed": "タイトルを生成できませんでした: {{error}}",
       "retranscribeFailed": "会議をもう一度文字起こしできませんでした: {{error}}",
       "audioFailed": "録音を読み込めませんでした",
       "cancelFailed": "キャンセルできませんでした",

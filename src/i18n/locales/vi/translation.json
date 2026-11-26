@@ -472,6 +472,7 @@
       },
       "api": {
         "title": "API (Tương thích OpenAI)",
+        "description": "Tiêu đề, bản tóm tắt và câu hỏi về cuộc họp cũng dùng nhà cung cấp và mô hình này, kể cả khi tắt hậu xử lý.",
         "provider": {
           "title": "Nhà cung cấp",
           "description": "Chọn một nhà cung cấp tương thích OpenAI."
@@ -809,6 +810,8 @@
     "searchNoResults": "No meetings match your search.",
     "rename": "Rename",
     "renameTitle": "Rename meeting",
+    "generateTitle": "Tạo tiêu đề bằng AI",
+    "chooseAiModel": "Chọn mô hình AI",
     "save": "Save",
     "export": "Export",
     "exporting": "Exporting…",
@@ -934,6 +937,7 @@
       "recoverFailed": "Không thể khôi phục cuộc họp này: {{error}}",
       "discardFailed": "Không thể hủy bỏ cuộc họp này: {{error}}",
       "renameFailed": "Không thể đổi tên cuộc họp: {{error}}",
+      "generateTitleFailed": "Không thể tạo tiêu đề: {{error}}",
       "retranscribeFailed": "Không thể chép lời lại cuộc họp: {{error}}",
       "audioFailed": "Không thể tải bản ghi âm",
       "cancelFailed": "Không thể hủy",

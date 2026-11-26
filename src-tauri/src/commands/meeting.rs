@@ -204,6 +204,32 @@ pub async fn regenerate_meeting_summary(
     Ok(content)
 }
 
+/// Generate a title for a saved meeting from its transcript with the active AI
+/// (post-process) provider and store it, replacing the current title. The same
+/// generation runs automatically after a meeting ends; this is the on-demand
+/// version for meetings that missed it (no provider configured back then).
+/// Returns the new title; errors when the meeting is live, has no transcript,
+/// or no provider/model is configured.
+#[tauri::command]
+#[specta::specta]
+pub async fn generate_meeting_title(
+    app: AppHandle,
+    meeting_manager: State<'_, Arc<MeetingManager>>,
+    id: i64,
+) -> Result<String, String> {
+    meeting_manager.ensure_not_live(id)?;
+    let record = meeting_manager
+        .store()
+        .get_meeting(id)
+        .map_err(|e| format!("Failed to load meeting: {}", e))?;
+    if record.transcript.trim().is_empty() {
+        return Err("This meeting has no transcript to generate a title from.".to_string());
+    }
+    let title = crate::meeting::summarize::generate_title(&app, &record.transcript).await?;
+    meeting_manager.apply_title(id, &title);
+    Ok(title)
+}
+
 /// List persisted meetings, newest-first (lightweight rows). When `query` is a
 /// non-empty string, filters by a case-insensitive substring match against the
 /// title, transcript, or summary. `None`/empty → all meetings (legacy behavior).

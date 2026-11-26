@@ -472,6 +472,7 @@
       },
       "api": {
         "title": "API (сумісний з OpenAI)",
+        "description": "Назви, підсумки й запитання щодо зустрічей теж використовують цього провайдера й модель, навіть коли постобробку вимкнено.",
         "provider": {
           "title": "Провайдер",
           "description": "Оберіть OpenAI-сумісного провайдера"
@@ -809,6 +810,8 @@
     "searchNoResults": "No meetings match your search.",
     "rename": "Rename",
     "renameTitle": "Rename meeting",
+    "generateTitle": "Створити назву за допомогою ШІ",
+    "chooseAiModel": "Вибрати модель ШІ",
     "save": "Save",
     "export": "Export",
     "exporting": "Exporting…",
@@ -934,6 +937,7 @@
       "recoverFailed": "Не вдалося відновити цю зустріч: {{error}}",
       "discardFailed": "Не вдалося видалити цю зустріч: {{error}}",
       "renameFailed": "Не вдалося перейменувати зустріч: {{error}}",
+      "generateTitleFailed": "Не вдалося створити назву: {{error}}",
       "retranscribeFailed": "Не вдалося заново транскрибувати зустріч: {{error}}",
       "audioFailed": "Не вдалося завантажити запис",
       "cancelFailed": "Не вдалося скасувати",

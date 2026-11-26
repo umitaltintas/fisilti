@@ -472,6 +472,7 @@
       },
       "api": {
         "title": "API（相容 OpenAI）",
+        "description": "即使關閉後處理，會議標題、摘要與提問也會使用此提供者與模型。",
         "provider": {
           "title": "供應商",
           "description": "選擇一個相容 OpenAI 的供應商"
@@ -809,6 +810,8 @@
     "searchNoResults": "No meetings match your search.",
     "rename": "Rename",
     "renameTitle": "Rename meeting",
+    "generateTitle": "用 AI 產生標題",
+    "chooseAiModel": "選擇 AI 模型",
     "save": "Save",
     "export": "Export",
     "exporting": "Exporting…",
@@ -934,6 +937,7 @@
       "recoverFailed": "無法復原此會議：{{error}}",
       "discardFailed": "無法捨棄此會議：{{error}}",
       "renameFailed": "無法重新命名會議：{{error}}",
+      "generateTitleFailed": "無法產生標題：{{error}}",
       "retranscribeFailed": "無法重新轉錄會議：{{error}}",
       "audioFailed": "無法載入錄音",
       "cancelFailed": "無法取消",

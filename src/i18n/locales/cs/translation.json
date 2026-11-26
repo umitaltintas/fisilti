@@ -472,6 +472,7 @@
       },
       "api": {
         "title": "API (kompatibilní s OpenAI)",
+        "description": "Názvy, shrnutí a otázky ke schůzkám také používají tohoto poskytovatele a model, i když je následné zpracování vypnuté.",
         "provider": {
           "title": "Poskytovatel",
           "description": "Vyberte poskytovatele kompatibilního s OpenAI."
@@ -809,6 +810,8 @@
     "searchNoResults": "No meetings match your search.",
     "rename": "Rename",
     "renameTitle": "Rename meeting",
+    "generateTitle": "Vytvořit název pomocí AI",
+    "chooseAiModel": "Vybrat model AI",
     "save": "Save",
     "export": "Export",
     "exporting": "Exporting…",
@@ -934,6 +937,7 @@
       "recoverFailed": "Tuto schůzku se nepodařilo obnovit: {{error}}",
       "discardFailed": "Tuto schůzku se nepodařilo zahodit: {{error}}",
       "renameFailed": "Schůzku se nepodařilo přejmenovat: {{error}}",
+      "generateTitleFailed": "Název se nepodařilo vytvořit: {{error}}",
       "retranscribeFailed": "Schůzku se nepodařilo znovu přepsat: {{error}}",
       "audioFailed": "Nahrávku se nepodařilo načíst",
       "cancelFailed": "Zrušení se nezdařilo",

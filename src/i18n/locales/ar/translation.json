@@ -403,6 +403,7 @@
       },
       "api": {
         "title": "API (متوافق مع OpenAI)",
+        "description": "تستخدم عناوين الاجتماعات وملخصاتها والأسئلة عنها هذا المزوّد والنموذج أيضًا، حتى عند إيقاف المعالجة اللاحقة.",
         "provider": {
           "title": "المزود",
           "description": "اختر مزوداً متوافقاً مع OpenAI."
@@ -809,6 +810,8 @@
     "searchNoResults": "No meetings match your search.",
     "rename": "Rename",
     "renameTitle": "Rename meeting",
+    "generateTitle": "إنشاء عنوان بالذكاء الاصطناعي",
+    "chooseAiModel": "اختيار نموذج الذكاء الاصطناعي",
     "save": "Save",
     "export": "Export",
     "exporting": "Exporting…",
@@ -934,6 +937,7 @@
       "recoverFailed": "تعذّرت استعادة هذا الاجتماع: {{error}}",
       "discardFailed": "تعذّر تجاهل هذا الاجتماع: {{error}}",
       "renameFailed": "تعذّرت إعادة تسمية الاجتماع: {{error}}",
+      "generateTitleFailed": "تعذّر إنشاء عنوان: {{error}}",
       "retranscribeFailed": "تعذّرت إعادة تفريغ الاجتماع: {{error}}",
       "audioFailed": "تعذّر تحميل التسجيل",
       "cancelFailed": "تعذّر الإلغاء",

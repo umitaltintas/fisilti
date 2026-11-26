@@ -1085,6 +1085,22 @@ async regenerateMeetingSummary(id: number, template: string | null) : Promise<Re
 }
 },
 /**
+ * Generate a title for a saved meeting from its transcript with the active AI
+ * (post-process) provider and store it, replacing the current title. The same
+ * generation runs automatically after a meeting ends; this is the on-demand
+ * version for meetings that missed it (no provider configured back then).
+ * Returns the new title; errors when the meeting is live, has no transcript,
+ * or no provider/model is configured.
+ */
+async generateMeetingTitle(id: number) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("generate_meeting_title", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * List persisted meetings, newest-first (lightweight rows). When `query` is a
  * non-empty string, filters by a case-insensitive substring match against the
  * title, transcript, or summary. `None`/empty → all meetings (legacy behavior).

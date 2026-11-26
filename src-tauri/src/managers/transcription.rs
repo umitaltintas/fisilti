@@ -119,6 +119,22 @@ struct MeetingTranscribeOpts {
     /// for local engines the caller must also have LOADED this model, which is
     /// what `initiate_model_load_for` is for.
     model_override: Option<String>,
+    /// Whisper encoder context (`audio_ctx`); see [`partial_audio_ctx`].
+    /// `None` = full 30 s window.
+    audio_ctx: Option<i32>,
+    /// Greedy decoding instead of beam search.
+    greedy: bool,
+}
+
+/// Encoder context for `samples` of 16 kHz audio: whisper uses 50 positions
+/// per second (1500 for 30 s); a little headroom keeps the last words from
+/// being clipped.
+#[cfg(meeting_capture)]
+fn partial_audio_ctx(samples: usize) -> i32 {
+    const POSITIONS_PER_SECOND: usize = 50;
+    const HEADROOM: usize = 64;
+    let positions = samples * POSITIONS_PER_SECOND / 16_000 + HEADROOM;
+    positions.min(1500) as i32
 }
 
 impl MeetingTranscribeOpts {
@@ -145,6 +161,22 @@ impl MeetingTranscribeOpts {
             logprob_thold: Some(MEETING_LOGPROB_THOLD),
             no_context: Some(true),
             model_override: Some(settings.meeting_model_id().to_string()),
+            audio_ctx: None,
+            greedy: false,
+        }
+    }
+
+    /// A throwaway live hypothesis for the subtitle strip: same language and
+    /// prompt as the meeting path, but greedy, no temperature fallback, and an
+    /// encoder sized to the audio. Several times cheaper than a final decode,
+    /// so it can run between them without starving the real transcript.
+    #[cfg(meeting_capture)]
+    fn meeting_partial(settings: &crate::settings::AppSettings, samples: usize) -> Self {
+        Self {
+            temperature_inc: Some(0.0),
+            audio_ctx: Some(partial_audio_ctx(samples)),
+            greedy: true,
+            ..Self::meeting(settings)
         }
     }
 
@@ -799,6 +831,16 @@ impl TranscriptionManager {
         self.transcribe_with_opts(audio, MeetingTranscribeOpts::meeting(&settings))
     }
 
+    /// Fast, rough meeting transcription of an utterance still in progress,
+    /// for the live subtitle strip only; never stored. See
+    /// [`MeetingTranscribeOpts::meeting_partial`].
+    #[cfg(meeting_capture)]
+    pub fn transcribe_meeting_partial(&self, audio: Vec<f32>) -> Result<String> {
+        let settings = get_settings(&self.app_handle);
+        let opts = MeetingTranscribeOpts::meeting_partial(&settings, audio.len());
+        self.transcribe_with_opts(audio, opts)
+    }
+
     /// Cloud (OpenRouter) transcription path. Encodes the audio and sends it to
     /// the configured OpenRouter model, reusing the OpenRouter API key from the
     /// post-processing provider settings (one key for cloud transcription and
@@ -1119,6 +1161,8 @@ impl TranscriptionManager {
                                     entropy_thold: opts.entropy_thold,
                                     logprob_thold: opts.logprob_thold,
                                     no_context: opts.no_context,
+                                    audio_ctx: opts.audio_ctx,
+                                    greedy: opts.greedy,
                                     ..Default::default()
                                 };
 
@@ -1442,5 +1486,19 @@ mod engine_slot_tests {
         let mut slot = EngineSlot::default();
         assert!(slot.check_out().is_none());
         assert!(!slot.is_loaded());
+    }
+}
+
+#[cfg(all(test, meeting_capture))]
+mod partial_tests {
+    use super::partial_audio_ctx;
+
+    #[test]
+    fn encoder_context_follows_the_audio_length_with_headroom() {
+        // 1 s → 50 positions + headroom; 30 s and beyond → the full window.
+        assert_eq!(partial_audio_ctx(16_000), 50 + 64);
+        assert_eq!(partial_audio_ctx(10 * 16_000), 500 + 64);
+        assert_eq!(partial_audio_ctx(30 * 16_000), 1500);
+        assert_eq!(partial_audio_ctx(60 * 16_000), 1500);
     }
 }

@@ -294,6 +294,15 @@ pub struct Session {
     /// the strip down if no newer update arrived while it slept.
     #[cfg(meeting_capture)]
     pub subtitle_epoch: std::sync::atomic::AtomicU64,
+    /// Newest in-progress remote utterance to subtitle (local models). One
+    /// slot, latest wins: an older hypothesis is worthless once a newer one
+    /// exists, so a slow decode never builds a queue.
+    #[cfg(meeting_capture)]
+    pub partial_slot: Mutex<Option<crate::meeting::capture::PartialJob>>,
+    /// Remote-side sample index up to which final text is on the strip. A
+    /// hypothesis for audio before this point is stale and is not shown.
+    #[cfg(meeting_capture)]
+    pub subtitle_settled_through: std::sync::atomic::AtomicU64,
 }
 
 impl Session {
@@ -323,6 +332,10 @@ impl Session {
             subtitles: Mutex::new(Default::default()),
             #[cfg(meeting_capture)]
             subtitle_epoch: std::sync::atomic::AtomicU64::new(0),
+            #[cfg(meeting_capture)]
+            partial_slot: Mutex::new(None),
+            #[cfg(meeting_capture)]
+            subtitle_settled_through: std::sync::atomic::AtomicU64::new(0),
         }
     }
 

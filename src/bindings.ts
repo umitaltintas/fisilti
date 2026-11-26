@@ -1623,9 +1623,10 @@ meeting_gemini_smart?: boolean;
 /**
  * Show a click-through subtitle strip near the bottom of the screen with
  * what the remote side says during a meeting. Fed by Gemini Live when a
- * live mode is on; otherwise by the local meeting model's live segments
- * (whole segments, a few seconds behind). Defaults ON: the app window is
- * not where anyone is looking during a call.
+ * live mode is on; otherwise by the local meeting model (a rough, dimmed
+ * hypothesis while someone speaks, replaced by the final text once the
+ * segment is transcribed). Defaults ON: the app window is not where
+ * anyone is looking during a call.
  */
 meeting_subtitles?: boolean; 
 /**

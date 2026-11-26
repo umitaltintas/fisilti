@@ -147,16 +147,13 @@ impl MeetingManager {
     /// Show one finished remote-side segment from the LOCAL meeting model on
     /// the strip.
     ///
-    /// Local models have no streaming hypothesis, so there is no pending line:
-    /// each VAD segment appears whole once transcribed. Skipped when Gemini
-    /// Live is feeding the strip (it is faster and owns it), after stop (the
-    /// backlog finishing during finalize must not resurrect the strip), and
-    /// for segments that are already old — the worker catching up on its
-    /// backlog would otherwise subtitle speech from minutes ago.
-    ///
-    /// Nothing ever clears a settled-only feed, so each update arms a timer
-    /// that takes the strip down after a reading pause unless a newer segment
-    /// arrived meanwhile.
+    /// The final text replaces the pending hypothesis
+    /// ([`Self::subtitle_local_partial`]) shown while the segment was being
+    /// spoken. Skipped when Gemini Live is feeding the strip (it is faster and
+    /// owns it), after stop (the backlog finishing during finalize must not
+    /// resurrect the strip), and for segments that are already old — the
+    /// worker catching up on its backlog would otherwise subtitle speech from
+    /// minutes ago.
     pub(super) fn subtitle_local_segment(&self, session: &Arc<Session>, text: &str, end_ms: u64) {
         if session.stop_signal.load(Ordering::SeqCst)
             || session.live_gemini_active.load(Ordering::Relaxed)
@@ -172,9 +169,59 @@ impl MeetingManager {
             return;
         }
 
+        log::debug!("subtitle (local): final, lag {}ms", lag_ms);
+        self.show_local_subtitle(session, |feed| feed.settle(text));
+    }
+
+    /// Show a rough hypothesis of the remote utterance still being spoken as
+    /// the strip's dimmed pending line (local models). Dropped when it is
+    /// already stale: the final text for that audio is on the strip, the
+    /// meeting stopped, or Gemini Live owns the strip.
+    pub(super) fn subtitle_local_partial(
+        &self,
+        session: &Arc<Session>,
+        job: super::capture::PartialJob,
+    ) {
+        let stale = || {
+            session.stop_signal.load(Ordering::SeqCst)
+                || session.live_gemini_active.load(Ordering::Relaxed)
+                || job.segment_start < session.subtitle_settled_through.load(Ordering::SeqCst)
+        };
+        if stale() || !crate::settings::get_settings(&self.app_handle).meeting_subtitles {
+            return;
+        }
+        let started = Instant::now();
+        let seconds =
+            job.audio.len() as f32 / crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE as f32;
+        let text = match self
+            .transcription_manager
+            .transcribe_meeting_partial(job.audio)
+        {
+            Ok(text) => text,
+            Err(e) => {
+                log::debug!("subtitle (local): hypothesis failed: {}", e);
+                return;
+            }
+        };
+        // The final text may have landed while this decoded.
+        if text.trim().is_empty() || stale() {
+            return;
+        }
+        log::debug!(
+            "subtitle (local): hypothesis of {:.1}s in {}ms",
+            seconds,
+            started.elapsed().as_millis()
+        );
+        self.show_local_subtitle(session, |feed| feed.set_pending(&text));
+    }
+
+    /// Apply `change` to the feed, show the result, and arm the hide timer:
+    /// local subtitles have no stream to clear them, so the strip comes down
+    /// after a reading pause unless something newer arrived meanwhile.
+    fn show_local_subtitle(&self, session: &Arc<Session>, change: impl FnOnce(&mut SubtitleFeed)) {
         let (update, epoch) = {
             let mut feed = session.subtitles.lock().unwrap();
-            feed.settle(text);
+            change(&mut feed);
             if feed.is_empty() {
                 return;
             }
@@ -182,7 +229,6 @@ impl MeetingManager {
             (feed.snapshot(), epoch)
         };
         let shown_chars = (update.settled.chars().count() + update.pending.chars().count()) as u64;
-        log::debug!("subtitle (local): {} chars, lag {}ms", shown_chars, lag_ms);
         crate::subtitle_overlay::show_subtitle(&self.app_handle, update);
 
         let hold = std::time::Duration::from_millis(

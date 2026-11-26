@@ -57,6 +57,21 @@ impl LiveJob {
     }
 }
 
+/// The remote utterance still being spoken, for a live subtitle hypothesis.
+pub struct PartialJob {
+    pub(super) audio: Vec<f32>,
+    /// Sample index where the utterance began (System source clock).
+    pub(super) segment_start: u64,
+}
+
+/// Offer a new hypothesis after this much more speech (~1 s)...
+const PARTIAL_STEP_SAMPLES: usize = WHISPER_SAMPLE_RATE as usize;
+/// ...once the utterance is at least this long (~1 s)...
+const PARTIAL_MIN_SAMPLES: usize = WHISPER_SAMPLE_RATE as usize;
+/// ...decoding only its last ~10 s: the strip shows the newest words, and a
+/// longer window only makes every decode slower.
+const PARTIAL_MAX_SAMPLES: usize = WHISPER_SAMPLE_RATE as usize * 10;
+
 /// Producer side of the live-transcription queue.
 struct LiveQueue {
     tx: mpsc::SyncSender<LiveJob>,
@@ -207,6 +222,11 @@ struct SourceProcessor {
     /// Sample index where the current segment began.
     segment_start: u64,
     merger: SegmentMerger,
+    /// Offer live subtitle hypotheses of the segment being collected (remote
+    /// side, local model, subtitles on, no Gemini Live).
+    partials: bool,
+    /// Segment length at the last offered hypothesis.
+    partial_mark: usize,
 }
 
 impl SourceProcessor {
@@ -219,6 +239,8 @@ impl SourceProcessor {
             total_samples: 0,
             segment_start: 0,
             merger: SegmentMerger::default(),
+            partials: false,
+            partial_mark: 0,
         }
     }
 
@@ -245,6 +267,8 @@ impl SourceProcessor {
                     self.segment.extend_from_slice(speech);
                     if self.segment.len() >= cfg.max_samples {
                         self.finish_current(cfg, session, queue);
+                    } else {
+                        self.offer_partial(session);
                     }
                 }
                 Ok(VadFrame::Noise) => {
@@ -253,6 +277,7 @@ impl SourceProcessor {
                             self.finish_current(cfg, session, queue);
                         } else {
                             self.segment.clear();
+                            self.partial_mark = 0;
                         }
                     }
                 }
@@ -268,7 +293,26 @@ impl SourceProcessor {
         self.frame_accum.drain(..offset);
     }
 
+    /// Put the newest stretch of the segment being collected in the session's
+    /// hypothesis slot, about once a second of new speech.
+    fn offer_partial(&mut self, session: &Session) {
+        let len = self.segment.len();
+        if !self.partials
+            || len < PARTIAL_MIN_SAMPLES
+            || len < self.partial_mark + PARTIAL_STEP_SAMPLES
+        {
+            return;
+        }
+        self.partial_mark = len;
+        let from = len.saturating_sub(PARTIAL_MAX_SAMPLES);
+        *session.partial_slot.lock().unwrap() = Some(PartialJob {
+            audio: self.segment[from..].to_vec(),
+            segment_start: self.segment_start,
+        });
+    }
+
     fn finish_current(&mut self, cfg: &SegConfig, session: &Session, queue: &mut LiveQueue) {
+        self.partial_mark = 0;
         if self.segment.is_empty() {
             return;
         }
@@ -691,6 +735,16 @@ impl MeetingManager {
 
         // --- Gemini Live streaming (opt-in) ---
         let live_sessions = self.start_live_sessions(session);
+        // Live subtitle hypotheses come from the local model only when it is
+        // the one feeding the strip: Gemini Live has its own, and cloud
+        // meeting models have no live pass at all.
+        system_proc.partials = queue.live_pass
+            && live_sessions.is_none()
+            && crate::settings::get_settings(&self.app_handle).meeting_subtitles;
+        log::info!(
+            "meeting: local live subtitle hypotheses {}",
+            if system_proc.partials { "on" } else { "off" }
+        );
 
         // --- Prolonged-silence auto-end tracking ---
         const SILENCE_CHECK_INTERVAL: Duration = Duration::from_secs(1);
@@ -994,11 +1048,17 @@ impl MeetingManager {
         // a long meeting looking like a zero-second one.
         const PROGRESS_CLOCK_INTERVAL: Duration = Duration::from_secs(5);
 
+        // Short enough that a subtitle hypothesis is picked up promptly; the
+        // slot is not a channel, so waiting cannot be woken by it.
+        const IDLE_WAIT: Duration = Duration::from_millis(150);
+
         let mut last_persist = Instant::now();
         let mut last_clock = Instant::now();
         loop {
-            // New segments first; when there are none, catch up on the
-            // backlog; only when both are empty, wait.
+            // New segments first, then the backlog. A subtitle hypothesis only
+            // when both are empty, i.e. while the worker is keeping up: the
+            // real transcript must never fall behind for the sake of the
+            // strip. Only when there is nothing at all, wait.
             let job = match jobs.try_recv() {
                 Ok(job) => Some(job),
                 Err(mpsc::TryRecvError::Disconnected) => break,
@@ -1006,11 +1066,23 @@ impl MeetingManager {
                     let deferred = session.live_backlog.lock().unwrap().pop_pending();
                     match deferred {
                         Some(job) => Some(job),
-                        None => match jobs.recv_timeout(Duration::from_secs(1)) {
-                            Ok(job) => Some(job),
-                            Err(mpsc::RecvTimeoutError::Timeout) => None,
-                            Err(mpsc::RecvTimeoutError::Disconnected) => break,
-                        },
+                        None => {
+                            let partial = session.partial_slot.lock().unwrap().take();
+                            if let Some(partial) = partial {
+                                // Falls through to the persist/clock checks
+                                // below: a busy strip must not starve them.
+                                if !session.shutting_down.load(Ordering::Relaxed) {
+                                    self.subtitle_local_partial(session, partial);
+                                }
+                                None
+                            } else {
+                                match jobs.recv_timeout(IDLE_WAIT) {
+                                    Ok(job) => Some(job),
+                                    Err(mpsc::RecvTimeoutError::Timeout) => None,
+                                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                                }
+                            }
+                        }
                     }
                 }
             };
@@ -1018,10 +1090,16 @@ impl MeetingManager {
                 if !session.shutting_down.load(Ordering::Relaxed) {
                     // Only the remote side is subtitled, as with Gemini Live.
                     let source = job.source;
-                    let end_ms = (job.start_samples + job.audio.len() as u64) * 1000
-                        / WHISPER_SAMPLE_RATE as u64;
-                    if let Some(text) = self.transcribe_live_segment(session, job) {
-                        if source == TranscriptSource::System {
+                    let end_samples = job.start_samples + job.audio.len() as u64;
+                    let end_ms = end_samples * 1000 / WHISPER_SAMPLE_RATE as u64;
+                    let text = self.transcribe_live_segment(session, job);
+                    if source == TranscriptSource::System {
+                        // Retire hypotheses for this audio even when the final
+                        // text is empty or too late to show.
+                        session
+                            .subtitle_settled_through
+                            .fetch_max(end_samples, Ordering::SeqCst);
+                        if let Some(text) = text {
                             self.subtitle_local_segment(session, &text, end_ms);
                         }
                     }

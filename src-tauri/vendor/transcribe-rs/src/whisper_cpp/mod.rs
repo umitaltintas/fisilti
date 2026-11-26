@@ -127,6 +127,17 @@ pub struct WhisperInferenceParams {
     /// Log-probability threshold for the temperature fallback
     /// (`set_logprob_thold`).
     pub logprob_thold: Option<f32>,
+
+    // --- Fisilti vendor patch: fast partial decodes -----------------------
+    /// Encoder context size (`set_audio_ctx`). Whisper always encodes a full
+    /// 30 s window (1500 positions) unless told otherwise; for a few seconds
+    /// of audio a smaller context makes the encoder several times faster at
+    /// some cost in accuracy. `None` keeps the full window.
+    pub audio_ctx: Option<i32>,
+
+    /// Decode greedily instead of the default beam search (beam 3). Faster,
+    /// slightly less accurate; meant for throwaway live hypotheses.
+    pub greedy: bool,
 }
 
 impl Default for WhisperInferenceParams {
@@ -149,6 +160,8 @@ impl Default for WhisperInferenceParams {
             temperature_inc: None,
             entropy_thold: None,
             logprob_thold: None,
+            audio_ctx: None,
+            greedy: false,
         }
     }
 }
@@ -216,10 +229,14 @@ impl WhisperEngine {
         samples: &[f32],
         params: &WhisperInferenceParams,
     ) -> Result<TranscriptionResult, TranscribeError> {
-        let mut full_params = FullParams::new(SamplingStrategy::BeamSearch {
-            beam_size: 3,
-            patience: -1.0,
-        });
+        let mut full_params = if params.greedy {
+            FullParams::new(SamplingStrategy::Greedy { best_of: 1 })
+        } else {
+            FullParams::new(SamplingStrategy::BeamSearch {
+                beam_size: 3,
+                patience: -1.0,
+            })
+        };
         full_params.set_language(params.language.as_deref());
         full_params.set_translate(params.translate);
         full_params.set_print_special(params.print_special);
@@ -252,6 +269,9 @@ impl WhisperEngine {
         }
         if let Some(logprob_thold) = params.logprob_thold {
             full_params.set_logprob_thold(logprob_thold);
+        }
+        if let Some(audio_ctx) = params.audio_ctx {
+            full_params.set_audio_ctx(audio_ctx);
         }
 
         self.state

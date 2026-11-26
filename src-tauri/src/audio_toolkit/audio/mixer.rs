@@ -26,6 +26,10 @@ use crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE;
 const MIX_WINDOW_MS: f32 = 100.0;
 /// Safety multiplier: max buffered audio per source before dropping oldest.
 const MAX_BUFFER_MULTIPLIER: usize = 8;
+/// How many windows one source may run ahead of the other before the lagging
+/// one is treated as silent: it may simply have nothing to deliver (no output
+/// device, a muted mic), and must not hold the mix back for the whole meeting.
+const MAX_LAG_WINDOWS: usize = 3;
 
 /// Ring buffer for synchronized audio mixing.
 ///
@@ -85,10 +89,18 @@ impl AudioMixerRingBuffer {
         }
     }
 
-    /// True when at least one source has a full window available.
+    /// True when both sources have a full window, or one has run so far ahead
+    /// (`MAX_LAG_WINDOWS`) that the other counts as silent.
+    ///
+    /// Mixing as soon as EITHER source had a window put each source's bursts
+    /// into time slots of their own, padded with silence: the recording grew
+    /// longer than the meeting (up to twice) and the sources drifted apart.
     pub fn can_mix(&self) -> bool {
-        self.mic_buffer.len() >= self.window_size_samples
-            || self.system_buffer.len() >= self.window_size_samples
+        let window = self.window_size_samples;
+        let lag_limit = window * MAX_LAG_WINDOWS;
+        (self.mic_buffer.len() >= window && self.system_buffer.len() >= window)
+            || self.mic_buffer.len() >= lag_limit
+            || self.system_buffer.len() >= lag_limit
     }
 
     /// Extract one aligned `(mic, system)` window, zero-padding the short side.
@@ -242,12 +254,47 @@ mod tests {
     #[test]
     fn zero_pads_short_window() {
         let mut rb = AudioMixerRingBuffer::new(16000); // window = 1600
-        rb.add_samples(MixSource::Microphone, &[0.5; 1600]);
+                                                       // The mic is far enough ahead that the system source counts as silent.
+        rb.add_samples(MixSource::Microphone, &[0.5; 1600 * MAX_LAG_WINDOWS]);
         rb.add_samples(MixSource::System, &[0.25; 100]);
         let (mic, sys) = rb.extract_window().unwrap();
         assert_eq!(mic.len(), 1600);
         assert_eq!(sys.len(), 1600);
         assert_eq!(sys[100], 0.0); // padded
         assert_eq!(sys[0], 0.25);
+    }
+
+    /// The two sources arrive in alternating bursts. Each burst used to be
+    /// mixed on its own against silence, so 1 s of meeting became 2 s of
+    /// recording and the sources slid apart.
+    #[test]
+    fn alternating_bursts_keep_real_time_length() {
+        let mut mixer = MeetingMixer::new();
+        let mut out = Vec::new();
+        for _ in 0..10 {
+            mixer.push(MixSource::Microphone, &[0.1; 1600]);
+            mixer.drain_into(&mut out);
+            mixer.push(MixSource::System, &[0.2; 1600]);
+            mixer.drain_into(&mut out);
+        }
+        mixer.flush_into(&mut out);
+        assert_eq!(out.len(), 16_000);
+        // Every window holds both sources, not one of them against silence.
+        assert!(out.iter().all(|&s| (s - 0.3).abs() < 1e-6));
+    }
+
+    /// A source that delivers nothing (no output device, muted mic) must not
+    /// hold the other one back for the whole meeting.
+    #[test]
+    fn silent_source_does_not_stall_the_mix() {
+        let mut mixer = MeetingMixer::new();
+        let mut out = Vec::new();
+        for _ in 0..10 {
+            mixer.push(MixSource::Microphone, &[0.1; 1600]);
+            mixer.drain_into(&mut out);
+        }
+        assert!(out.len() >= 1600 * (10 - MAX_LAG_WINDOWS));
+        mixer.flush_into(&mut out);
+        assert_eq!(out.len(), 16_000);
     }
 }

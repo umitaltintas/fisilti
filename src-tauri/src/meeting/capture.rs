@@ -64,8 +64,9 @@ pub struct PartialJob {
     pub(super) segment_start: u64,
 }
 
-/// Offer a new hypothesis after this much more speech (~1 s)...
-const PARTIAL_STEP_SAMPLES: usize = WHISPER_SAMPLE_RATE as usize;
+/// Offer a new hypothesis after this much more speech (~0.5 s; a 10 s
+/// hypothesis decodes in ~0.3 s on a desktop GPU)...
+const PARTIAL_STEP_SAMPLES: usize = WHISPER_SAMPLE_RATE as usize / 2;
 /// ...once the utterance is at least this long (~1 s)...
 const PARTIAL_MIN_SAMPLES: usize = WHISPER_SAMPLE_RATE as usize;
 /// ...decoding only its last ~10 s: the strip shows the newest words, and a

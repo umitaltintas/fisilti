@@ -792,6 +792,7 @@
     "autoSummarize": "Auto-summarize when the meeting ends",
     "audio": "Audio",
     "noAudio": "No audio recording available for this meeting.",
+    "playFrom": "{{time}} から再生",
     "myNotes": "My notes",
     "myNotesPlaceholder": "Jot down your own notes here. They'll be saved automatically and used as context when generating the summary.",
     "notesSaved": "Saved",

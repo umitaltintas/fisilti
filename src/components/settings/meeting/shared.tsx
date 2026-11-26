@@ -99,37 +99,97 @@ export const NotesSaveIndicator: React.FC<{
 // output where the mic re-captures the remote voice and mislabels it. The
 // backend still de-duplicates echoed segments, so this stays a single clean
 // transcript without doubled lines.
+//
+// With `onSeek`, every segment gets its start time as a button that plays the
+// recording from there, and `activeIndex` marks the segment being played.
 export const PlainTranscript: React.FC<{
   segments: TranscriptSegment[];
   /** Small secondary text, for the live transcript rail. */
   compact?: boolean;
-}> = ({ segments, compact = false }) => (
-  <div
-    className={`${compact ? "space-y-2.5 [&_p]:text-xs [&_p]:leading-relaxed" : "space-y-2"}`}
-  >
-    {segments.map((seg, i) => (
-      <div key={i} className="space-y-0.5">
-        {/* Only the Gemini finalize pass can attribute speech, so most
-            transcripts have no label here at all. */}
-        {seg.speaker && seg.speaker.trim().length > 0 && (
-          <p className="text-[11px] font-medium uppercase tracking-wide text-mid-gray select-text">
-            {seg.speaker}
-          </p>
-        )}
-        <p className="text-sm whitespace-pre-wrap break-words select-text text-text/90">
-          {seg.text}
-        </p>
-        {/* Live-translated segments carry both directions; the translation sits
-            under the original so the original stays the primary reading. */}
-        {seg.translation && seg.translation.trim().length > 0 && (
-          <p className="text-sm whitespace-pre-wrap break-words select-text text-logo-primary/80 ps-3 border-s border-logo-primary/30">
-            {seg.translation}
-          </p>
-        )}
-      </div>
-    ))}
-  </div>
-);
+  /** Play the recording from a segment's start (milliseconds). */
+  onSeek?: (timestampMs: number) => void;
+  /** Index of the segment under the playhead, if any. */
+  activeIndex?: number | null;
+}> = ({ segments, compact = false, onSeek, activeIndex = null }) => {
+  const { t } = useTranslation();
+  return (
+    <div
+      className={`${compact ? "space-y-2.5 [&_p]:text-xs [&_p]:leading-relaxed" : "space-y-2"}`}
+    >
+      {segments.map((seg, i) => {
+        const body = (
+          <>
+            {/* Only the Gemini finalize pass can attribute speech, so most
+                transcripts have no label here at all. */}
+            {seg.speaker && seg.speaker.trim().length > 0 && (
+              <p className="text-[11px] font-medium uppercase tracking-wide text-mid-gray select-text">
+                {seg.speaker}
+              </p>
+            )}
+            <p className="text-sm whitespace-pre-wrap break-words select-text text-text/90">
+              {seg.text}
+            </p>
+            {/* Live-translated segments carry both directions; the translation
+                sits under the original so the original stays the primary
+                reading. */}
+            {seg.translation && seg.translation.trim().length > 0 && (
+              <p className="text-sm whitespace-pre-wrap break-words select-text text-logo-primary/80 ps-3 border-s border-logo-primary/30">
+                {seg.translation}
+              </p>
+            )}
+          </>
+        );
+        if (!onSeek) {
+          return (
+            <div key={i} className="space-y-0.5">
+              {body}
+            </div>
+          );
+        }
+        const active = i === activeIndex;
+        const time = formatElapsed(seg.timestamp_ms / 1000);
+        return (
+          <div
+            key={i}
+            aria-current={active ? "true" : undefined}
+            className={`-mx-1.5 flex gap-2.5 rounded-md px-1.5 py-0.5 transition-colors ${active ? "bg-logo-primary/10" : ""}`}
+          >
+            <button
+              type="button"
+              onClick={() => onSeek(seg.timestamp_ms)}
+              aria-label={t("meeting.playFrom", { time })}
+              className={`mt-px shrink-0 self-start cursor-pointer rounded px-1 text-[11px] tabular-nums transition-colors hover:text-logo-primary focus:outline-none focus-visible:ring-1 focus-visible:ring-logo-primary ${active ? "font-medium text-logo-primary" : "text-faint"}`}
+            >
+              {time}
+            </button>
+            <div className="min-w-0 flex-1 space-y-0.5">{body}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+/** Index of the last segment starting at or before `ms`, or null before the
+ * first one. Segments are sorted by start time. */
+export function segmentIndexAt(
+  segments: TranscriptSegment[],
+  ms: number,
+): number | null {
+  let lo = 0;
+  let hi = segments.length - 1;
+  let found: number | null = null;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (segments[mid].timestamp_ms <= ms) {
+      found = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return found;
+}
 
 // Build a copy-friendly transcript: one line per segment.
 // Falls back to the plain joined transcript when no segments are available.

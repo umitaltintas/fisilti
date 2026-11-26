@@ -806,6 +806,7 @@
     "autoSummarize": "Toplantı bitince otomatik özetle",
     "audio": "Ses",
     "noAudio": "Bu toplantı için ses kaydı yok.",
+    "playFrom": "{{time}} anından çal",
     "myNotes": "Notlarım",
     "myNotesPlaceholder": "Notlarını buraya yaz. Kendiliğinden kaydedilir ve özet çıkarılırken bağlam olarak kullanılır.",
     "notesSaved": "Kaydedildi",

@@ -1,4 +1,11 @@
-import React, { useCallback, useEffect, useId, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
@@ -17,7 +24,7 @@ import {
 
 import { Button } from "../../ui/Button";
 import { IconButton } from "../../ui/IconButton";
-import { AudioPlayer } from "../../ui/AudioPlayer";
+import { AudioPlayer, type AudioPlayerHandle } from "../../ui/AudioPlayer";
 import { useConfirm } from "../../ui/ConfirmDialog";
 import type { SelectOption } from "../../ui/Select";
 import { Markdown } from "./Markdown";
@@ -33,6 +40,7 @@ import {
   formatDuration,
   formatMeetingDate,
   plainTranscriptText,
+  segmentIndexAt,
 } from "./shared";
 import {
   MEETING_EVENTS,
@@ -216,12 +224,26 @@ export const MeetingDetail: React.FC<MeetingDetailProps> = ({
     (!hasTranscript ||
       (detail.duration_ms > 60_000 &&
         detail.transcript.trim().length < (detail.duration_ms / 60_000) * 30));
-  const labeledSegments = detail?.segments ?? [];
+  const segments = detail?.segments;
+  const labeledSegments = useMemo(() => segments ?? [], [segments]);
   const summary = detail?.summary?.trim() ?? "";
   // Null when no cloud model ran, which must read differently from "$0.00" —
   // the latter would claim a paid path was free.
   const cost = estimateMeetingCost(detail?.usage);
   const hasAudio = !!detail?.audio_path;
+
+  // Transcript ↔ audio: a segment's time plays the recording from there, and
+  // the segment under the playhead is highlighted.
+  const playerRef = useRef<AudioPlayerHandle>(null);
+  const [activeSegment, setActiveSegment] = useState<number | null>(null);
+  const handleTimeUpdate = useCallback(
+    (seconds: number) =>
+      setActiveSegment(segmentIndexAt(labeledSegments, seconds * 1000)),
+    [labeledSegments],
+  );
+  const handleSeek = useCallback((timestampMs: number) => {
+    void playerRef.current?.playFrom(timestampMs / 1000);
+  }, []);
 
   const loadAudio = useCallback(async () => {
     try {
@@ -591,10 +613,19 @@ export const MeetingDetail: React.FC<MeetingDetailProps> = ({
               )}
             </section>
 
-            <section className="space-y-2">
+            {/* Sticks to the top while the transcript below scrolls, so the
+                controls stay in reach after jumping to a line. */}
+            <section
+              className={`space-y-2 ${hasAudio ? "sticky top-0 z-10 bg-background py-2" : ""}`}
+            >
               <SectionHeading>{t("meeting.audio")}</SectionHeading>
               {hasAudio ? (
-                <AudioPlayer onLoadRequest={loadAudio} className="w-full" />
+                <AudioPlayer
+                  ref={playerRef}
+                  onLoadRequest={loadAudio}
+                  onTimeUpdate={handleTimeUpdate}
+                  className="w-full"
+                />
               ) : (
                 <p className="text-sm text-faint">{t("meeting.noAudio")}</p>
               )}
@@ -610,7 +641,12 @@ export const MeetingDetail: React.FC<MeetingDetailProps> = ({
                 />
               </div>
               {labeledSegments.length > 0 ? (
-                <PlainTranscript segments={labeledSegments} compact />
+                <PlainTranscript
+                  segments={labeledSegments}
+                  compact
+                  onSeek={hasAudio ? handleSeek : undefined}
+                  activeIndex={activeSegment}
+                />
               ) : hasTranscript ? (
                 <p className="text-sm text-text/90 whitespace-pre-wrap break-words select-text">
                   {detail.transcript}

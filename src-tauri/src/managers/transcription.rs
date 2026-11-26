@@ -135,7 +135,10 @@ impl MeetingTranscribeOpts {
         Self {
             language_override: Some(settings.meeting_language.clone()),
             no_speech_thold: Some(0.5),
-            style_prompt: Some(MEETING_TURKISH_STYLE_PROMPT),
+            // A Turkish exemplar pulls Whisper toward Turkish output, which is
+            // only right when the meeting is pinned to Turkish.
+            style_prompt: (settings.meeting_language.trim() == "tr")
+                .then_some(MEETING_TURKISH_STYLE_PROMPT),
             temperature: Some(MEETING_TEMPERATURE),
             temperature_inc: Some(MEETING_TEMPERATURE_INC),
             entropy_thold: Some(MEETING_ENTROPY_THOLD),
@@ -981,7 +984,7 @@ impl TranscriptionManager {
             Some(serial)
         };
 
-        // Meeting mode can force a specific language (default "tr"); otherwise
+        // Meeting mode can force a specific language (default "auto"); otherwise
         // dictation uses the user's `selected_language`. This keeps dictation's
         // language resolution byte-for-byte identical when `opts` is the
         // dictation default (language_override = None).

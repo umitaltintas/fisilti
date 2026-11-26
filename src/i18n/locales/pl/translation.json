@@ -213,7 +213,9 @@
         "label": "Transkrybuj spotkania modelem",
         "hint": "Dotyczy transkrypcji na żywo i przebiegu końcowego. Model dyktowania pozostaje bez zmian.",
         "sameAsDictation": "Tak jak dyktowanie",
-        "sameAsDictationNamed": "Tak jak dyktowanie ({{model}})"
+        "sameAsDictationNamed": "Tak jak dyktowanie ({{model}})",
+        "languageLabel": "Język spotkania",
+        "languageHint": "Automatycznie wykrywa język w każdym zdaniu, więc rozmowy w kilku językach działają. Po wybraniu języka mowa w innych językach jest na niego tłumaczona."
       },
       "keys": {
         "title": "Klucze API",

@@ -454,6 +454,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             shortcut::change_meeting_gemini_diarize_setting,
             shortcut::change_meeting_gemini_smart_setting,
             shortcut::change_meeting_subtitles_setting,
+            shortcut::change_meeting_language_setting,
             shortcut::change_meeting_selected_model_setting,
             shortcut::change_gemini_api_key_setting,
             shortcut::change_meeting_auto_end_setting,

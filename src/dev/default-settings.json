@@ -180,7 +180,7 @@
   "meeting_auto_summarize": false,
   "meeting_selected_model": "",
   "meeting_final_model": "turbo",
-  "meeting_language": "tr",
+  "meeting_language": "auto",
   "meeting_summary_templates": [
     {
       "id": "general",

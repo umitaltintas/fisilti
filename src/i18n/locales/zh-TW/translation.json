@@ -277,7 +277,9 @@
         "label": "轉錄會議所用模型",
         "hint": "適用於即時轉錄和最終處理。聽寫模型不受影響。",
         "sameAsDictation": "與聽寫相同",
-        "sameAsDictationNamed": "與聽寫相同（{{model}}）"
+        "sameAsDictationNamed": "與聽寫相同（{{model}}）",
+        "languageLabel": "會議語言",
+        "languageHint": "自動模式會逐句偵測語言，因此多語言通話也能正常轉寫。選擇某種語言後，其他語言的發言會被翻譯成該語言。"
       },
       "keys": {
         "title": "API 金鑰",

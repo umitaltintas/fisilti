@@ -287,7 +287,9 @@
         "label": "Toplantıları şununla yazıya dök",
         "hint": "Canlı metni ve son geçişi etkiler. Dikte modeli değişmez.",
         "sameAsDictation": "Dikte modeliyle aynı",
-        "sameAsDictationNamed": "Dikte modeliyle aynı ({{model}})"
+        "sameAsDictationNamed": "Dikte modeliyle aynı ({{model}})",
+        "languageLabel": "Toplantı dili",
+        "languageHint": "Otomatik, dili her cümlede ayrı algılar; karışık dilli görüşmeler sorunsuz çalışır. Bir dil seçerseniz başka dillerdeki konuşmalar o dile çevrilerek yazılır."
       },
       "keys": {
         "title": "API anahtarları",

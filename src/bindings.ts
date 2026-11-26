@@ -201,6 +201,18 @@ async changeMeetingSubtitlesSetting(enabled: boolean) : Promise<Result<null, str
 }
 },
 /**
+ * Meeting mode: the language meetings are transcribed in, or "auto" to
+ * detect it per segment. Empty means "auto".
+ */
+async changeMeetingLanguageSetting(language: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_meeting_language_setting", { language }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Meeting mode: choose which model transcribes meetings. An empty string
  * means "follow the dictation model", which is the default.
  * 
@@ -1509,10 +1521,13 @@ meeting_selected_model?: string;
  */
 meeting_final_model?: string; 
 /**
- * Meeting mode: language forced for meeting transcription windows. Fixes
- * per-window language flapping that auto-detect causes. Defaults to "tr"
- * (Turkish). Set to "auto" to restore per-window auto-detect. Only affects
- * the meeting path; dictation keeps using `selected_language`.
+ * Meeting mode: language for meeting transcription, or "auto" (the
+ * default) to detect it per segment. Live segments are cut at natural
+ * pauses, so each is usually one speaker in one language and per-segment
+ * detection handles mixed-language calls. Forcing a language makes
+ * Whisper TRANSLATE speech in any other language into it. Only affects
+ * the meeting path; dictation keeps using `selected_language`. Set on the
+ * Models page next to the meeting model.
  */
 meeting_language?: string; 
 /**

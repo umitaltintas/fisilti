@@ -213,7 +213,9 @@
         "label": "Transcrire les réunions avec",
         "hint": "S'applique à la transcription en direct et à la passe finale. Le modèle de dictée n'est pas affecté.",
         "sameAsDictation": "Comme la dictée",
-        "sameAsDictationNamed": "Comme la dictée ({{model}})"
+        "sameAsDictationNamed": "Comme la dictée ({{model}})",
+        "languageLabel": "Langue de la réunion",
+        "languageHint": "Automatique la détecte phrase par phrase, ce qui gère les appels multilingues. Si vous choisissez une langue, la parole dans d’autres langues est traduite vers celle-ci."
       },
       "keys": {
         "title": "Clés d'API",

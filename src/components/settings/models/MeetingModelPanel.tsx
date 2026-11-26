@@ -5,6 +5,7 @@ import type { ModelInfo } from "@/bindings";
 import { Dropdown } from "@/components/ui/Dropdown";
 import { SettingContainer } from "@/components/ui/SettingContainer";
 import { SettingsGroup } from "@/components/ui/SettingsGroup";
+import { LANGUAGES } from "@/lib/constants/languages";
 import { isCloudModel } from "@/lib/utils/model";
 import { getTranslatedModelName } from "@/lib/utils/modelTranslation";
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -38,6 +39,26 @@ export const MeetingModelPanel: React.FC<MeetingModelPanelProps> = ({
   const refreshSettings = useSettingsStore((s) => s.refreshSettings);
   const updating = useSettingsStore(
     (s) => s.isUpdating["meeting_selected_model"] === true,
+  );
+  const language = useSettingsStore(
+    (s) => s.settings?.meeting_language || "auto",
+  );
+  const languageUpdating = useSettingsStore(
+    (s) => s.isUpdating["meeting_language"] === true,
+  );
+
+  // Whisper-style language list; names stay in English like the dictation
+  // language picker, only "auto" is translated.
+  const languageOptions = useMemo(
+    () =>
+      LANGUAGES.map((lang) => ({
+        value: lang.value,
+        label:
+          lang.value === "auto"
+            ? t("settings.general.language.auto")
+            : lang.label,
+      })),
+    [t],
   );
 
   const options = useMemo(() => {
@@ -93,6 +114,21 @@ export const MeetingModelPanel: React.FC<MeetingModelPanelProps> = ({
           selectedValue={selected}
           disabled={updating}
           onSelect={(value) => void handleSelect(value)}
+        />
+      </SettingContainer>
+      {/* Forcing a language makes Whisper translate everything else into
+          it, so "auto" is the default and the safe choice for mixed calls. */}
+      <SettingContainer
+        title={t("settings.models.meetingModel.languageLabel")}
+        description={t("settings.models.meetingModel.languageHint")}
+        descriptionMode="inline"
+        grouped
+      >
+        <Dropdown
+          options={languageOptions}
+          selectedValue={language}
+          disabled={languageUpdating}
+          onSelect={(value) => void updateSetting("meeting_language", value)}
         />
       </SettingContainer>
     </SettingsGroup>

@@ -453,10 +453,13 @@ pub struct AppSettings {
     /// preview path uses [`Self::meeting_model_id`].
     #[serde(default = "default_meeting_final_model")]
     pub meeting_final_model: String,
-    /// Meeting mode: language forced for meeting transcription windows. Fixes
-    /// per-window language flapping that auto-detect causes. Defaults to "tr"
-    /// (Turkish). Set to "auto" to restore per-window auto-detect. Only affects
-    /// the meeting path; dictation keeps using `selected_language`.
+    /// Meeting mode: language for meeting transcription, or "auto" (the
+    /// default) to detect it per segment. Live segments are cut at natural
+    /// pauses, so each is usually one speaker in one language and per-segment
+    /// detection handles mixed-language calls. Forcing a language makes
+    /// Whisper TRANSLATE speech in any other language into it. Only affects
+    /// the meeting path; dictation keeps using `selected_language`. Set on the
+    /// Models page next to the meeting model.
     #[serde(default = "default_meeting_language")]
     pub meeting_language: String,
     /// Meeting mode: preset summary prompt templates the user can choose from
@@ -616,7 +619,7 @@ fn default_meeting_final_model() -> String {
 }
 
 fn default_meeting_language() -> String {
-    "tr".to_string()
+    "auto".to_string()
 }
 
 /// Built-in meeting summary templates. Each prompt instructs the model to emit

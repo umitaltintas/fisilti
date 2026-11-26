@@ -287,7 +287,9 @@
         "label": "Transcribe meetings with",
         "hint": "Applies to the live transcript and the final pass. The dictation model is unaffected.",
         "sameAsDictation": "Same as dictation",
-        "sameAsDictationNamed": "Same as dictation ({{model}})"
+        "sameAsDictationNamed": "Same as dictation ({{model}})",
+        "languageLabel": "Meeting language",
+        "languageHint": "Auto detects it per sentence, so mixed-language calls work. Choosing a language makes speech in any other language come out translated into it."
       },
       "keys": {
         "title": "API keys",

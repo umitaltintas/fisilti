@@ -213,7 +213,9 @@
         "label": "Chép lời cuộc họp bằng",
         "hint": "Áp dụng cho bản chép trực tiếp và lượt xử lý cuối. Mô hình đọc chính tả không đổi.",
         "sameAsDictation": "Giống đọc chính tả",
-        "sameAsDictationNamed": "Giống đọc chính tả ({{model}})"
+        "sameAsDictationNamed": "Giống đọc chính tả ({{model}})",
+        "languageLabel": "Ngôn ngữ cuộc họp",
+        "languageHint": "Tự động sẽ nhận diện ngôn ngữ theo từng câu, nên cuộc gọi nhiều ngôn ngữ vẫn hoạt động. Nếu chọn một ngôn ngữ, lời nói bằng ngôn ngữ khác sẽ được dịch sang ngôn ngữ đó."
       },
       "keys": {
         "title": "Khóa API",

@@ -225,6 +225,8 @@ const settingUpdaters: {
     commands.changeMeetingGeminiSmartSetting(value as boolean),
   meeting_subtitles: (value) =>
     commands.changeMeetingSubtitlesSetting(value as boolean),
+  meeting_language: (value) =>
+    commands.changeMeetingLanguageSetting(value as string),
   meeting_export_dir: (value) => changeMeetingExportDir(value ?? ""),
 };
 

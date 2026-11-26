@@ -213,7 +213,9 @@
         "label": "会議の文字起こしに使うモデル",
         "hint": "ライブ文字起こしと最終処理に適用されます。音声入力のモデルは変わりません。",
         "sameAsDictation": "音声入力と同じ",
-        "sameAsDictationNamed": "音声入力と同じ ({{model}})"
+        "sameAsDictationNamed": "音声入力と同じ ({{model}})",
+        "languageLabel": "会議の言語",
+        "languageHint": "自動では文ごとに言語を判定するため、複数言語の通話にも対応します。言語を選ぶと、他の言語の発言はその言語に翻訳されて書き起こされます。"
       },
       "keys": {
         "title": "API キー",

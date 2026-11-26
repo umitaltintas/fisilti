@@ -910,6 +910,21 @@ pub fn change_meeting_subtitles_setting(app: AppHandle, enabled: bool) -> Result
     Ok(())
 }
 
+/// Meeting mode: the language meetings are transcribed in, or "auto" to
+/// detect it per segment. Empty means "auto".
+#[tauri::command]
+#[specta::specta]
+pub fn change_meeting_language_setting(app: AppHandle, language: String) -> Result<(), String> {
+    let language = match language.trim() {
+        "" => "auto".to_string(),
+        code => code.to_string(),
+    };
+    settings::update_settings(&app, |settings| {
+        settings.meeting_language = language;
+    });
+    Ok(())
+}
+
 /// Meeting mode: set the BCP-47 language live translation translates INTO.
 #[tauri::command]
 #[specta::specta]

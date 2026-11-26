@@ -213,7 +213,9 @@
         "label": "Besprechungen transkribieren mit",
         "hint": "Gilt für das Live-Transkript und den Abschlussdurchlauf. Das Diktatmodell bleibt unverändert.",
         "sameAsDictation": "Wie beim Diktat",
-        "sameAsDictationNamed": "Wie beim Diktat ({{model}})"
+        "sameAsDictationNamed": "Wie beim Diktat ({{model}})",
+        "languageLabel": "Meeting-Sprache",
+        "languageHint": "Automatisch erkennt die Sprache pro Satz, sodass gemischtsprachige Anrufe funktionieren. Wählen Sie eine Sprache, wird Sprache in anderen Sprachen in diese übersetzt."
       },
       "keys": {
         "title": "API-Schlüssel",

@@ -213,7 +213,9 @@
         "label": "Přepisovat schůzky pomocí",
         "hint": "Platí pro živý přepis i závěrečný průchod. Model diktování se nemění.",
         "sameAsDictation": "Stejně jako diktování",
-        "sameAsDictationNamed": "Stejně jako diktování ({{model}})"
+        "sameAsDictationNamed": "Stejně jako diktování ({{model}})",
+        "languageLabel": "Jazyk schůzky",
+        "languageHint": "Automaticky rozpozná jazyk v každé větě, takže vícejazyčné hovory fungují. Zvolíte-li jazyk, řeč v jiných jazycích se do něj přeloží."
       },
       "keys": {
         "title": "Klíče API",

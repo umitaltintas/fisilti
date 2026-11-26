@@ -213,7 +213,9 @@
         "label": "Transcribir reuniones con",
         "hint": "Se aplica a la transcripción en vivo y a la pasada final. El modelo de dictado no cambia.",
         "sameAsDictation": "Igual que el dictado",
-        "sameAsDictationNamed": "Igual que el dictado ({{model}})"
+        "sameAsDictationNamed": "Igual que el dictado ({{model}})",
+        "languageLabel": "Idioma de la reunión",
+        "languageHint": "Automático lo detecta en cada frase, así funcionan las llamadas en varios idiomas. Si eliges un idioma, lo hablado en otros idiomas se traduce a él."
       },
       "keys": {
         "title": "Claves de API",

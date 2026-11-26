@@ -213,7 +213,9 @@
         "label": "Trascrivi le riunioni con",
         "hint": "Vale per la trascrizione in diretta e per il passaggio finale. Il modello di dettatura non cambia.",
         "sameAsDictation": "Come la dettatura",
-        "sameAsDictationNamed": "Come la dettatura ({{model}})"
+        "sameAsDictationNamed": "Come la dettatura ({{model}})",
+        "languageLabel": "Lingua della riunione",
+        "languageHint": "Automatico la rileva frase per frase, così le chiamate in più lingue funzionano. Se scegli una lingua, il parlato in altre lingue viene tradotto in essa."
       },
       "keys": {
         "title": "Chiavi API",

@@ -213,7 +213,9 @@
         "label": "转写会议所用模型",
         "hint": "适用于实时转写和最终处理。听写模型不受影响。",
         "sameAsDictation": "与听写相同",
-        "sameAsDictationNamed": "与听写相同（{{model}}）"
+        "sameAsDictationNamed": "与听写相同（{{model}}）",
+        "languageLabel": "会议语言",
+        "languageHint": "自动模式会逐句检测语言，因此多语言通话也能正常转写。选择某种语言后，其他语言的发言会被翻译成该语言。"
       },
       "keys": {
         "title": "API 密钥",

@@ -277,7 +277,9 @@
         "label": "Transkribera möten med",
         "hint": "Gäller livetranskriptet och den avslutande omgången. Dikteringsmodellen påverkas inte.",
         "sameAsDictation": "Samma som diktering",
-        "sameAsDictationNamed": "Samma som diktering ({{model}})"
+        "sameAsDictationNamed": "Samma som diktering ({{model}})",
+        "languageLabel": "Mötesspråk",
+        "languageHint": "Automatiskt känner av språket per mening, så samtal på flera språk fungerar. Väljer du ett språk översätts tal på andra språk till det."
       },
       "keys": {
         "title": "API-nycklar",

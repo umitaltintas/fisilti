@@ -553,6 +553,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::meeting::summarize_meeting,
             commands::meeting::summarize_meeting_with,
             commands::meeting::regenerate_meeting_summary,
+            commands::meeting::generate_meeting_title,
             commands::meeting::list_meetings,
             commands::meeting::get_meeting,
             commands::meeting::get_meeting_audio_path,

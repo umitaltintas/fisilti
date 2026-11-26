@@ -40,6 +40,7 @@ import {
   cancelMeetingImport,
   estimateMeetingCost,
   exportMeetingMarkdown,
+  generateMeetingTitle,
   getMeeting,
   getMeetingAudioPath,
   listenMeetingImportProgress,
@@ -106,6 +107,11 @@ export const MeetingDetail: React.FC<MeetingDetailProps> = ({
   const [titleDraft, setTitleDraft] = useState("");
   const [titleError, setTitleError] = useState<string | null>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
+  // AI title generation.
+  const [generatingTitle, setGeneratingTitle] = useState(false);
+  const [generateTitleError, setGenerateTitleError] = useState<string | null>(
+    null,
+  );
 
   // Regenerate controls.
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
@@ -279,6 +285,24 @@ export const MeetingDetail: React.FC<MeetingDetailProps> = ({
       setTitleError(
         t("meeting.errors.renameFailed", { error: errorMessage(error) }),
       );
+    }
+  };
+
+  const handleGenerateTitle = async () => {
+    setGenerateTitleError(null);
+    setGeneratingTitle(true);
+    try {
+      const next = await generateMeetingTitle(meetingId);
+      setDetail((prev) => (prev ? { ...prev, title: next } : prev));
+      patchMeeting(meetingId, { title: next });
+    } catch (error) {
+      setGenerateTitleError(
+        t("meeting.errors.generateTitleFailed", {
+          error: errorMessage(error),
+        }),
+      );
+    } finally {
+      setGeneratingTitle(false);
     }
   };
 
@@ -495,17 +519,42 @@ export const MeetingDetail: React.FC<MeetingDetailProps> = ({
                 )}
               </div>
             ) : (
-              <div className="flex items-center gap-2">
-                <h2 className="font-serif text-[26px] leading-tight font-semibold tracking-tight break-words">
-                  {title}
-                </h2>
-                <IconButton
-                  onClick={startEditingTitle}
-                  label={t("meeting.renameTitle")}
-                  size="sm"
-                >
-                  <Pencil width={14} height={14} />
-                </IconButton>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <h2 className="font-serif text-[26px] leading-tight font-semibold tracking-tight break-words">
+                    {title}
+                  </h2>
+                  <IconButton
+                    onClick={startEditingTitle}
+                    label={t("meeting.renameTitle")}
+                    size="sm"
+                  >
+                    <Pencil width={14} height={14} />
+                  </IconButton>
+                  <IconButton
+                    onClick={() => void handleGenerateTitle()}
+                    label={t("meeting.generateTitle")}
+                    size="sm"
+                    disabled={
+                      generatingTitle || detail.transcript.trim().length === 0
+                    }
+                  >
+                    {generatingTitle ? (
+                      <Loader2
+                        width={14}
+                        height={14}
+                        className="animate-spin"
+                      />
+                    ) : (
+                      <Sparkles width={14} height={14} />
+                    )}
+                  </IconButton>
+                </div>
+                {generateTitleError && (
+                  <InlineError className="text-xs">
+                    {generateTitleError}
+                  </InlineError>
+                )}
               </div>
             )}
 

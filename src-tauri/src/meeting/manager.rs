@@ -809,9 +809,9 @@ impl MeetingManager {
     }
 
     /// Persist `title` on meeting row `id` and notify the UI via
-    /// `"meeting-title-update"`. Shared by the naming resolution and the LLM
-    /// auto-title.
-    pub(super) fn apply_title(&self, id: i64, title: &str) {
+    /// `"meeting-title-update"`. Shared by the naming resolution, the LLM
+    /// auto-title and the on-demand `generate_meeting_title` command.
+    pub(crate) fn apply_title(&self, id: i64, title: &str) {
         if let Err(e) = self.store.update_title(id, title) {
             log::error!("meeting title: failed to persist: {}", e);
             return;

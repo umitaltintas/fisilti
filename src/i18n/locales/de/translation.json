@@ -472,6 +472,7 @@
       },
       "api": {
         "title": "API (OpenAI-kompatibel)",
+        "description": "Auch Meeting-Titel, Zusammenfassungen und Fragen nutzen diesen Anbieter und dieses Modell, selbst wenn die Nachbearbeitung aus ist.",
         "provider": {
           "title": "Anbieter",
           "description": "Wähle einen OpenAI-kompatiblen Anbieter."
@@ -809,6 +810,7 @@
     "rename": "Rename",
     "renameTitle": "Rename meeting",
     "generateTitle": "Titel mit KI erstellen",
+    "chooseAiModel": "KI-Modell wählen",
     "save": "Save",
     "export": "Export",
     "exporting": "Exporting…",

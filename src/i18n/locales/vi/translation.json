@@ -472,6 +472,7 @@
       },
       "api": {
         "title": "API (Tương thích OpenAI)",
+        "description": "Tiêu đề, bản tóm tắt và câu hỏi về cuộc họp cũng dùng nhà cung cấp và mô hình này, kể cả khi tắt hậu xử lý.",
         "provider": {
           "title": "Nhà cung cấp",
           "description": "Chọn một nhà cung cấp tương thích OpenAI."
@@ -809,6 +810,7 @@
     "rename": "Rename",
     "renameTitle": "Rename meeting",
     "generateTitle": "Tạo tiêu đề bằng AI",
+    "chooseAiModel": "Chọn mô hình AI",
     "save": "Save",
     "export": "Export",
     "exporting": "Exporting…",

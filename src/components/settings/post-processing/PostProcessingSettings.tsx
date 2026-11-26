@@ -507,23 +507,29 @@ export const PostProcessingSettings: React.FC = () => {
       </SettingsGroup>
 
       {enabled && (
-        <>
-          <SettingsGroup title={t("settings.postProcessing.hotkey.title")}>
-            <ShortcutInput
-              shortcutId="transcribe_with_post_process"
-              descriptionMode="inline"
-              grouped={true}
-            />
-          </SettingsGroup>
+        <SettingsGroup title={t("settings.postProcessing.hotkey.title")}>
+          <ShortcutInput
+            shortcutId="transcribe_with_post_process"
+            descriptionMode="inline"
+            grouped={true}
+          />
+        </SettingsGroup>
+      )}
 
-          <SettingsGroup title={t("settings.postProcessing.api.title")}>
-            <PostProcessingSettingsApi />
-          </SettingsGroup>
+      {/* Shown with the switch off too: meeting titles, summaries and
+          questions use this provider and model whether or not dictation is
+          post-processed, and errors there link here. */}
+      <SettingsGroup
+        title={t("settings.postProcessing.api.title")}
+        description={t("settings.postProcessing.api.description")}
+      >
+        <PostProcessingSettingsApi />
+      </SettingsGroup>
 
-          <SettingsGroup title={t("settings.postProcessing.prompts.title")}>
-            <PostProcessingSettingsPrompts />
-          </SettingsGroup>
-        </>
+      {enabled && (
+        <SettingsGroup title={t("settings.postProcessing.prompts.title")}>
+          <PostProcessingSettingsPrompts />
+        </SettingsGroup>
       )}
     </div>
   );

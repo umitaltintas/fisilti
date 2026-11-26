@@ -472,6 +472,7 @@
       },
       "api": {
         "title": "API (OpenAI-kompatibelt)",
+        "description": "Mötestitlar, sammanfattningar och frågor använder också den här leverantören och modellen, även när efterbearbetning är av.",
         "provider": {
           "title": "Leverantör",
           "description": "Välj en OpenAI-kompatibel leverantör."
@@ -809,6 +810,7 @@
     "rename": "Rename",
     "renameTitle": "Rename meeting",
     "generateTitle": "Skapa titel med AI",
+    "chooseAiModel": "Välj AI-modell",
     "save": "Save",
     "export": "Export",
     "exporting": "Exporting…",

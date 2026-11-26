@@ -472,6 +472,7 @@
       },
       "api": {
         "title": "API（OpenAI互換）",
+        "description": "会議のタイトル、要約、質問も、後処理がオフでもこのプロバイダーとモデルを使います。",
         "provider": {
           "title": "プロバイダー",
           "description": "OpenAI互換のプロバイダーを選択。"
@@ -809,6 +810,7 @@
     "rename": "Rename",
     "renameTitle": "Rename meeting",
     "generateTitle": "AIでタイトルを生成",
+    "chooseAiModel": "AI モデルを選ぶ",
     "save": "Save",
     "export": "Export",
     "exporting": "Exporting…",

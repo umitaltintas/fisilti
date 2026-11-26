@@ -482,6 +482,7 @@
       },
       "api": {
         "title": "API (OpenAI uyumlu)",
+        "description": "Toplantı başlıkları, özetleri ve soruları da, AI düzenleme kapalıyken bile bu sağlayıcıyı ve modeli kullanır.",
         "provider": {
           "title": "Sağlayıcı",
           "description": "OpenAI uyumlu bir sağlayıcı seçin."
@@ -823,6 +824,7 @@
     "rename": "Yeniden adlandır",
     "renameTitle": "Toplantıyı yeniden adlandır",
     "generateTitle": "Yapay zekâ ile başlık üret",
+    "chooseAiModel": "Yapay zekâ modelini seç",
     "save": "Kaydet",
     "export": "Dışa aktar",
     "exporting": "Dışa aktarılıyor…",

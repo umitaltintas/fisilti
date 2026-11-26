@@ -472,6 +472,7 @@
       },
       "api": {
         "title": "API (OpenAI 호환)",
+        "description": "회의 제목, 요약, 질문도 후처리가 꺼져 있어도 이 제공자와 모델을 사용합니다.",
         "provider": {
           "title": "제공자",
           "description": "OpenAI 호환 제공자를 선택하세요."
@@ -809,6 +810,7 @@
     "rename": "Rename",
     "renameTitle": "Rename meeting",
     "generateTitle": "AI로 제목 생성",
+    "chooseAiModel": "AI 모델 선택",
     "save": "Save",
     "export": "Export",
     "exporting": "Exporting…",

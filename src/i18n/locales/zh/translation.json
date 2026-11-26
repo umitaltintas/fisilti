@@ -472,6 +472,7 @@
       },
       "api": {
         "title": "API（兼容 OpenAI）",
+        "description": "即使关闭后处理，会议标题、摘要和提问也会使用此提供商和模型。",
         "provider": {
           "title": "提供商",
           "description": "选择一个兼容 OpenAI 的提供商。"
@@ -809,6 +810,7 @@
     "rename": "Rename",
     "renameTitle": "Rename meeting",
     "generateTitle": "用 AI 生成标题",
+    "chooseAiModel": "选择 AI 模型",
     "save": "Save",
     "export": "Export",
     "exporting": "Exporting…",

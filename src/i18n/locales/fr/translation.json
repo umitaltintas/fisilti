@@ -472,6 +472,7 @@
       },
       "api": {
         "title": "API (Compatible OpenAI)",
+        "description": "Les titres, résumés et questions des réunions utilisent aussi ce fournisseur et ce modèle, même avec le post-traitement désactivé.",
         "provider": {
           "title": "Fournisseur",
           "description": "Sélectionnez un fournisseur compatible OpenAI."
@@ -809,6 +810,7 @@
     "rename": "Rename",
     "renameTitle": "Rename meeting",
     "generateTitle": "Générer un titre avec l’IA",
+    "chooseAiModel": "Choisir le modèle d'IA",
     "save": "Save",
     "export": "Export",
     "exporting": "Exporting…",

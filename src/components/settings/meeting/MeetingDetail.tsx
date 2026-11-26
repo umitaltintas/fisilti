@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { emit } from "@tauri-apps/api/event";
 import { save } from "@tauri-apps/plugin-dialog";
 import { writeTextFile } from "@tauri-apps/plugin-fs";
 import { toast } from "sonner";
@@ -551,9 +552,20 @@ export const MeetingDetail: React.FC<MeetingDetailProps> = ({
                   </IconButton>
                 </div>
                 {generateTitleError && (
-                  <InlineError className="text-xs">
-                    {generateTitleError}
-                  </InlineError>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <InlineError className="text-xs">
+                      {generateTitleError}
+                    </InlineError>
+                    {/* Almost every failure here is the AI provider/model
+                        setup, which lives on Settings → AI. */}
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => void emit("navigate-section", "ai")}
+                    >
+                      {t("meeting.chooseAiModel")}
+                    </Button>
+                  </div>
                 )}
               </div>
             )}

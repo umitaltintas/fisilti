@@ -472,6 +472,7 @@
       },
       "api": {
         "title": "API (kompatibilní s OpenAI)",
+        "description": "Názvy, shrnutí a otázky ke schůzkám také používají tohoto poskytovatele a model, i když je následné zpracování vypnuté.",
         "provider": {
           "title": "Poskytovatel",
           "description": "Vyberte poskytovatele kompatibilního s OpenAI."
@@ -809,6 +810,7 @@
     "rename": "Rename",
     "renameTitle": "Rename meeting",
     "generateTitle": "Vytvořit název pomocí AI",
+    "chooseAiModel": "Vybrat model AI",
     "save": "Save",
     "export": "Export",
     "exporting": "Exporting…",

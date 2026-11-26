@@ -482,6 +482,7 @@
       },
       "api": {
         "title": "API (OpenAI compatible)",
+        "description": "Meeting titles, summaries and questions use this provider and model too, even with post-processing off.",
         "provider": {
           "title": "Provider",
           "description": "Select an OpenAI-compatible provider."
@@ -823,6 +824,7 @@
     "rename": "Rename",
     "renameTitle": "Rename meeting",
     "generateTitle": "Generate title with AI",
+    "chooseAiModel": "Choose AI model",
     "save": "Save",
     "export": "Export",
     "exporting": "Exporting…",

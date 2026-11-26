@@ -472,6 +472,7 @@
       },
       "api": {
         "title": "API (zgodne z OpenAI)",
+        "description": "Tytuły, podsumowania i pytania o spotkania też korzystają z tego dostawcy i modelu, nawet przy wyłączonym przetwarzaniu końcowym.",
         "provider": {
           "title": "Dostawca",
           "description": "Wybierz dostawcę zgodnego z OpenAI."
@@ -809,6 +810,7 @@
     "rename": "Rename",
     "renameTitle": "Rename meeting",
     "generateTitle": "Wygeneruj tytuł za pomocą AI",
+    "chooseAiModel": "Wybierz model AI",
     "save": "Save",
     "export": "Export",
     "exporting": "Exporting…",

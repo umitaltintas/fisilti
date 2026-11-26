@@ -472,6 +472,7 @@
       },
       "api": {
         "title": "API (сумісний з OpenAI)",
+        "description": "Назви, підсумки й запитання щодо зустрічей теж використовують цього провайдера й модель, навіть коли постобробку вимкнено.",
         "provider": {
           "title": "Провайдер",
           "description": "Оберіть OpenAI-сумісного провайдера"
@@ -809,6 +810,7 @@
     "rename": "Rename",
     "renameTitle": "Rename meeting",
     "generateTitle": "Створити назву за допомогою ШІ",
+    "chooseAiModel": "Вибрати модель ШІ",
     "save": "Save",
     "export": "Export",
     "exporting": "Exporting…",

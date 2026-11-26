@@ -316,13 +316,13 @@ export function regenerateMeetingSummary(
   );
 }
 
-/** Persist the meeting's title (manual rename). */
 /** Generate a title for a saved meeting from its transcript with the active AI
  * provider; stores it and resolves with the new title. */
 export function generateMeetingTitle(id: number): Promise<string> {
   return unwrap(commands.generateMeetingTitle(id));
 }
 
+/** Persist the meeting's title (manual rename). */
 export function updateMeetingTitle(id: number, title: string): Promise<void> {
   return unwrap(commands.updateMeetingTitle(id, title)).then(() => undefined);
 }

@@ -226,7 +226,7 @@ pub async fn generate_meeting_title(
         return Err("This meeting has no transcript to generate a title from.".to_string());
     }
     let title = crate::meeting::summarize::generate_title(&app, &record.transcript).await?;
-    meeting_manager.apply_title(id, &title);
+    meeting_manager.try_apply_title(id, &title)?;
     Ok(title)
 }
 

@@ -809,13 +809,21 @@ impl MeetingManager {
     }
 
     /// Persist `title` on meeting row `id` and notify the UI via
-    /// `"meeting-title-update"`. Shared by the naming resolution, the LLM
-    /// auto-title and the on-demand `generate_meeting_title` command.
-    pub(crate) fn apply_title(&self, id: i64, title: &str) {
-        if let Err(e) = self.store.update_title(id, title) {
-            log::error!("meeting title: failed to persist: {}", e);
-            return;
+    /// `"meeting-title-update"`, logging a failure. For the background paths
+    /// (naming resolution, LLM auto-title), where nobody is waiting on it.
+    pub(super) fn apply_title(&self, id: i64, title: &str) {
+        if let Err(e) = self.try_apply_title(id, title) {
+            log::error!("meeting title: {}", e);
         }
+    }
+
+    /// [`Self::apply_title`] for a caller that reports to the user (the
+    /// on-demand `generate_meeting_title` command): a title that failed to
+    /// save must not come back looking saved.
+    pub(crate) fn try_apply_title(&self, id: i64, title: &str) -> Result<(), String> {
+        self.store
+            .update_title(id, title)
+            .map_err(|e| format!("Failed to save the title: {}", e))?;
         self.export_markdown(id);
         use tauri::Emitter;
         let _ = self.app_handle.emit(
@@ -825,6 +833,7 @@ impl MeetingManager {
                 title: title.to_string(),
             },
         );
+        Ok(())
     }
 
     /// AUTO-TITLE. Generate a short title from the transcript via the active
